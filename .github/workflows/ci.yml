@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        elixir: ['1.20']
+        otp: ['28']
+        
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ matrix.elixir }}
+        otp-version: ${{ matrix.otp }}
+        
+    - name: Set up Zig 0.15.2
+      run: |
+        curl -L https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz -o zig.tar.xz
+        tar -xf zig.tar.xz
+        echo "$GITHUB_WORKSPACE/zig-x86_64-linux-0.15.2" >> $GITHUB_PATH
+        
+    - name: Restore dependencies cache
+      uses: actions/cache@v3
+      with:
+        path: deps
+        key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+        restore-keys: ${{ runner.os }}-mix-
+        
+    - name: Install dependencies
+      run: mix deps.get
+      
+    - name: Check formatting
+      run: mix format --check-formatted
+      
+    - name: Compile with warnings as errors
+      run: mix compile --warnings-as-errors
+
+    - name: Run credo
+      run: mix credo --strict
+
+    - name: Run tests with coverage
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
+      run: mix coveralls.github
