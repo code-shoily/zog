@@ -380,6 +380,28 @@ defmodule Zog.PBT.ZogParityTest do
       end
     end
 
+    property "Connectivity: strongly_connected_components parity" do
+      check all(graph <- directed_graph_gen()) do
+        builder = Zog.from_graph(graph)
+        res_graph = ResourceGraph.new(builder)
+
+        try do
+          el_sccs = Yog.Connectivity.SCC.strongly_connected_components(graph)
+          nat_sccs = Zog.Connectivity.strongly_connected_components(builder)
+          res_sccs = ResourceGraph.strongly_connected_components(res_graph)
+
+          el_sorted = el_sccs |> Enum.map(&Enum.sort/1) |> Enum.sort()
+          nat_sorted = nat_sccs |> Enum.map(&Enum.sort/1) |> Enum.sort()
+          res_sorted = res_sccs |> Enum.map(&Enum.sort/1) |> Enum.sort()
+
+          assert nat_sorted == el_sorted
+          assert res_sorted == el_sorted
+        after
+          ResourceGraph.destroy(res_graph)
+        end
+      end
+    end
+
     property "Property: cliques and coloring" do
       check all(graph <- positive_undirected_graph_gen()) do
         builder = Zog.from_graph(graph)
@@ -412,9 +434,95 @@ defmodule Zog.PBT.ZogParityTest do
               _ ->
                 :ok
             end
+        end
+      end
+    end
 
-          _ ->
-            :ok
+    property "MST: Kruskal parity" do
+      check all(graph <- positive_undirected_graph_gen()) do
+        if Yog.all_edges(graph) != [] do
+          builder = Zog.from_graph(graph)
+          res_graph = ResourceGraph.new(builder)
+
+          try do
+            {:ok, el_mst} = Yog.MST.Kruskal.compute(graph, &Yog.Utils.compare/2)
+            {:ok, nat_mst} = Zog.MST.kruskal(builder)
+            {:ok, res_mst} = ResourceGraph.kruskal(res_graph)
+
+            el_weight = el_mst.total_weight
+            nat_weight = Enum.reduce(nat_mst, 0.0, &(&1.weight + &2))
+            res_weight = Enum.reduce(res_mst, 0.0, &(&1.weight + &2))
+
+            assert_in_delta nat_weight, el_weight, 1.0e-3
+            assert_in_delta res_weight, el_weight, 1.0e-3
+          after
+            ResourceGraph.destroy(res_graph)
+          end
+        end
+      end
+    end
+
+    property "Pathfinding: Bellman-Ford parity" do
+      check all(graph <- directed_graph_gen()) do
+        nodes = Yog.all_nodes(graph)
+
+        if length(nodes) >= 2 and Yog.all_edges(graph) != [] do
+          [start_node, goal_node | _] = Enum.shuffle(nodes)
+
+          builder = Zog.from_graph(graph)
+          res_graph = ResourceGraph.new(builder)
+
+          try do
+            el_res = Yog.Pathfinding.BellmanFord.bellman_ford(graph, start_node, goal_node)
+            nat_res = Zog.Pathfinding.bellman_ford(builder, start_node, goal_node)
+            res_res = ResourceGraph.bellman_ford(res_graph, start_node, goal_node)
+
+            case el_res do
+              {:ok, path} ->
+                assert {:ok, {nat_path, nat_weight}} = nat_res
+                assert {:ok, {res_path, res_weight}} = res_res
+                assert nat_path == path.nodes
+                assert res_path == path.nodes
+                assert_in_delta nat_weight, path.weight, 1.0e-3
+                assert_in_delta res_weight, path.weight, 1.0e-3
+
+              {:error, :no_path} ->
+                assert nat_res == {:error, :no_path}
+                assert res_res == {:error, :no_path}
+
+              {:error, :negative_cycle} ->
+                assert nat_res == {:error, :negative_cycle}
+                assert res_res == {:error, :negative_cycle}
+            end
+          after
+            ResourceGraph.destroy(res_graph)
+          end
+        end
+      end
+    end
+
+    property "ResourceGraph from_yog and to_yog roundtrip parity" do
+      check all(graph <- positive_undirected_graph_gen()) do
+        res_graph = ResourceGraph.from_yog(graph)
+
+        try do
+          reconstructed = ResourceGraph.to_yog(res_graph)
+
+          assert Yog.all_nodes(reconstructed) |> Enum.sort() ==
+                   Yog.all_nodes(graph) |> Enum.sort()
+
+          # Convert edge lists to sets of canonical undirected tuples {u, v} or lists
+          edges_orig =
+            MapSet.new(Enum.map(Yog.all_edges(graph), fn {u, v, _w} -> Enum.sort([u, v]) end))
+
+          edges_recon =
+            MapSet.new(
+              Enum.map(Yog.all_edges(reconstructed), fn {u, v, _w} -> Enum.sort([u, v]) end)
+            )
+
+          assert edges_orig == edges_recon
+        after
+          ResourceGraph.destroy(res_graph)
         end
       end
     end

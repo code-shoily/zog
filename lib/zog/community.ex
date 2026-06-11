@@ -2,9 +2,9 @@ defmodule Zog.Community do
   @moduledoc """
   Native community detection algorithms backed by Zog (Zig) via Zigler.
   """
-  alias Zog.Model
   alias Zog.Community.Dendrogram
   alias Zog.Community.Result
+  alias Zog.Model
 
   if Code.ensure_loaded?(Zig) do
     use Zig,

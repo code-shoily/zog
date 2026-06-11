@@ -6,9 +6,9 @@ defmodule Zog.ResourceGraph do
   `ArrayGraph` alive as a NIF resource between calls. Build once, run many
   algorithms, destroy when done.
   """
-  alias Zog.Model
   alias Zog.Community.Dendrogram
   alias Zog.Community.Result
+  alias Zog.Model
 
   if Code.ensure_loaded?(Zig) do
     use Zig,
@@ -40,6 +40,9 @@ defmodule Zog.ResourceGraph do
         nif_assortativity: [concurrency: :dirty_cpu],
         nif_core_numbers: [concurrency: :dirty_cpu],
         nif_analyze_connectivity: [concurrency: :dirty_cpu],
+        nif_strongly_connected_components: [concurrency: :dirty_cpu],
+        nif_kruskal: [concurrency: :dirty_cpu],
+        nif_bellman_ford: [concurrency: :dirty_cpu],
         nif_max_flow: [concurrency: :dirty_cpu],
         nif_push_relabel: [concurrency: :dirty_cpu],
         nif_global_min_cut: [concurrency: :dirty_cpu],
@@ -348,6 +351,51 @@ defmodule Zog.ResourceGraph do
     pub fn nif_core_numbers(res: GraphRes) ![]u32 {
         const g = res.unpack().graph;
         return try zog.connectivity.coreNumbers(beam.allocator, g);
+    }
+
+    pub fn nif_strongly_connected_components(res: GraphRes) ![]u32 {
+        const g = res.unpack().graph;
+        return try zog.connectivity.stronglyConnectedComponents(beam.allocator, g);
+    }
+
+    pub fn nif_kruskal(res: GraphRes) !beam.term {
+        const g = res.unpack().graph;
+        const result = try zog.mst.kruskal(beam.allocator, g);
+        errdefer {
+            beam.allocator.free(result.from);
+            beam.allocator.free(result.to);
+            beam.allocator.free(result.weight);
+        }
+
+        const term = beam.make(.{.ok, result.from, result.to, result.weight}, .{});
+
+        beam.allocator.free(result.from);
+        beam.allocator.free(result.to);
+        beam.allocator.free(result.weight);
+
+        return term;
+    }
+
+    pub fn nif_bellman_ford(res: GraphRes, start_node: u32, goal_node: u32) !beam.term {
+        const g = res.unpack().graph;
+        const opt_res = zog.pathfinding.bellmanFord(beam.allocator, g, start_node, goal_node) catch |err| {
+            if (err == error.NegativeCycle) {
+                return beam.make(.{.@"error", .negative_cycle}, .{});
+            }
+            return err;
+        };
+
+        if (opt_res) |p_res| {
+            var path_res = p_res;
+            defer path_res.deinit(beam.allocator);
+
+            const path_slice = try beam.allocator.alloc(u32, path_res.path.items.len);
+            @memcpy(path_slice, path_res.path.items);
+
+            return beam.make(.{.ok, .{path_slice, path_res.weight}}, .{});
+        } else {
+            return beam.make(.{.@"error", .no_path}, .{});
+        }
     }
 
     pub fn nif_analyze_connectivity(res: GraphRes) !beam.term {
@@ -672,6 +720,46 @@ defmodule Zog.ResourceGraph do
       }
     end
 
+    if Code.ensure_loaded?(Yog) do
+      @doc """
+      Builds a native graph resource directly from a `Yog.Graph`.
+      """
+      @spec from_yog(Yog.graph()) :: t()
+      def from_yog(yog_graph) do
+        yog_graph
+        |> Model.from_graph()
+        |> new()
+      end
+
+      @doc """
+      Converts a native graph resource back to a `Yog.Graph`.
+      """
+      @spec to_yog(t()) :: Yog.graph()
+      def to_yog(%{builder: builder}) do
+        base = Yog.new(builder.kind)
+
+        # 1. Recreate all original nodes with their original keys/labels
+        graph_with_nodes =
+          Enum.reduce(builder.nodes, base, fn label, g ->
+            # Yog.add_node/3 takes (graph, id, label) or Yog.add_node/2 takes (graph, id)
+            # Let's add nodes using the original label as the ID.
+            # In Yog, node data/label defaults to nil if not supplied, or we can just use Yog.add_node(g, label)
+            Yog.add_node(g, label)
+          end)
+
+        # 2. Add edges using the original labels/keys mapped from internal u32 IDs
+        Enum.reduce(builder.edges, graph_with_nodes, fn {from_id, to_id, weight}, g ->
+          from_label = Map.get(builder.id_to_label, from_id)
+          to_label = Map.get(builder.id_to_label, to_id)
+
+          case Yog.add_edge(g, from_label, to_label, weight) do
+            {:ok, new_g} -> new_g
+            {:error, _} -> g
+          end
+        end)
+      end
+    end
+
     @doc """
     Reads a graph from an edge list file directly in native memory.
     """
@@ -970,6 +1058,32 @@ defmodule Zog.ResourceGraph do
     end
 
     @doc """
+    Computes the shortest path and its weight between two nodes using Bellman-Ford algorithm directly on the native graph resource.
+    """
+    @spec bellman_ford(t(), Model.label(), Model.label()) ::
+            {:ok, {[Model.label()], float()}} | {:error, :no_path} | {:error, :negative_cycle}
+    def bellman_ford(%{resource: res, builder: builder}, start_label, goal_label) do
+      start_id = Map.get(builder.label_to_id, start_label)
+      goal_id = Map.get(builder.label_to_id, goal_label)
+
+      if is_nil(start_id) or is_nil(goal_id) do
+        {:error, :no_path}
+      else
+        case nif_bellman_ford(res, start_id, goal_id) do
+          {:ok, {path_ids, weight}} ->
+            path_labels = Enum.map(path_ids, &Model.id_to_label(builder, &1))
+            {:ok, {path_labels, weight}}
+
+          {:error, :no_path} ->
+            {:error, :no_path}
+
+          {:error, :negative_cycle} ->
+            {:error, :negative_cycle}
+        end
+      end
+    end
+
+    @doc """
     Graph density.
     """
     @spec density(t()) :: float()
@@ -1026,6 +1140,46 @@ defmodule Zog.ResourceGraph do
           cores
           |> Enum.with_index()
           |> Map.new(fn {core, idx} -> {elem(labels_tuple, idx), core} end)
+      end
+    end
+
+    @doc """
+    Finds strongly connected components in the ResourceGraph natively.
+    Returns a list of lists of node labels.
+    """
+    @spec strongly_connected_components(t()) :: [[Model.label()]]
+    def strongly_connected_components(%{resource: res, builder: builder}) do
+      case nif_strongly_connected_components(res) do
+        [] ->
+          []
+
+        assignments ->
+          group_sccs(builder, assignments)
+      end
+    end
+
+    @doc """
+    Computes the Minimum Spanning Tree (MST) of an undirected ResourceGraph natively using Kruskal's algorithm.
+    """
+    @spec kruskal(t()) :: {:ok, [Yog.MST.edge()]}
+    def kruskal(%{builder: %Model{kind: :directed}}) do
+      raise ArgumentError, "Kruskal's MST algorithm requires an undirected graph"
+    end
+
+    def kruskal(%{resource: res, builder: builder}) do
+      case nif_kruskal(res) do
+        {:ok, mst_from, mst_to, mst_weights} ->
+          edges =
+            Enum.zip([mst_from, mst_to, mst_weights])
+            |> Enum.map(fn {f_idx, t_idx, w} ->
+              %{
+                from: Model.id_to_label(builder, f_idx),
+                to: Model.id_to_label(builder, t_idx),
+                weight: w
+              }
+            end)
+
+          {:ok, edges}
       end
     end
 
@@ -1150,6 +1304,14 @@ defmodule Zog.ResourceGraph do
 
     defp make_sorted_edge(u, v) when u < v, do: {u, v}
     defp make_sorted_edge(u, v), do: {v, u}
+
+    defp group_sccs(builder, assignments) do
+      builder
+      |> Model.all_labels()
+      |> Enum.zip(assignments)
+      |> Enum.group_by(fn {_lbl, comp} -> comp end, fn {lbl, _comp} -> lbl end)
+      |> Map.values()
+    end
   else
     @moduledoc """
     Native graph resource backed by Zog (Zig) via Zigler.
@@ -1198,6 +1360,7 @@ defmodule Zog.ResourceGraph do
           :local_clustering_coefficient,
           :assortativity,
           :core_numbers,
+          :strongly_connected_components,
           :analyze
         ] do
       def unquote(fun)(_graph, _opts \\ []) do
@@ -1215,6 +1378,16 @@ defmodule Zog.ResourceGraph do
 
     def dijkstra(_graph, _start_label, _goal_label) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    if Code.ensure_loaded?(Yog) do
+      def from_yog(_yog_graph) do
+        raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      end
+
+      def to_yog(_graph) do
+        raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      end
     end
   end
 end
