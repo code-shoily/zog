@@ -30,37 +30,37 @@ defmodule Zog.IO do
   Supported options:
     - `:format` - The format to write the file in. One of `:edgelist` (default), `:adjlist`, `:tgf`.
   """
-  @spec dump(ResourceGraph.t() | Zog.Model.t(), Path.t(), keyword()) :: :ok
+  @spec dump(ResourceGraph.t() | Zog.SoA.t(), Path.t(), keyword()) :: :ok
   def dump(graph, path, opts \\ [])
 
   def dump(%{builder: builder}, path, opts) do
     dump(builder, path, opts)
   end
 
-  def dump(%Zog.Model{} = builder, path, opts) do
+  def dump(%Zog.SoA{} = builder, path, opts) do
     format = Keyword.get(opts, :format, :edgelist)
     content = serialize(builder, format)
     File.write!(path, content)
   end
 
   defp serialize(builder, :edgelist) do
-    for {from_id, to_id, weight} <- Zog.Model.all_edges(builder), into: "" do
-      from_label = Zog.Model.id_to_label(builder, from_id)
-      to_label = Zog.Model.id_to_label(builder, to_id)
+    for {from_id, to_id, weight} <- Zog.SoA.all_edges(builder), into: "" do
+      from_label = Zog.SoA.id_to_label(builder, from_id)
+      to_label = Zog.SoA.id_to_label(builder, to_id)
       "#{from_label} #{to_label} #{weight}\n"
     end
   end
 
   defp serialize(builder, :tgf) do
     nodes_part =
-      for label <- Zog.Model.all_labels(builder), into: "" do
+      for label <- Zog.SoA.all_labels(builder), into: "" do
         "#{label}\n"
       end
 
     edges_part =
-      for {from_id, to_id, weight} <- Zog.Model.all_edges(builder), into: "" do
-        from_label = Zog.Model.id_to_label(builder, from_id)
-        to_label = Zog.Model.id_to_label(builder, to_id)
+      for {from_id, to_id, weight} <- Zog.SoA.all_edges(builder), into: "" do
+        from_label = Zog.SoA.id_to_label(builder, from_id)
+        to_label = Zog.SoA.id_to_label(builder, to_id)
         "#{from_label} #{to_label} #{weight}\n"
       end
 
@@ -71,13 +71,13 @@ defmodule Zog.IO do
     # Group edges by source
     grouped =
       Enum.group_by(
-        Zog.Model.all_edges(builder),
-        fn {from_id, _, _} -> Zog.Model.id_to_label(builder, from_id) end,
-        fn {_, to_id, weight} -> {Zog.Model.id_to_label(builder, to_id), weight} end
+        Zog.SoA.all_edges(builder),
+        fn {from_id, _, _} -> Zog.SoA.id_to_label(builder, from_id) end,
+        fn {_, to_id, weight} -> {Zog.SoA.id_to_label(builder, to_id), weight} end
       )
 
     # All nodes must be present, even if they have no neighbors
-    for label <- Zog.Model.all_labels(builder), into: "" do
+    for label <- Zog.SoA.all_labels(builder), into: "" do
       neighbors = Map.get(grouped, label, [])
 
       neighbors_str = Enum.map_join(neighbors, " ", fn {dst, w} -> "#{dst},#{w}" end)

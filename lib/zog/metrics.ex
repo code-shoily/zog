@@ -2,7 +2,7 @@ defmodule Zog.Metrics do
   @moduledoc """
   Native graph metrics backed by Zog (Zig) via Zigler.
   """
-  alias Zog.Model
+  alias Zog.SoA
 
   if Code.ensure_loaded?(Zig) do
     use Zig,
@@ -88,57 +88,57 @@ defmodule Zog.Metrics do
     @doc """
     Computes graph density.
     """
-    @spec density(Model.t()) :: float()
-    def density(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec density(SoA.t()) :: float()
+    def density(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
       density(node_count, from, to, weights)
     end
 
     @doc """
     Counts the number of triangles in the graph.
     """
-    @spec triangle_count(Model.t()) :: non_neg_integer()
-    def triangle_count(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec triangle_count(SoA.t()) :: non_neg_integer()
+    def triangle_count(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
       triangle_count(node_count, from, to, weights)
     end
 
     @doc """
     Computes the average clustering coefficient.
     """
-    @spec average_clustering_coefficient(Model.t()) :: float()
-    def average_clustering_coefficient(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec average_clustering_coefficient(SoA.t()) :: float()
+    def average_clustering_coefficient(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
       average_clustering_coefficient(node_count, from, to, weights)
     end
 
     @doc """
     Computes degree assortativity.
     """
-    @spec assortativity(Model.t()) :: float()
-    def assortativity(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec assortativity(SoA.t()) :: float()
+    def assortativity(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
       assortativity(node_count, from, to, weights)
     end
 
     @doc """
     Computes the local clustering coefficient for each node.
     """
-    @spec local_clustering_coefficient(Model.t()) :: %{
-            Model.label() => float()
+    @spec local_clustering_coefficient(SoA.t()) :: %{
+            SoA.label() => float()
           }
-    def local_clustering_coefficient(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    def local_clustering_coefficient(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
       scores = local_clustering_coefficient(node_count, from, to, weights)
 
       builder
-      |> Model.all_labels()
+      |> SoA.all_labels()
       |> Enum.zip(scores)
       |> Map.new()
     end

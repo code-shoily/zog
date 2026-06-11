@@ -1,4 +1,4 @@
-defmodule Zog.Model do
+defmodule Zog.SoA do
   @moduledoc """
   Build graphs for the native Zog (Zig) backend using arbitrary labels.
 
@@ -19,7 +19,7 @@ defmodule Zog.Model do
   @typedoc "Graph type"
   @type graph_type :: :directed | :undirected
 
-  @typedoc "Zog model struct"
+  @typedoc "Zog SoA struct"
   @type t :: %__MODULE__{
           kind: graph_type(),
           label_to_id: %{label() => id()},
@@ -38,19 +38,19 @@ defmodule Zog.Model do
   # ============= Constructors =============
 
   @doc """
-  Creates a new directed Zog model builder.
+  Creates a new directed Zog SoA builder.
   """
   @spec directed() :: t()
   def directed, do: new(:directed)
 
   @doc """
-  Creates a new undirected Zog model builder.
+  Creates a new undirected Zog SoA builder.
   """
   @spec undirected() :: t()
   def undirected, do: new(:undirected)
 
   @doc """
-  Creates a new Zog model builder of the specified type.
+  Creates a new Zog SoA builder of the specified type.
   """
   @spec new(graph_type()) :: t()
   def new(graph_type) do
@@ -230,7 +230,7 @@ defmodule Zog.Model do
   # ============= Yog Conversions (Optional) =============
   if Code.ensure_loaded?(Yog) do
     @doc """
-    Converts a `Yog.Graph` into a `Zog` model.
+    Converts a `Yog.Graph` into a `Zog.SoA` struct.
     """
     @spec from_graph(Yog.graph()) :: t()
     def from_graph(%Yog.Graph{kind: kind, nodes: nodes, out_edges: out_edges}) do
@@ -258,7 +258,7 @@ defmodule Zog.Model do
     end
 
     @doc """
-    Converts a `Yog.Builder.Labeled` into a `Zog` model.
+    Converts a `Yog.Builder.Labeled` into a `Zog.SoA` struct.
     """
     @spec from_labeled(Yog.Builder.Labeled.t()) :: t()
     def from_labeled(%Yog.Builder.Labeled{
@@ -286,7 +286,7 @@ defmodule Zog.Model do
     end
 
     @doc """
-    Converts the model back to a standard `Yog.Graph`.
+    Converts the SoA struct back to a standard `Yog.Graph`.
     """
     @spec to_graph(t()) :: Yog.graph()
     def to_graph(%__MODULE__{kind: kind, nodes: nodes, edges: edges}) do

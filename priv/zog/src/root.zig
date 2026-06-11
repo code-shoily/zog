@@ -2,6 +2,9 @@ const std = @import("std");
 
 pub const models = struct {
     pub const ArrayGraph = @import("models/array_graph.zig").ArrayGraph;
+    pub const GraphMap = @import("models/graph_map.zig").GraphMap;
+    pub const Direction = @import("models/graph_map.zig").Direction;
+    pub const Storage = @import("models/graph_map.zig").Storage;
 };
 
 pub const pathfinding = @import("pathfinding.zig");
@@ -28,6 +31,7 @@ test {
 
     // Explicitly reference all submodules so their tests are discovered.
     _ = @import("models/array_graph.zig");
+    _ = @import("models/graph_map.zig");
     _ = @import("pathfinding.zig");
     _ = @import("metrics.zig");
     _ = @import("centrality.zig");

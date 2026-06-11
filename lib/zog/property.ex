@@ -2,7 +2,7 @@ defmodule Zog.Property do
   @moduledoc """
   Native graph properties backed by Zog (Zig) via Zigler.
   """
-  alias Zog.Model
+  alias Zog.SoA
 
   if Code.ensure_loaded?(Zig) do
     use Zig,
@@ -70,12 +70,12 @@ defmodule Zog.Property do
     @doc """
     Finds all maximal cliques using native Bron-Kerbosch.
     """
-    @spec all_maximal_cliques(Model.t()) :: [MapSet.t(Model.label())]
-    def all_maximal_cliques(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec all_maximal_cliques(SoA.t()) :: [MapSet.t(SoA.label())]
+    def all_maximal_cliques(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
-      labels = Model.all_labels(builder)
+      labels = SoA.all_labels(builder)
       labels_tuple = List.to_tuple(labels)
 
       cliques_indices = all_maximal_cliques(node_count, from, to, weights)
@@ -90,8 +90,8 @@ defmodule Zog.Property do
     @doc """
     Finds the maximum clique using native Bron-Kerbosch.
     """
-    @spec max_clique(Model.t()) :: MapSet.t(Model.label())
-    def max_clique(%Model{} = builder) do
+    @spec max_clique(SoA.t()) :: MapSet.t(SoA.label())
+    def max_clique(%SoA{} = builder) do
       case all_maximal_cliques(builder) do
         [] -> MapSet.new()
         all_cliques -> Enum.max_by(all_cliques, &MapSet.size/1)
@@ -102,12 +102,12 @@ defmodule Zog.Property do
     Computes graph coloring using the DSatur heuristic natively.
     Returns `{chromatic_number, %{node_label => color}}`.
     """
-    @spec coloring_dsatur(Model.t()) :: {non_neg_integer(), %{Model.label() => non_neg_integer()}}
-    def coloring_dsatur(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec coloring_dsatur(SoA.t()) :: {non_neg_integer(), %{SoA.label() => non_neg_integer()}}
+    def coloring_dsatur(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
-      labels = Model.all_labels(builder)
+      labels = SoA.all_labels(builder)
       labels_tuple = List.to_tuple(labels)
 
       case nif_dsatur(node_count, from, to, weights) do
@@ -129,14 +129,14 @@ defmodule Zog.Property do
     @doc """
     Computes exact graph coloring natively using backtracking with pruning.
     """
-    @spec coloring_exact(Model.t(), non_neg_integer()) ::
-            {:ok, non_neg_integer(), %{Model.label() => non_neg_integer()}}
-            | {:timeout, {non_neg_integer(), %{Model.label() => non_neg_integer()}}}
-    def coloring_exact(%Model{} = builder, timeout_ms \\ 5000) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec coloring_exact(SoA.t(), non_neg_integer()) ::
+            {:ok, non_neg_integer(), %{SoA.label() => non_neg_integer()}}
+            | {:timeout, {non_neg_integer(), %{SoA.label() => non_neg_integer()}}}
+    def coloring_exact(%SoA{} = builder, timeout_ms \\ 5000) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
-      labels = Model.all_labels(builder)
+      labels = SoA.all_labels(builder)
       labels_tuple = List.to_tuple(labels)
 
       case nif_exact_coloring(node_count, from, to, weights, timeout_ms) do

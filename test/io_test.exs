@@ -2,8 +2,8 @@ defmodule Zog.IOTest do
   use ExUnit.Case, async: true
 
   alias Zog.IO, as: ZogIO
-  alias Zog.Model
   alias Zog.ResourceGraph
+  alias Zog.SoA
 
   @moduletag :zigler
 
@@ -13,7 +13,7 @@ defmodule Zog.IOTest do
 
       try do
         # wiki_vote has 7115 nodes
-        assert Model.node_count(res.builder) == 7115
+        assert SoA.node_count(res.builder) == 7115
 
         sccs = ResourceGraph.strongly_connected_components(res)
         assert length(sccs) == 5816
@@ -36,7 +36,7 @@ defmodule Zog.IOTest do
       res_edgelist = ZogIO.load(tmp_edgelist, format: :edgelist, directed: true)
 
       try do
-        assert Model.node_count(res_edgelist.builder) == 3
+        assert SoA.node_count(res_edgelist.builder) == 3
       after
         ResourceGraph.destroy(res_edgelist)
         File.rm!(tmp_edgelist)
@@ -49,7 +49,7 @@ defmodule Zog.IOTest do
       res_adjlist = ZogIO.load(tmp_adjlist, format: :adjlist, directed: true)
 
       try do
-        assert Model.node_count(res_adjlist.builder) == 3
+        assert SoA.node_count(res_adjlist.builder) == 3
       after
         ResourceGraph.destroy(res_adjlist)
         File.rm!(tmp_adjlist)
@@ -62,7 +62,7 @@ defmodule Zog.IOTest do
       res_tgf = ZogIO.load(tmp_tgf, format: :tgf, directed: true)
 
       try do
-        assert Model.node_count(res_tgf.builder) == 3
+        assert SoA.node_count(res_tgf.builder) == 3
       after
         ResourceGraph.destroy(res_tgf)
         File.rm!(tmp_tgf)

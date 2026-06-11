@@ -4,7 +4,7 @@ defmodule Zog.Community do
   """
   alias Zog.Community.Dendrogram
   alias Zog.Community.Result
-  alias Zog.Model
+  alias Zog.SoA
 
   if Code.ensure_loaded?(Zig) do
     use Zig,
@@ -175,12 +175,12 @@ defmodule Zog.Community do
     @doc """
     Detects communities using the Louvain algorithm.
     """
-    @spec louvain(Model.t(), keyword()) :: %{
-            Model.label() => non_neg_integer()
+    @spec louvain(SoA.t(), keyword()) :: %{
+            SoA.label() => non_neg_integer()
           }
-    def louvain(%Model{} = builder, opts \\ []) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    def louvain(%SoA{} = builder, opts \\ []) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
       min_modularity_gain = Keyword.get(opts, :min_modularity_gain, 0.000001)
       max_iterations = Keyword.get(opts, :max_iterations, 100)
@@ -195,12 +195,12 @@ defmodule Zog.Community do
     @doc """
     Detects communities using the Leiden algorithm.
     """
-    @spec leiden(Model.t(), keyword()) :: %{
-            Model.label() => non_neg_integer()
+    @spec leiden(SoA.t(), keyword()) :: %{
+            SoA.label() => non_neg_integer()
           }
-    def leiden(%Model{} = builder, opts \\ []) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    def leiden(%SoA{} = builder, opts \\ []) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
       min_modularity_gain = Keyword.get(opts, :min_modularity_gain, 0.000001)
       max_iterations = Keyword.get(opts, :max_iterations, 100)
@@ -216,10 +216,10 @@ defmodule Zog.Community do
     @doc """
     Full hierarchical Leiden detection returning a Dendrogram.
     """
-    @spec leiden_hierarchical(Model.t(), keyword()) :: Dendrogram.t()
-    def leiden_hierarchical(%Model{} = builder, opts \\ []) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec leiden_hierarchical(SoA.t(), keyword()) :: Dendrogram.t()
+    def leiden_hierarchical(%SoA{} = builder, opts \\ []) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
       min_modularity_gain = Keyword.get(opts, :min_modularity_gain, 0.000001)
       max_iterations = Keyword.get(opts, :max_iterations, 100)
@@ -250,14 +250,14 @@ defmodule Zog.Community do
     @doc """
     Computes the modularity of a given community partition.
     """
-    @spec modularity(Model.t(), %{Model.label() => non_neg_integer()}) :: float()
-    def modularity(%Model{} = builder, community_map) when is_map(community_map) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec modularity(SoA.t(), %{SoA.label() => non_neg_integer()}) :: float()
+    def modularity(%SoA{} = builder, community_map) when is_map(community_map) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
       assignments =
         builder
-        |> Model.all_labels()
+        |> SoA.all_labels()
         |> Enum.with_index()
         |> Enum.map(fn {label, _idx} ->
           Map.get(community_map, label, 0)
@@ -272,7 +272,7 @@ defmodule Zog.Community do
 
     defp map_assignments(builder, assignments) do
       builder
-      |> Model.all_labels()
+      |> SoA.all_labels()
       |> Enum.zip(assignments)
       |> Map.new()
     end

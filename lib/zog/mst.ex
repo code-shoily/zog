@@ -2,7 +2,7 @@ defmodule Zog.MST do
   @moduledoc """
   Native Minimum Spanning Tree (MST) algorithms backed by Zog (Zig) via Zigler.
   """
-  alias Zog.Model
+  alias Zog.SoA
 
   if Code.ensure_loaded?(Zig) do
     use Zig,
@@ -62,14 +62,14 @@ defmodule Zog.MST do
     @doc """
     Computes the Minimum Spanning Tree (MST) of an undirected graph natively using Kruskal's algorithm.
     """
-    @spec kruskal(Model.t()) :: {:ok, [Yog.MST.edge()]}
-    def kruskal(%Model{kind: :directed}) do
+    @spec kruskal(SoA.t()) :: {:ok, [Yog.MST.edge()]}
+    def kruskal(%SoA{kind: :directed}) do
       raise ArgumentError, "Kruskal's MST algorithm requires an undirected graph"
     end
 
-    def kruskal(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    def kruskal(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
       case nif_kruskal(node_count, from, to, weights) do
         {:ok, mst_from, mst_to, mst_weights} ->
@@ -77,8 +77,8 @@ defmodule Zog.MST do
             Enum.zip([mst_from, mst_to, mst_weights])
             |> Enum.map(fn {f_idx, t_idx, w} ->
               %{
-                from: Model.id_to_label(builder, f_idx),
-                to: Model.id_to_label(builder, t_idx),
+                from: SoA.id_to_label(builder, f_idx),
+                to: SoA.id_to_label(builder, t_idx),
                 weight: w
               }
             end)

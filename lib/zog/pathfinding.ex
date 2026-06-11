@@ -2,7 +2,7 @@ defmodule Zog.Pathfinding do
   @moduledoc """
   Native pathfinding algorithms backed by Zog (Zig) via Zigler.
   """
-  alias Zog.Model
+  alias Zog.SoA
 
   if Code.ensure_loaded?(Zig) do
     use Zig,
@@ -157,11 +157,11 @@ defmodule Zog.Pathfinding do
     @doc """
     Computes all-pairs shortest paths using the Floyd-Warshall algorithm.
     """
-    @spec floyd_warshall(Model.t()) ::
+    @spec floyd_warshall(SoA.t()) ::
             {:ok, [[float() | :infinity]]} | {:error, :negative_cycle}
-    def floyd_warshall(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    def floyd_warshall(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
       case floyd_warshall(node_count, from, to, weights) do
         {:ok, flat_matrix} ->
@@ -184,11 +184,11 @@ defmodule Zog.Pathfinding do
     @doc """
     Computes all-pairs shortest paths using Johnson's Algorithm.
     """
-    @spec johnsons(Model.t()) ::
+    @spec johnsons(SoA.t()) ::
             {:ok, [[float() | :infinity]]} | {:error, :negative_cycle}
-    def johnsons(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    def johnsons(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
       case johnsons(node_count, from, to, weights) do
         {:ok, flat_matrix} ->
@@ -211,21 +211,21 @@ defmodule Zog.Pathfinding do
     @doc """
     Computes the shortest path and its weight between two nodes using Dijkstra's algorithm.
     """
-    @spec dijkstra(Model.t(), Model.label(), Model.label()) ::
-            {:ok, {[Model.label()], float()}} | {:error, :no_path}
-    def dijkstra(%Model{} = builder, start_label, goal_label) do
+    @spec dijkstra(SoA.t(), SoA.label(), SoA.label()) ::
+            {:ok, {[SoA.label()], float()}} | {:error, :no_path}
+    def dijkstra(%SoA{} = builder, start_label, goal_label) do
       start_id = Map.get(builder.label_to_id, start_label)
       goal_id = Map.get(builder.label_to_id, goal_label)
 
       if is_nil(start_id) or is_nil(goal_id) do
         {:error, :no_path}
       else
-        node_count = Model.node_count(builder)
-        {from, to, weights} = Model.to_edge_arrays(builder)
+        node_count = SoA.node_count(builder)
+        {from, to, weights} = SoA.to_edge_arrays(builder)
 
         case nif_dijkstra(node_count, from, to, weights, start_id, goal_id) do
           {:ok, {path_ids, weight}} ->
-            path_labels = Enum.map(path_ids, &Model.id_to_label(builder, &1))
+            path_labels = Enum.map(path_ids, &SoA.id_to_label(builder, &1))
             {:ok, {path_labels, weight}}
 
           {:error, :no_path} ->
@@ -237,21 +237,21 @@ defmodule Zog.Pathfinding do
     @doc """
     Computes the shortest path and its weight between two nodes using Bellman-Ford algorithm.
     """
-    @spec bellman_ford(Model.t(), Model.label(), Model.label()) ::
-            {:ok, {[Model.label()], float()}} | {:error, :no_path} | {:error, :negative_cycle}
-    def bellman_ford(%Model{} = builder, start_label, goal_label) do
+    @spec bellman_ford(SoA.t(), SoA.label(), SoA.label()) ::
+            {:ok, {[SoA.label()], float()}} | {:error, :no_path} | {:error, :negative_cycle}
+    def bellman_ford(%SoA{} = builder, start_label, goal_label) do
       start_id = Map.get(builder.label_to_id, start_label)
       goal_id = Map.get(builder.label_to_id, goal_label)
 
       if is_nil(start_id) or is_nil(goal_id) do
         {:error, :no_path}
       else
-        node_count = Model.node_count(builder)
-        {from, to, weights} = Model.to_edge_arrays(builder)
+        node_count = SoA.node_count(builder)
+        {from, to, weights} = SoA.to_edge_arrays(builder)
 
         case nif_bellman_ford(node_count, from, to, weights, start_id, goal_id) do
           {:ok, {path_ids, weight}} ->
-            path_labels = Enum.map(path_ids, &Model.id_to_label(builder, &1))
+            path_labels = Enum.map(path_ids, &SoA.id_to_label(builder, &1))
             {:ok, {path_labels, weight}}
 
           {:error, :no_path} ->

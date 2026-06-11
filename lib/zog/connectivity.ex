@@ -2,7 +2,7 @@ defmodule Zog.Connectivity do
   @moduledoc """
   Native graph connectivity algorithms backed by Zog (Zig) via Zigler.
   """
-  alias Zog.Model
+  alias Zog.SoA
 
   if Code.ensure_loaded?(Zig) do
     use Zig,
@@ -76,12 +76,12 @@ defmodule Zog.Connectivity do
     @doc """
     Calculates all core numbers for all nodes in the graph natively.
     """
-    @spec core_numbers(Model.t()) :: %{Model.label() => integer()}
-    def core_numbers(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec core_numbers(SoA.t()) :: %{SoA.label() => integer()}
+    def core_numbers(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
-      labels = Model.all_labels(builder)
+      labels = SoA.all_labels(builder)
       labels_tuple = List.to_tuple(labels)
 
       case nif_core_numbers(node_count, from, to, weights) do
@@ -99,12 +99,12 @@ defmodule Zog.Connectivity do
     Finds strongly connected components in the graph natively.
     Returns a list of lists of node labels.
     """
-    @spec strongly_connected_components(Model.t()) :: [[Model.label()]]
-    def strongly_connected_components(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec strongly_connected_components(SoA.t()) :: [[SoA.label()]]
+    def strongly_connected_components(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
-      labels = Model.all_labels(builder)
+      labels = SoA.all_labels(builder)
 
       case nif_strongly_connected_components(node_count, from, to, weights) do
         [] ->
@@ -121,8 +121,8 @@ defmodule Zog.Connectivity do
     @doc """
     Detects the k-core of a graph natively.
     """
-    @spec detect(Model.t(), integer()) :: Model.t()
-    def detect(%Model{} = builder, k) when k >= 0 do
+    @spec detect(SoA.t(), integer()) :: SoA.t()
+    def detect(%SoA{} = builder, k) when k >= 0 do
       if builder.kind == :directed do
         raise ArgumentError, "k-core decomposition requires an undirected graph"
       end
@@ -136,15 +136,15 @@ defmodule Zog.Connectivity do
         |> MapSet.new()
 
       new_builder =
-        Enum.reduce(keep_labels, Model.undirected(), fn label, acc ->
-          Model.add_node(acc, label)
+        Enum.reduce(keep_labels, SoA.undirected(), fn label, acc ->
+          SoA.add_node(acc, label)
         end)
 
-      edges = Model.all_edges(builder)
+      edges = SoA.all_edges(builder)
 
       Enum.reduce(edges, new_builder, fn {u_id, v_id, w}, acc ->
-        u = Model.id_to_label(builder, u_id)
-        v = Model.id_to_label(builder, v_id)
+        u = SoA.id_to_label(builder, u_id)
+        v = SoA.id_to_label(builder, v_id)
 
         add_edge_if_kept(
           acc,
@@ -156,23 +156,23 @@ defmodule Zog.Connectivity do
       end)
     end
 
-    defp add_edge_if_kept(acc, u, v, w, true), do: Model.add_edge(acc, u, v, w)
+    defp add_edge_if_kept(acc, u, v, w, true), do: SoA.add_edge(acc, u, v, w)
     defp add_edge_if_kept(acc, _, _, _, false), do: acc
 
-    @type bridge :: {Model.label(), Model.label()}
+    @type bridge :: {SoA.label(), SoA.label()}
 
     @doc """
     Analyzes an undirected graph natively to find all bridges and articulation points.
     """
-    @spec analyze(Model.t()) :: %{
+    @spec analyze(SoA.t()) :: %{
             bridges: [bridge()],
-            articulation_points: [Model.label()]
+            articulation_points: [SoA.label()]
           }
-    def analyze(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    def analyze(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
-      labels = Model.all_labels(builder)
+      labels = SoA.all_labels(builder)
       labels_tuple = List.to_tuple(labels)
 
       case nif_analyze_connectivity(node_count, from, to, weights) do

@@ -8,7 +8,7 @@ defmodule Zog.ResourceGraph do
   """
   alias Zog.Community.Dendrogram
   alias Zog.Community.Result
-  alias Zog.Model
+  alias Zog.SoA
 
   if Code.ensure_loaded?(Zig) do
     use Zig,
@@ -703,16 +703,16 @@ defmodule Zog.ResourceGraph do
     @typedoc "A native graph resource together with its label mapping."
     @type t :: %{
             resource: reference(),
-            builder: Model.t()
+            builder: SoA.t()
           }
 
     @doc """
-    Builds a native graph resource from a `Model`.
+    Builds a native graph resource from a `SoA`.
     """
-    @spec new(Model.t()) :: t()
-    def new(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec new(SoA.t()) :: t()
+    def new(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
       %{
         resource: new(node_count, from, to, weights),
@@ -727,7 +727,7 @@ defmodule Zog.ResourceGraph do
       @spec from_yog(Yog.graph()) :: t()
       def from_yog(yog_graph) do
         yog_graph
-        |> Model.from_graph()
+        |> SoA.from_graph()
         |> new()
       end
 
@@ -807,7 +807,7 @@ defmodule Zog.ResourceGraph do
       label_to_id = labels |> Enum.with_index() |> Map.new()
       id_to_label = labels |> Enum.with_index() |> Map.new(fn {l, i} -> {i, l} end)
 
-      builder = %Model{
+      builder = %SoA{
         kind: kind,
         label_to_id: label_to_id,
         id_to_label: id_to_label,
@@ -834,7 +834,7 @@ defmodule Zog.ResourceGraph do
     @doc """
     Unweighted betweenness centrality.
     """
-    @spec betweenness_unweighted(t()) :: %{Model.label() => float()}
+    @spec betweenness_unweighted(t()) :: %{SoA.label() => float()}
     def betweenness_unweighted(%{resource: res, builder: builder}) do
       raw_scores = nif_betweenness_unweighted(res)
       scores = maybe_scale_undirected(builder, raw_scores)
@@ -844,7 +844,7 @@ defmodule Zog.ResourceGraph do
     @doc """
     Weighted betweenness centrality.
     """
-    @spec betweenness_f64(t()) :: %{Model.label() => float()}
+    @spec betweenness_f64(t()) :: %{SoA.label() => float()}
     def betweenness_f64(%{resource: res, builder: builder}) do
       raw_scores = nif_betweenness_f64(res)
       scores = maybe_scale_undirected(builder, raw_scores)
@@ -854,7 +854,7 @@ defmodule Zog.ResourceGraph do
     @doc """
     Closeness centrality.
     """
-    @spec closeness_f64(t()) :: %{Model.label() => float()}
+    @spec closeness_f64(t()) :: %{SoA.label() => float()}
     def closeness_f64(%{resource: res, builder: builder}) do
       scores = nif_closeness_f64(res)
       map_scores(builder, scores)
@@ -863,7 +863,7 @@ defmodule Zog.ResourceGraph do
     @doc """
     Harmonic centrality.
     """
-    @spec harmonic_centrality_f64(t()) :: %{Model.label() => float()}
+    @spec harmonic_centrality_f64(t()) :: %{SoA.label() => float()}
     def harmonic_centrality_f64(%{resource: res, builder: builder}) do
       scores = nif_harmonic_centrality_f64(res)
       map_scores(builder, scores)
@@ -872,7 +872,7 @@ defmodule Zog.ResourceGraph do
     @doc """
     PageRank centrality.
     """
-    @spec pagerank(t(), keyword()) :: %{Model.label() => float()}
+    @spec pagerank(t(), keyword()) :: %{SoA.label() => float()}
     def pagerank(%{resource: res, builder: builder}, opts \\ []) do
       damping = Keyword.get(opts, :damping, 0.85)
       max_iterations = Keyword.get(opts, :max_iterations, 100)
@@ -885,7 +885,7 @@ defmodule Zog.ResourceGraph do
     @doc """
     Eigenvector centrality.
     """
-    @spec eigenvector(t(), keyword()) :: %{Model.label() => float()}
+    @spec eigenvector(t(), keyword()) :: %{SoA.label() => float()}
     def eigenvector(%{resource: res, builder: builder}, opts \\ []) do
       max_iterations = Keyword.get(opts, :max_iterations, 100)
       tolerance = Keyword.get(opts, :tolerance, 0.0001)
@@ -897,7 +897,7 @@ defmodule Zog.ResourceGraph do
     @doc """
     Katz centrality.
     """
-    @spec katz(t(), keyword()) :: %{Model.label() => float()}
+    @spec katz(t(), keyword()) :: %{SoA.label() => float()}
     def katz(%{resource: res, builder: builder}, opts \\ []) do
       alpha = Keyword.get(opts, :alpha, 0.1)
       beta = Keyword.get(opts, :beta, 1.0)
@@ -911,7 +911,7 @@ defmodule Zog.ResourceGraph do
     @doc """
     Alpha centrality.
     """
-    @spec alpha_centrality(t(), keyword()) :: %{Model.label() => float()}
+    @spec alpha_centrality(t(), keyword()) :: %{SoA.label() => float()}
     def alpha_centrality(%{resource: res, builder: builder}, opts \\ []) do
       alpha = Keyword.get(opts, :alpha, 0.5)
       initial = Keyword.get(opts, :initial, 1.0)
@@ -925,7 +925,7 @@ defmodule Zog.ResourceGraph do
     @doc """
     Louvain community detection.
     """
-    @spec louvain(t(), keyword()) :: %{Model.label() => non_neg_integer()}
+    @spec louvain(t(), keyword()) :: %{SoA.label() => non_neg_integer()}
     def louvain(%{resource: res, builder: builder}, opts \\ []) do
       min_modularity_gain = Keyword.get(opts, :min_modularity_gain, 0.000001)
       max_iterations = Keyword.get(opts, :max_iterations, 100)
@@ -938,7 +938,7 @@ defmodule Zog.ResourceGraph do
     @doc """
     Leiden community detection.
     """
-    @spec leiden(t(), keyword()) :: %{Model.label() => non_neg_integer()}
+    @spec leiden(t(), keyword()) :: %{SoA.label() => non_neg_integer()}
     def leiden(%{resource: res, builder: builder}, opts \\ []) do
       min_modularity_gain = Keyword.get(opts, :min_modularity_gain, 0.000001)
       max_iterations = Keyword.get(opts, :max_iterations, 100)
@@ -973,12 +973,12 @@ defmodule Zog.ResourceGraph do
     @doc """
     Computes modularity for a given community partition.
     """
-    @spec modularity(t(), %{Model.label() => non_neg_integer()}) :: float()
+    @spec modularity(t(), %{SoA.label() => non_neg_integer()}) :: float()
     def modularity(%{resource: res, builder: builder}, community_map)
         when is_map(community_map) do
       assignments =
         builder
-        |> Model.all_labels()
+        |> SoA.all_labels()
         |> Enum.map(fn label -> Map.get(community_map, label, 0) end)
 
       modularity_f64(res, assignments)
@@ -989,7 +989,7 @@ defmodule Zog.ResourceGraph do
     """
     @spec floyd_warshall(t()) :: {:ok, [[float()]]} | {:error, :negative_cycle}
     def floyd_warshall(%{resource: res, builder: builder}) do
-      node_count = Model.node_count(builder)
+      node_count = SoA.node_count(builder)
 
       case nif_floyd_warshall(res) do
         {:ok, flat_matrix} ->
@@ -1014,7 +1014,7 @@ defmodule Zog.ResourceGraph do
     """
     @spec johnsons(t()) :: {:ok, [[float()]]} | {:error, :negative_cycle}
     def johnsons(%{resource: res, builder: builder}) do
-      node_count = Model.node_count(builder)
+      node_count = SoA.node_count(builder)
 
       case nif_johnsons(res) do
         {:ok, flat_matrix} ->
@@ -1037,8 +1037,8 @@ defmodule Zog.ResourceGraph do
     @doc """
     Computes the shortest path and its weight between two nodes using Dijkstra's algorithm directly on the native graph resource.
     """
-    @spec dijkstra(t(), Model.label(), Model.label()) ::
-            {:ok, {[Model.label()], float()}} | {:error, :no_path}
+    @spec dijkstra(t(), SoA.label(), SoA.label()) ::
+            {:ok, {[SoA.label()], float()}} | {:error, :no_path}
     def dijkstra(%{resource: res, builder: builder}, start_label, goal_label) do
       start_id = Map.get(builder.label_to_id, start_label)
       goal_id = Map.get(builder.label_to_id, goal_label)
@@ -1048,7 +1048,7 @@ defmodule Zog.ResourceGraph do
       else
         case nif_dijkstra(res, start_id, goal_id) do
           {:ok, {path_ids, weight}} ->
-            path_labels = Enum.map(path_ids, &Model.id_to_label(builder, &1))
+            path_labels = Enum.map(path_ids, &SoA.id_to_label(builder, &1))
             {:ok, {path_labels, weight}}
 
           {:error, :no_path} ->
@@ -1060,8 +1060,8 @@ defmodule Zog.ResourceGraph do
     @doc """
     Computes the shortest path and its weight between two nodes using Bellman-Ford algorithm directly on the native graph resource.
     """
-    @spec bellman_ford(t(), Model.label(), Model.label()) ::
-            {:ok, {[Model.label()], float()}} | {:error, :no_path} | {:error, :negative_cycle}
+    @spec bellman_ford(t(), SoA.label(), SoA.label()) ::
+            {:ok, {[SoA.label()], float()}} | {:error, :no_path} | {:error, :negative_cycle}
     def bellman_ford(%{resource: res, builder: builder}, start_label, goal_label) do
       start_id = Map.get(builder.label_to_id, start_label)
       goal_id = Map.get(builder.label_to_id, goal_label)
@@ -1071,7 +1071,7 @@ defmodule Zog.ResourceGraph do
       else
         case nif_bellman_ford(res, start_id, goal_id) do
           {:ok, {path_ids, weight}} ->
-            path_labels = Enum.map(path_ids, &Model.id_to_label(builder, &1))
+            path_labels = Enum.map(path_ids, &SoA.id_to_label(builder, &1))
             {:ok, {path_labels, weight}}
 
           {:error, :no_path} ->
@@ -1110,7 +1110,7 @@ defmodule Zog.ResourceGraph do
     @doc """
     Local clustering coefficient for each node.
     """
-    @spec local_clustering_coefficient(t()) :: %{Model.label() => float()}
+    @spec local_clustering_coefficient(t()) :: %{SoA.label() => float()}
     def local_clustering_coefficient(%{resource: res, builder: builder}) do
       scores = nif_local_clustering_coefficient(res)
       map_scores(builder, scores)
@@ -1127,9 +1127,9 @@ defmodule Zog.ResourceGraph do
     @doc """
     Calculates all core numbers for all nodes in the ResourceGraph.
     """
-    @spec core_numbers(t()) :: %{Model.label() => integer()}
+    @spec core_numbers(t()) :: %{SoA.label() => integer()}
     def core_numbers(%{resource: res, builder: builder}) do
-      labels = Model.all_labels(builder)
+      labels = SoA.all_labels(builder)
       labels_tuple = List.to_tuple(labels)
 
       case nif_core_numbers(res) do
@@ -1147,7 +1147,7 @@ defmodule Zog.ResourceGraph do
     Finds strongly connected components in the ResourceGraph natively.
     Returns a list of lists of node labels.
     """
-    @spec strongly_connected_components(t()) :: [[Model.label()]]
+    @spec strongly_connected_components(t()) :: [[SoA.label()]]
     def strongly_connected_components(%{resource: res, builder: builder}) do
       case nif_strongly_connected_components(res) do
         [] ->
@@ -1162,7 +1162,7 @@ defmodule Zog.ResourceGraph do
     Computes the Minimum Spanning Tree (MST) of an undirected ResourceGraph natively using Kruskal's algorithm.
     """
     @spec kruskal(t()) :: {:ok, [Yog.MST.edge()]}
-    def kruskal(%{builder: %Model{kind: :directed}}) do
+    def kruskal(%{builder: %SoA{kind: :directed}}) do
       raise ArgumentError, "Kruskal's MST algorithm requires an undirected graph"
     end
 
@@ -1173,8 +1173,8 @@ defmodule Zog.ResourceGraph do
             Enum.zip([mst_from, mst_to, mst_weights])
             |> Enum.map(fn {f_idx, t_idx, w} ->
               %{
-                from: Model.id_to_label(builder, f_idx),
-                to: Model.id_to_label(builder, t_idx),
+                from: SoA.id_to_label(builder, f_idx),
+                to: SoA.id_to_label(builder, t_idx),
                 weight: w
               }
             end)
@@ -1187,11 +1187,11 @@ defmodule Zog.ResourceGraph do
     Analyzes an undirected ResourceGraph natively to find all bridges and articulation points.
     """
     @spec analyze(t()) :: %{
-            bridges: [{Model.label(), Model.label()}],
-            articulation_points: [Model.label()]
+            bridges: [{SoA.label(), SoA.label()}],
+            articulation_points: [SoA.label()]
           }
     def analyze(%{resource: res, builder: builder}) do
-      labels = Model.all_labels(builder)
+      labels = SoA.all_labels(builder)
       labels_tuple = List.to_tuple(labels)
 
       case nif_analyze_connectivity(res) do
@@ -1215,15 +1215,15 @@ defmodule Zog.ResourceGraph do
     @doc """
     Computes the maximum flow and minimum cut natively on a `ResourceGraph`.
     """
-    @spec max_flow(t(), Model.label(), Model.label(), atom()) :: %{
+    @spec max_flow(t(), SoA.label(), SoA.label(), atom()) :: %{
             max_flow: float(),
-            residual_graph: Model.t(),
-            source_side: list(Model.label()),
-            sink_side: list(Model.label())
+            residual_graph: SoA.t(),
+            source_side: list(SoA.label()),
+            sink_side: list(SoA.label())
           }
     def max_flow(%{resource: res, builder: builder}, source, sink, algorithm \\ :edmonds_karp) do
-      source_idx = Model.label_to_id(builder, source)
-      sink_idx = Model.label_to_id(builder, sink)
+      source_idx = SoA.label_to_id(builder, source)
+      sink_idx = SoA.label_to_id(builder, sink)
 
       if is_nil(source_idx) or is_nil(sink_idx) do
         raise ArgumentError, "source or sink node not found in graph"
@@ -1238,15 +1238,15 @@ defmodule Zog.ResourceGraph do
             nif_max_flow(res, source_idx, sink_idx)
         end
 
-      source_side = Enum.map(result.source_side, &Model.id_to_label(builder, &1))
-      sink_side = Enum.map(result.sink_side, &Model.id_to_label(builder, &1))
+      source_side = Enum.map(result.source_side, &SoA.id_to_label(builder, &1))
+      sink_side = Enum.map(result.sink_side, &SoA.id_to_label(builder, &1))
 
       residual_graph =
         Enum.zip([result.residual_from, result.residual_to, result.residual_cap])
-        |> Enum.reduce(Model.directed(), fn {f_idx, t_idx, cap}, g ->
-          f_lbl = Model.id_to_label(builder, f_idx)
-          t_lbl = Model.id_to_label(builder, t_idx)
-          Model.add_edge(g, f_lbl, t_lbl, cap)
+        |> Enum.reduce(SoA.directed(), fn {f_idx, t_idx, cap}, g ->
+          f_lbl = SoA.id_to_label(builder, f_idx)
+          t_lbl = SoA.id_to_label(builder, t_idx)
+          SoA.add_edge(g, f_lbl, t_lbl, cap)
         end)
 
       %{
@@ -1262,14 +1262,14 @@ defmodule Zog.ResourceGraph do
     """
     @spec global_min_cut(t()) :: %{
             cut_value: float(),
-            source_side: list(Model.label()),
-            sink_side: list(Model.label())
+            source_side: list(SoA.label()),
+            sink_side: list(SoA.label())
           }
     def global_min_cut(%{resource: res, builder: builder}) do
       result = nif_global_min_cut(res)
 
-      source_side = Enum.map(result.source_side, &Model.id_to_label(builder, &1))
-      sink_side = Enum.map(result.sink_side, &Model.id_to_label(builder, &1))
+      source_side = Enum.map(result.source_side, &SoA.id_to_label(builder, &1))
+      sink_side = Enum.map(result.sink_side, &SoA.id_to_label(builder, &1))
 
       %{
         cut_value: result.cut_value,
@@ -1284,19 +1284,19 @@ defmodule Zog.ResourceGraph do
 
     defp map_scores(builder, scores) do
       builder
-      |> Model.all_labels()
+      |> SoA.all_labels()
       |> Enum.zip(scores)
       |> Map.new()
     end
 
     defp map_assignments(builder, assignments) do
       builder
-      |> Model.all_labels()
+      |> SoA.all_labels()
       |> Enum.zip(assignments)
       |> Map.new()
     end
 
-    defp maybe_scale_undirected(%Model{kind: :undirected}, scores) do
+    defp maybe_scale_undirected(%SoA{kind: :undirected}, scores) do
       Enum.map(scores, fn score -> score * 0.5 end)
     end
 
@@ -1307,7 +1307,7 @@ defmodule Zog.ResourceGraph do
 
     defp group_sccs(builder, assignments) do
       builder
-      |> Model.all_labels()
+      |> SoA.all_labels()
       |> Enum.zip(assignments)
       |> Enum.group_by(fn {_lbl, comp} -> comp end, fn {lbl, _comp} -> lbl end)
       |> Map.values()

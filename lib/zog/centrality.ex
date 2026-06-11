@@ -2,7 +2,7 @@ defmodule Zog.Centrality do
   @moduledoc """
   Native centrality algorithms backed by Zog (Zig) via Zigler.
   """
-  alias Zog.Model
+  alias Zog.SoA
   require Logger
 
   if Code.ensure_loaded?(Zig) do
@@ -187,9 +187,10 @@ defmodule Zog.Centrality do
     Calculates unweighted Betweenness Centrality for all nodes.
     """
     @spec betweenness_unweighted(Model.t()) :: %{Model.label() => float()}
-    def betweenness_unweighted(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, _weights} = Model.to_edge_arrays(builder)
+    @spec betweenness_unweighted(SoA.t()) :: %{SoA.label() => float()}
+    def betweenness_unweighted(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, _weights} = SoA.to_edge_arrays(builder)
       raw_scores = betweenness_unweighted(node_count, from, to)
       scores = maybe_scale_undirected(builder, raw_scores)
       map_scores(builder, scores)
@@ -198,10 +199,10 @@ defmodule Zog.Centrality do
     @doc """
     Calculates weighted Betweenness Centrality for all nodes.
     """
-    @spec betweenness_f64(Model.t()) :: %{Model.label() => float()}
-    def betweenness_f64(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec betweenness_f64(SoA.t()) :: %{SoA.label() => float()}
+    def betweenness_f64(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
       raw_scores = betweenness_f64(node_count, from, to, weights)
       scores = maybe_scale_undirected(builder, raw_scores)
       map_scores(builder, scores)
@@ -210,10 +211,10 @@ defmodule Zog.Centrality do
     @doc """
     Calculates Closeness Centrality for all nodes.
     """
-    @spec closeness_f64(Model.t()) :: %{Model.label() => float()}
-    def closeness_f64(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec closeness_f64(SoA.t()) :: %{SoA.label() => float()}
+    def closeness_f64(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
       scores = closeness_f64(node_count, from, to, weights)
       map_scores(builder, scores)
     end
@@ -221,10 +222,10 @@ defmodule Zog.Centrality do
     @doc """
     Calculates Harmonic Centrality for all nodes.
     """
-    @spec harmonic_centrality_f64(Model.t()) :: %{Model.label() => float()}
-    def harmonic_centrality_f64(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec harmonic_centrality_f64(SoA.t()) :: %{SoA.label() => float()}
+    def harmonic_centrality_f64(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
       scores = harmonic_centrality_f64(node_count, from, to, weights)
       map_scores(builder, scores)
     end
@@ -232,10 +233,10 @@ defmodule Zog.Centrality do
     @doc """
     Calculates PageRank centrality for all nodes.
     """
-    @spec pagerank(Model.t(), keyword()) :: %{Model.label() => float()}
-    def pagerank(%Model{} = builder, opts \\ []) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec pagerank(SoA.t(), keyword()) :: %{SoA.label() => float()}
+    def pagerank(%SoA{} = builder, opts \\ []) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
       damping = Keyword.get(opts, :damping, 0.85)
       max_iterations = Keyword.get(opts, :max_iterations, 100)
@@ -248,10 +249,10 @@ defmodule Zog.Centrality do
     @doc """
     Calculates Eigenvector Centrality for all nodes.
     """
-    @spec eigenvector(Model.t(), keyword()) :: %{Model.label() => float()}
-    def eigenvector(%Model{} = builder, opts \\ []) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec eigenvector(SoA.t(), keyword()) :: %{SoA.label() => float()}
+    def eigenvector(%SoA{} = builder, opts \\ []) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
       max_iterations = Keyword.get(opts, :max_iterations, 100)
       tolerance = Keyword.get(opts, :tolerance, 0.0001)
@@ -276,10 +277,10 @@ defmodule Zog.Centrality do
     @doc """
     Calculates Katz Centrality for all nodes.
     """
-    @spec katz(Model.t(), keyword()) :: %{Model.label() => float()}
-    def katz(%Model{} = builder, opts \\ []) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    @spec katz(SoA.t(), keyword()) :: %{SoA.label() => float()}
+    def katz(%SoA{} = builder, opts \\ []) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
       alpha = Keyword.get(opts, :alpha, 0.1)
       beta = Keyword.get(opts, :beta, 1.0)
@@ -293,12 +294,12 @@ defmodule Zog.Centrality do
     @doc """
     Calculates Alpha Centrality for all nodes.
     """
-    @spec alpha_centrality(Model.t(), keyword()) :: %{
-            Model.label() => float()
+    @spec alpha_centrality(SoA.t(), keyword()) :: %{
+            SoA.label() => float()
           }
-    def alpha_centrality(%Model{} = builder, opts \\ []) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    def alpha_centrality(%SoA{} = builder, opts \\ []) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
       alpha = Keyword.get(opts, :alpha, 0.5)
       initial = Keyword.get(opts, :initial, 1.0)
@@ -317,12 +318,12 @@ defmodule Zog.Centrality do
 
     defp map_scores(builder, scores) do
       builder
-      |> Model.all_labels()
+      |> SoA.all_labels()
       |> Enum.zip(scores)
       |> Map.new()
     end
 
-    defp maybe_scale_undirected(%Model{kind: :undirected}, scores) do
+    defp maybe_scale_undirected(%SoA{kind: :undirected}, scores) do
       Enum.map(scores, fn score -> score * 0.5 end)
     end
 

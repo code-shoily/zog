@@ -2,7 +2,7 @@ defmodule Zog.Flow do
   @moduledoc """
   Native network flow and cut algorithms backed by Zog (Zig) via Zigler.
   """
-  alias Zog.Model
+  alias Zog.SoA
 
   if Code.ensure_loaded?(Zig) do
     use Zig,
@@ -179,19 +179,19 @@ defmodule Zog.Flow do
     @doc """
     Computes the maximum flow and minimum cut from source to sink in the network using the native Zog backend.
     """
-    @spec max_flow(Model.t(), Model.label(), Model.label(), atom()) ::
+    @spec max_flow(SoA.t(), SoA.label(), SoA.label(), atom()) ::
             %{
               max_flow: float(),
-              residual_graph: Model.t(),
-              source_side: list(Model.label()),
-              sink_side: list(Model.label())
+              residual_graph: SoA.t(),
+              source_side: list(SoA.label()),
+              sink_side: list(SoA.label())
             }
-    def max_flow(%Model{} = builder, source, sink, algorithm \\ :edmonds_karp) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    def max_flow(%SoA{} = builder, source, sink, algorithm \\ :edmonds_karp) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
-      source_idx = Model.label_to_id(builder, source)
-      sink_idx = Model.label_to_id(builder, sink)
+      source_idx = SoA.label_to_id(builder, source)
+      sink_idx = SoA.label_to_id(builder, sink)
 
       if is_nil(source_idx) or is_nil(sink_idx) do
         raise ArgumentError, "source or sink node not found in graph"
@@ -206,15 +206,15 @@ defmodule Zog.Flow do
             edmonds_karp_f64(node_count, from, to, weights, source_idx, sink_idx)
         end
 
-      source_side = Enum.map(result.source_side, &Model.id_to_label(builder, &1))
-      sink_side = Enum.map(result.sink_side, &Model.id_to_label(builder, &1))
+      source_side = Enum.map(result.source_side, &SoA.id_to_label(builder, &1))
+      sink_side = Enum.map(result.sink_side, &SoA.id_to_label(builder, &1))
 
       residual_graph =
         Enum.zip([result.residual_from, result.residual_to, result.residual_cap])
-        |> Enum.reduce(Model.directed(), fn {f_idx, t_idx, cap}, g ->
-          f_lbl = Model.id_to_label(builder, f_idx)
-          t_lbl = Model.id_to_label(builder, t_idx)
-          Model.add_edge(g, f_lbl, t_lbl, cap)
+        |> Enum.reduce(SoA.directed(), fn {f_idx, t_idx, cap}, g ->
+          f_lbl = SoA.id_to_label(builder, f_idx)
+          t_lbl = SoA.id_to_label(builder, t_idx)
+          SoA.add_edge(g, f_lbl, t_lbl, cap)
         end)
 
       %{
@@ -228,19 +228,19 @@ defmodule Zog.Flow do
     @doc """
     Computes the global minimum cut of an undirected weighted network using the Stoer-Wagner algorithm.
     """
-    @spec global_min_cut(Model.t()) :: %{
+    @spec global_min_cut(SoA.t()) :: %{
             cut_value: float(),
-            source_side: list(Model.label()),
-            sink_side: list(Model.label())
+            source_side: list(SoA.label()),
+            sink_side: list(SoA.label())
           }
-    def global_min_cut(%Model{} = builder) do
-      node_count = Model.node_count(builder)
-      {from, to, weights} = Model.to_edge_arrays(builder)
+    def global_min_cut(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
 
       result = global_min_cut_f64(node_count, from, to, weights)
 
-      source_side = Enum.map(result.source_side, &Model.id_to_label(builder, &1))
-      sink_side = Enum.map(result.sink_side, &Model.id_to_label(builder, &1))
+      source_side = Enum.map(result.source_side, &SoA.id_to_label(builder, &1))
+      sink_side = Enum.map(result.sink_side, &SoA.id_to_label(builder, &1))
 
       %{
         cut_value: result.cut_value,
