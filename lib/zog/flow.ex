@@ -1,0 +1,266 @@
+defmodule Zog.Flow do
+  @moduledoc """
+  Native network flow and cut algorithms backed by Zog (Zig) via Zigler.
+  """
+  alias Zog.Model
+
+  if Code.ensure_loaded?(Zig) do
+    use Zig,
+      otp_app: :zog,
+      extra_modules: [zog: {"../../priv/zog/src/root.zig", []}],
+      nifs: [
+        edmonds_karp_f64: [concurrency: :dirty_cpu],
+        global_min_cut_f64: [concurrency: :dirty_cpu],
+        push_relabel_f64: [concurrency: :dirty_cpu]
+      ]
+
+    ~Z"""
+    const std = @import("std");
+    const beam = @import("beam");
+    const zog = @import("zog");
+
+    const FlowNifResult = struct {
+        max_flow: f64,
+        residual_from: []u32,
+        residual_to: []u32,
+        residual_cap: []f64,
+        source_side: []u32,
+        sink_side: []u32,
+    };
+
+    fn buildGraph(
+        allocator: std.mem.Allocator,
+        node_count: usize,
+        from: []u32,
+        to: []u32,
+        capacity: []f64,
+    ) !zog.models.ArrayGraph(void, f64) {
+        const ArrayGraph = zog.models.ArrayGraph;
+        var g = ArrayGraph(void, f64).init(allocator);
+        errdefer g.deinit();
+
+        try g.nodes.ensureTotalCapacity(allocator, node_count);
+        try g.edges.ensureTotalCapacity(allocator, from.len);
+
+        for (0..node_count) |_| {
+            _ = try g.addNode({});
+        }
+
+        for (from, to, capacity) |f, t, w| {
+            _ = try g.addEdge(f, t, w);
+        }
+
+        return g;
+    }
+
+    fn toFlowNifResult(
+        allocator: std.mem.Allocator,
+        max_flow: f64,
+        residual: anytype,
+        source_side: []u32,
+        sink_side: []u32,
+    ) !FlowNifResult {
+        const res_count = residual.count();
+        var res_from = try allocator.alloc(u32, res_count);
+        errdefer allocator.free(res_from);
+        var res_to = try allocator.alloc(u32, res_count);
+        errdefer allocator.free(res_to);
+        var res_cap = try allocator.alloc(f64, res_count);
+        errdefer allocator.free(res_cap);
+
+        var it = residual.iterator();
+        var idx: usize = 0;
+        while (it.next()) |entry| {
+            res_from[idx] = entry.key_ptr.from;
+            res_to[idx] = entry.key_ptr.to;
+            res_cap[idx] = entry.value_ptr.*;
+            idx += 1;
+        }
+
+        const ss = try allocator.alloc(u32, source_side.len);
+        errdefer allocator.free(ss);
+        @memcpy(ss, source_side);
+
+        const sk = try allocator.alloc(u32, sink_side.len);
+        errdefer allocator.free(sk);
+        @memcpy(sk, sink_side);
+
+        return .{
+            .max_flow = max_flow,
+            .residual_from = res_from,
+            .residual_to = res_to,
+            .residual_cap = res_cap,
+            .source_side = ss,
+            .sink_side = sk,
+        };
+    }
+
+    pub fn edmonds_karp_f64(
+        node_count: usize,
+        from: []u32,
+        to: []u32,
+        capacity: []f64,
+        source: u32,
+        sink: u32,
+    ) !FlowNifResult {
+        const allocator = beam.allocator;
+        var g = try buildGraph(allocator, node_count, from, to, capacity);
+        defer g.deinit();
+
+        var result = try zog.flow.max_flow.edmondsKarpF64(allocator, g, source, sink);
+        defer result.deinit(allocator);
+
+        var cut = try zog.flow.max_flow.minCut(allocator, result, f64, 0.0, zog.utils.compareF64);
+        defer cut.deinit(allocator);
+
+        return try toFlowNifResult(allocator, result.max_flow, result.residual, cut.source_side, cut.sink_side);
+    }
+
+    pub fn push_relabel_f64(
+        node_count: usize,
+        from: []u32,
+        to: []u32,
+        capacity: []f64,
+        source: u32,
+        sink: u32,
+    ) !FlowNifResult {
+        const allocator = beam.allocator;
+        var g = try buildGraph(allocator, node_count, from, to, capacity);
+        defer g.deinit();
+
+        var result = try zog.flow.max_flow.pushRelabelF64(allocator, g, source, sink);
+        defer result.deinit(allocator);
+
+        var cut = try zog.flow.max_flow.minCut(allocator, result, f64, 0.0, zog.utils.compareF64);
+        defer cut.deinit(allocator);
+
+        return try toFlowNifResult(allocator, result.max_flow, result.residual, cut.source_side, cut.sink_side);
+    }
+
+    const MinCutNifResult = struct {
+        cut_value: f64,
+        source_side: []u32,
+        sink_side: []u32,
+    };
+
+    pub fn global_min_cut_f64(
+        node_count: usize,
+        from: []u32,
+        to: []u32,
+        capacity: []f64,
+    ) !MinCutNifResult {
+        const allocator = beam.allocator;
+        const ArrayGraph = zog.models.ArrayGraph;
+
+        var g = ArrayGraph(void, f64).init(allocator);
+        defer g.deinit();
+
+        try g.nodes.ensureTotalCapacity(allocator, node_count);
+        try g.edges.ensureTotalCapacity(allocator, from.len);
+
+        for (0..node_count) |_| {
+            _ = try g.addNode({});
+        }
+
+        for (from, to, capacity) |f, t, w| {
+            _ = try g.addEdge(f, t, w);
+        }
+
+        const result = try zog.flow.min_cut.globalMinCutF64(allocator, g);
+
+        return .{
+            .cut_value = result.weight,
+            .source_side = result.group_a,
+            .sink_side = result.group_b,
+        };
+    }
+    """
+
+    @doc """
+    Computes the maximum flow and minimum cut from source to sink in the network using the native Zog backend.
+    """
+    @spec max_flow(Model.t(), Model.label(), Model.label(), atom()) ::
+            %{
+              max_flow: float(),
+              residual_graph: Model.t(),
+              source_side: list(Model.label()),
+              sink_side: list(Model.label())
+            }
+    def max_flow(%Model{} = builder, source, sink, algorithm \\ :edmonds_karp) do
+      node_count = Model.node_count(builder)
+      {from, to, weights} = Model.to_edge_arrays(builder)
+
+      source_idx = Model.label_to_id(builder, source)
+      sink_idx = Model.label_to_id(builder, sink)
+
+      if is_nil(source_idx) or is_nil(sink_idx) do
+        raise ArgumentError, "source or sink node not found in graph"
+      end
+
+      result =
+        case algorithm do
+          :push_relabel ->
+            push_relabel_f64(node_count, from, to, weights, source_idx, sink_idx)
+
+          _ ->
+            edmonds_karp_f64(node_count, from, to, weights, source_idx, sink_idx)
+        end
+
+      source_side = Enum.map(result.source_side, &Model.id_to_label(builder, &1))
+      sink_side = Enum.map(result.sink_side, &Model.id_to_label(builder, &1))
+
+      residual_graph =
+        Enum.zip([result.residual_from, result.residual_to, result.residual_cap])
+        |> Enum.reduce(Model.directed(), fn {f_idx, t_idx, cap}, g ->
+          f_lbl = Model.id_to_label(builder, f_idx)
+          t_lbl = Model.id_to_label(builder, t_idx)
+          Model.add_edge(g, f_lbl, t_lbl, cap)
+        end)
+
+      %{
+        max_flow: result.max_flow,
+        residual_graph: residual_graph,
+        source_side: source_side,
+        sink_side: sink_side
+      }
+    end
+
+    @doc """
+    Computes the global minimum cut of an undirected weighted network using the Stoer-Wagner algorithm.
+    """
+    @spec global_min_cut(Model.t()) :: %{
+            cut_value: float(),
+            source_side: list(Model.label()),
+            sink_side: list(Model.label())
+          }
+    def global_min_cut(%Model{} = builder) do
+      node_count = Model.node_count(builder)
+      {from, to, weights} = Model.to_edge_arrays(builder)
+
+      result = global_min_cut_f64(node_count, from, to, weights)
+
+      source_side = Enum.map(result.source_side, &Model.id_to_label(builder, &1))
+      sink_side = Enum.map(result.sink_side, &Model.id_to_label(builder, &1))
+
+      %{
+        cut_value: result.cut_value,
+        source_side: source_side,
+        sink_side: sink_side
+      }
+    end
+  else
+    @moduledoc """
+    Native network flow and cut algorithms backed by Zog (Zig) via Zigler.
+
+    **Not available** — zigler is not installed.
+    """
+
+    def max_flow(_builder, _source, _sink, _algorithm \\ :edmonds_karp) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def global_min_cut(_builder) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+    end
+  end
+end
