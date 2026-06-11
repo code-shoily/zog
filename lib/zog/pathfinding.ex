@@ -11,7 +11,8 @@ defmodule Zog.Pathfinding do
       nifs: [
         floyd_warshall: [concurrency: :dirty_cpu],
         johnsons: [concurrency: :dirty_cpu],
-        nif_dijkstra: [concurrency: :dirty_cpu]
+        nif_dijkstra: [concurrency: :dirty_cpu],
+        nif_bellman_ford: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -120,6 +121,37 @@ defmodule Zog.Pathfinding do
             return beam.make(.{.@"error", .no_path}, .{});
         }
     }
+
+    pub fn nif_bellman_ford(
+        node_count: usize,
+        from: []u32,
+        to: []u32,
+        weight: []f64,
+        start_node: u32,
+        goal_node: u32,
+    ) !beam.term {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        const opt_res = zog.pathfinding.bellmanFord(beam.allocator, g, start_node, goal_node) catch |err| {
+            if (err == error.NegativeCycle) {
+                return beam.make(.{.@"error", .negative_cycle}, .{});
+            }
+            return err;
+        };
+
+        if (opt_res) |res| {
+            var path_res = res;
+            defer path_res.deinit(beam.allocator);
+
+            const path_slice = try beam.allocator.alloc(u32, path_res.path.items.len);
+            @memcpy(path_slice, path_res.path.items);
+
+            return beam.make(.{.ok, .{path_slice, path_res.weight}}, .{});
+        } else {
+            return beam.make(.{.@"error", .no_path}, .{});
+        }
+    }
     """
 
     @doc """
@@ -201,6 +233,35 @@ defmodule Zog.Pathfinding do
         end
       end
     end
+
+    @doc """
+    Computes the shortest path and its weight between two nodes using Bellman-Ford algorithm.
+    """
+    @spec bellman_ford(Model.t(), Model.label(), Model.label()) ::
+            {:ok, {[Model.label()], float()}} | {:error, :no_path} | {:error, :negative_cycle}
+    def bellman_ford(%Model{} = builder, start_label, goal_label) do
+      start_id = Map.get(builder.label_to_id, start_label)
+      goal_id = Map.get(builder.label_to_id, goal_label)
+
+      if is_nil(start_id) or is_nil(goal_id) do
+        {:error, :no_path}
+      else
+        node_count = Model.node_count(builder)
+        {from, to, weights} = Model.to_edge_arrays(builder)
+
+        case nif_bellman_ford(node_count, from, to, weights, start_id, goal_id) do
+          {:ok, {path_ids, weight}} ->
+            path_labels = Enum.map(path_ids, &Model.id_to_label(builder, &1))
+            {:ok, {path_labels, weight}}
+
+          {:error, :no_path} ->
+            {:error, :no_path}
+
+          {:error, :negative_cycle} ->
+            {:error, :negative_cycle}
+        end
+      end
+    end
   else
     @moduledoc """
     Native pathfinding algorithms backed by Zog (Zig) via Zigler.
@@ -215,6 +276,10 @@ defmodule Zog.Pathfinding do
     end
 
     def dijkstra(_builder, _start_label, _goal_label) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def bellman_ford(_builder, _start_label, _goal_label) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
     end
   end

@@ -130,4 +130,45 @@ defmodule Zog.PathfindingTest do
       assert Pathfinding.dijkstra(builder, "Z", "B") == {:error, :no_path}
     end
   end
+
+  describe "bellman_ford/3" do
+    test "simple linear path with positive/negative weights" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", -2.0)
+
+      assert {:ok, {["A", "B", "C"], -1.0}} = Pathfinding.bellman_ford(builder, "A", "C")
+    end
+
+    test "chooses shorter path including negative edges" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 10.0)
+        |> Zog.add_edge("B", "D", 10.0)
+        |> Zog.add_edge("A", "C", 1.0)
+        |> Zog.add_edge("C", "D", -5.0)
+
+      assert {:ok, {["A", "C", "D"], -4.0}} = Pathfinding.bellman_ford(builder, "A", "D")
+    end
+
+    test "detects negative cycle" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", -3.0)
+        |> Zog.add_edge("C", "A", 1.0)
+
+      assert Pathfinding.bellman_ford(builder, "A", "C") == {:error, :negative_cycle}
+    end
+
+    test "unreachable goal" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_node("C")
+
+      assert Pathfinding.bellman_ford(builder, "A", "C") == {:error, :no_path}
+    end
+  end
 end

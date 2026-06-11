@@ -1229,3 +1229,138 @@ test "Johnson's Algorithm: Simple graph with negative weights" {
     try std.testing.expectEqual(@as(f64, -4.0), result.get(0, 4).?);
     try std.testing.expectEqual(@as(f64, 8.0), result.get(4, 0).?);
 }
+
+/// Computes single-source shortest path using Bellman-Ford natively.
+pub fn bellmanFordGeneric(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    start_node: anytype,
+    goal_node: anytype,
+    comptime Weight: type,
+    zero: Weight,
+    comptime addFn: fn (a: Weight, b: Weight) Weight,
+    comptime compareFn: fn (a: Weight, b: Weight) std.math.Order,
+) !?ShortestPathResult(@TypeOf(start_node), Weight) {
+    const NodeId = @TypeOf(start_node);
+    const V = graph.nodeCount();
+
+    var dist = try allocator.alloc(?Weight, V);
+    defer allocator.free(dist);
+    @memset(dist, null);
+
+    var parent = try allocator.alloc(?NodeId, V);
+    defer allocator.free(parent);
+    @memset(parent, null);
+
+    dist[start_node] = zero;
+
+    // Relax edges V - 1 times
+    var iteration: usize = 0;
+    while (iteration < V - 1) : (iteration += 1) {
+        var updated = false;
+        var node_it = graph.nodeIds();
+        while (node_it.next()) |u| {
+            const u_dist = dist[u] orelse continue;
+
+            var succ_it = graph.successors(u);
+            while (succ_it.next()) |edge| {
+                const v = edge.to;
+                const weight = edge.data;
+                const new_dist = addFn(u_dist, weight);
+
+                const should_update = if (dist[v]) |v_dist|
+                    compareFn(new_dist, v_dist) == .lt
+                else
+                    true;
+
+                if (should_update) {
+                    dist[v] = new_dist;
+                    parent[v] = u;
+                    updated = true;
+                }
+            }
+        }
+        if (!updated) break;
+    }
+
+    // Check for negative cycles
+    var node_it = graph.nodeIds();
+    while (node_it.next()) |u| {
+        const u_dist = dist[u] orelse continue;
+
+        var succ_it = graph.successors(u);
+        while (succ_it.next()) |edge| {
+            const v = edge.to;
+            const weight = edge.data;
+            const new_dist = addFn(u_dist, weight);
+
+            if (dist[v]) |v_dist| {
+                if (compareFn(new_dist, v_dist) == .lt) {
+                    return error.NegativeCycle;
+                }
+            }
+        }
+    }
+
+    // Reconstruct path
+    const goal_dist = dist[goal_node] orelse return null;
+    var path_list = std.ArrayList(NodeId).empty;
+    errdefer path_list.deinit(allocator);
+
+    var curr: ?NodeId = goal_node;
+    while (curr) |curr_val| {
+        try path_list.append(allocator, curr_val);
+        if (curr_val == start_node) break;
+        curr = parent[curr_val];
+    }
+
+    std.mem.reverse(NodeId, path_list.items);
+
+    return ShortestPathResult(NodeId, Weight){
+        .weight = goal_dist,
+        .path = path_list,
+    };
+}
+
+pub fn bellmanFord(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    start_node: u32,
+    goal_node: u32,
+) !?ShortestPathResult(u32, f64) {
+    return bellmanFordGeneric(
+        allocator, graph, start_node, goal_node, f64, 0.0,
+        utils.addF64, utils.compareF64,
+    );
+}
+
+test "bellmanFord: simple path and negative cycle" {
+    const allocator = std.testing.allocator;
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+
+    var g = AG(void, f64).init(allocator);
+    defer g.deinit();
+
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+
+    _ = try g.addEdge(0, 1, 1.0);
+    _ = try g.addEdge(1, 2, -2.0);
+
+    const path_res = try bellmanFord(allocator, g, 0, 2);
+    try std.testing.expect(path_res != null);
+    var p = path_res.?;
+    defer p.deinit(allocator);
+
+    try std.testing.expectEqual(@as(f64, -1.0), p.weight);
+    try std.testing.expectEqual(@as(usize, 3), p.path.items.len);
+    try std.testing.expectEqual(@as(u32, 0), p.path.items[0]);
+    try std.testing.expectEqual(@as(u32, 1), p.path.items[1]);
+    try std.testing.expectEqual(@as(u32, 2), p.path.items[2]);
+
+    // Add negative cycle: 2 -> 0 with weight -1 (creating 0 -> 1 -> 2 -> 0 cycle of weight -2)
+    _ = try g.addEdge(2, 0, -1.0);
+    const cycle_res = bellmanFord(allocator, g, 0, 2);
+    try std.testing.expectError(error.NegativeCycle, cycle_res);
+}
