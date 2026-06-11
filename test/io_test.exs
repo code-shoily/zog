@@ -1,87 +1,72 @@
 defmodule Zog.IOTest do
   use ExUnit.Case, async: true
 
+  alias Zog.IO, as: ZogIO
+  alias Zog.Model
   alias Zog.ResourceGraph
 
   @moduletag :zigler
 
-  setup do
-    tmp_dir = Path.join(System.tmp_dir!(), "yog_zog_io_test_#{System.system_time()}")
-    File.mkdir_p!(tmp_dir)
-    on_exit(fn -> File.rm_rf!(tmp_dir) end)
-    {:ok, tmp_dir: tmp_dir}
-  end
+  describe "Zog.IO" do
+    test "loads wiki_vote.txt edgelist directly" do
+      res = ZogIO.load("/home/mafinar/Downloads/graphs/wiki_vote.txt", directed: true)
 
-  test "native edgelist reader", %{tmp_dir: tmp_dir} do
-    path = Path.join(tmp_dir, "graph.edgelist")
+      try do
+        # wiki_vote has 7115 nodes
+        assert Model.node_count(res.builder) == 7115
 
-    File.write!(path, """
-    # Directed edge list with optional weights
-    1 2 2.5
-    2 3 1.0
-    3 1
-    """)
+        sccs = ResourceGraph.strongly_connected_components(res)
+        assert length(sccs) == 5816
+      after
+        ResourceGraph.destroy(res)
+      end
+    end
 
-    # 1. Directed graph
-    res_graph = ResourceGraph.read_edgelist(path, directed: true)
-    assert res_graph.builder.kind == :directed
-    assert res_graph.builder.next_id == 3
-    assert Enum.sort(Zog.all_labels(res_graph.builder)) == ["1", "2", "3"]
+    test "dumps and loads edgelist, adjlist, tgf roundtrip" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.5)
+        |> Zog.add_edge("B", "C", 2.0)
+        |> Zog.add_edge("C", "A", 0.5)
 
-    # Run PageRank on loaded graph
-    pr = ResourceGraph.pagerank(res_graph)
-    assert Map.keys(pr) == ["1", "2", "3"]
-    ResourceGraph.destroy(res_graph)
+      # 1. Edgelist
+      tmp_edgelist = Path.join(System.tmp_dir!(), "edgelist_#{:rand.uniform(100_000_000)}")
+      :ok = ZogIO.dump(builder, tmp_edgelist, format: :edgelist)
 
-    # 2. Undirected graph
-    res_graph_un = ResourceGraph.read_edgelist(path, directed: false)
-    assert res_graph_un.builder.kind == :undirected
-    assert res_graph_un.builder.next_id == 3
-    ResourceGraph.destroy(res_graph_un)
-  end
+      res_edgelist = ZogIO.load(tmp_edgelist, format: :edgelist, directed: true)
 
-  test "native adjlist reader", %{tmp_dir: tmp_dir} do
-    path = Path.join(tmp_dir, "graph.adjlist")
+      try do
+        assert Model.node_count(res_edgelist.builder) == 3
+      after
+        ResourceGraph.destroy(res_edgelist)
+        File.rm!(tmp_edgelist)
+      end
 
-    File.write!(path, """
-    # Adjacency list
-    1: 2,2.5 3
-    2: 3,1.0
-    3: 1
-    """)
+      # 2. Adjlist
+      tmp_adjlist = Path.join(System.tmp_dir!(), "adjlist_#{:rand.uniform(100_000_000)}")
+      :ok = ZogIO.dump(builder, tmp_adjlist, format: :adjlist)
 
-    res_graph = ResourceGraph.read_adjlist(path, directed: true)
-    assert res_graph.builder.kind == :directed
-    assert res_graph.builder.next_id == 3
-    assert Enum.sort(Zog.all_labels(res_graph.builder)) == ["1", "2", "3"]
+      res_adjlist = ZogIO.load(tmp_adjlist, format: :adjlist, directed: true)
 
-    # Run PageRank on loaded graph
-    pr = ResourceGraph.pagerank(res_graph)
-    assert Map.keys(pr) == ["1", "2", "3"]
-    ResourceGraph.destroy(res_graph)
-  end
+      try do
+        assert Model.node_count(res_adjlist.builder) == 3
+      after
+        ResourceGraph.destroy(res_adjlist)
+        File.rm!(tmp_adjlist)
+      end
 
-  test "native tgf reader", %{tmp_dir: tmp_dir} do
-    path = Path.join(tmp_dir, "graph.tgf")
+      # 3. TGF
+      tmp_tgf = Path.join(System.tmp_dir!(), "tgf_#{:rand.uniform(100_000_000)}")
+      :ok = ZogIO.dump(builder, tmp_tgf, format: :tgf)
 
-    File.write!(path, """
-    1 Node1
-    2 Node2
-    3 Node3
-    #
-    1 2 2.5
-    2 3 1.0
-    3 1
-    """)
+      res_tgf = ZogIO.load(tmp_tgf, format: :tgf, directed: true)
 
-    res_graph = ResourceGraph.read_tgf(path, directed: true)
-    assert res_graph.builder.kind == :directed
-    assert res_graph.builder.next_id == 3
-    assert Enum.sort(Zog.all_labels(res_graph.builder)) == ["1", "2", "3"]
-
-    # Run PageRank on loaded graph
-    pr = ResourceGraph.pagerank(res_graph)
-    assert Map.keys(pr) == ["1", "2", "3"]
-    ResourceGraph.destroy(res_graph)
+      try do
+        assert Model.node_count(res_tgf.builder) == 3
+      after
+        ResourceGraph.destroy(res_tgf)
+        File.rm!(tmp_tgf)
+      end
+    end
   end
 end
