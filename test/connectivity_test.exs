@@ -72,4 +72,27 @@ defmodule Zog.ConnectivityTest do
     assert res_rg.bridges == [{"2", "3"}]
     ResourceGraph.destroy(res_graph)
   end
+
+  test "native strongly_connected_components: cycle and tail" do
+    builder =
+      Zog.directed()
+      |> Zog.add_edge("0", "1", 1.0)
+      |> Zog.add_edge("1", "2", 1.0)
+      |> Zog.add_edge("2", "0", 1.0)
+      |> Zog.add_edge("2", "3", 1.0)
+
+    # 1. Zog builder SCC
+    sccs = Connectivity.strongly_connected_components(builder)
+    assert length(sccs) == 2
+    sorted_sccs = sccs |> Enum.map(&Enum.sort/1) |> Enum.sort()
+    assert sorted_sccs == [["0", "1", "2"], ["3"]]
+
+    # 2. ResourceGraph SCC
+    res_graph = ResourceGraph.new(builder)
+    rg_sccs = ResourceGraph.strongly_connected_components(res_graph)
+    assert length(rg_sccs) == 2
+    sorted_rg_sccs = rg_sccs |> Enum.map(&Enum.sort/1) |> Enum.sort()
+    assert sorted_rg_sccs == [["0", "1", "2"], ["3"]]
+    ResourceGraph.destroy(res_graph)
+  end
 end

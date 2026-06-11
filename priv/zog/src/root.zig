@@ -9,6 +9,7 @@ pub const property = @import("property.zig");
 pub const metrics = @import("metrics.zig");
 pub const centrality = @import("centrality.zig");
 pub const connectivity = @import("connectivity.zig");
+pub const mst = @import("mst.zig");
 pub const utils = @import("utils.zig");
 
 pub const flow = struct {
@@ -31,6 +32,7 @@ test {
     _ = @import("metrics.zig");
     _ = @import("centrality.zig");
     _ = @import("connectivity.zig");
+    _ = @import("mst.zig");
     _ = @import("utils.zig");
     _ = @import("flow/max_flow.zig");
     _ = @import("flow/min_cut.zig");

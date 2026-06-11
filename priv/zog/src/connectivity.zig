@@ -345,3 +345,150 @@ test "analyzeConnectivity: cycle graph and tail" {
     try std.testing.expectEqual(@as(usize, 1), res.articulation_points.len);
     try std.testing.expectEqual(@as(u32, 0), res.articulation_points[0]);
 }
+
+const SccContext = struct {
+    allocator: std.mem.Allocator,
+    disc: []u32,
+    low: []u32,
+    on_stack: []bool,
+    stack: *std.ArrayList(u32),
+    components: []u32,
+    time: u32,
+    comp_id: u32,
+    V: usize,
+    adj: []std.ArrayList(u32),
+    err: ?anyerror,
+
+    fn dfs(self: *SccContext, u: u32) !void {
+        self.disc[u] = self.time;
+        self.low[u] = self.time;
+        self.time += 1;
+        try self.stack.append(self.allocator, u);
+        self.on_stack[u] = true;
+
+        for (self.adj[u].items) |v| {
+            if (self.disc[v] == std.math.maxInt(u32)) {
+                try self.dfs(v);
+                self.low[u] = @min(self.low[u], self.low[v]);
+            } else if (self.on_stack[v]) {
+                self.low[u] = @min(self.low[u], self.disc[v]);
+            }
+        }
+
+        if (self.low[u] == self.disc[u]) {
+            while (true) {
+                const v = self.stack.pop().?;
+                self.on_stack[v] = false;
+                self.components[v] = self.comp_id;
+                if (u == v) break;
+            }
+            self.comp_id += 1;
+        }
+    }
+};
+
+fn runSccDfsOnThread(ctx: *SccContext) void {
+    for (0..ctx.V) |i| {
+        if (ctx.disc[i] == std.math.maxInt(u32)) {
+            ctx.dfs(@intCast(i)) catch |err| {
+                ctx.err = err;
+                return;
+            };
+        }
+    }
+}
+
+/// Computes strongly connected components (SCC) for the directed graph.
+/// Returns an allocated slice where components[node_id] is the component ID.
+pub fn stronglyConnectedComponents(allocator: std.mem.Allocator, graph: anytype) ![]u32 {
+    const V = graph.nodeCount();
+    const components = try allocator.alloc(u32, V);
+    errdefer allocator.free(components);
+    @memset(components, 0);
+
+    if (V == 0) return components;
+
+    // Build adjacency list
+    var adj = try allocator.alloc(std.ArrayList(u32), V);
+    defer allocator.free(adj);
+    for (0..V) |i| {
+        adj[i] = std.ArrayList(u32).empty;
+    }
+    defer {
+        for (0..V) |i| {
+            adj[i].deinit(allocator);
+        }
+    }
+
+    var node_it = graph.nodeIds();
+    while (node_it.next()) |u| {
+        var succ_it = graph.successors(u);
+        while (succ_it.next()) |edge| {
+            const v = edge.to;
+            try adj[u].append(allocator, v);
+        }
+    }
+
+    const disc = try allocator.alloc(u32, V);
+    defer allocator.free(disc);
+    @memset(disc, std.math.maxInt(u32));
+
+    const low = try allocator.alloc(u32, V);
+    defer allocator.free(low);
+    @memset(low, 0);
+
+    const on_stack = try allocator.alloc(bool, V);
+    defer allocator.free(on_stack);
+    @memset(on_stack, false);
+
+    var stack = std.ArrayList(u32).empty;
+    defer stack.deinit(allocator);
+
+    var ctx = SccContext{
+        .allocator = allocator,
+        .disc = disc,
+        .low = low,
+        .on_stack = on_stack,
+        .stack = &stack,
+        .components = components,
+        .time = 0,
+        .comp_id = 0,
+        .V = V,
+        .adj = adj,
+        .err = null,
+    };
+
+    const thread = try std.Thread.spawn(.{ .stack_size = 4 * 1024 * 1024 }, runSccDfsOnThread, .{&ctx});
+    thread.join();
+
+    if (ctx.err) |err| {
+        return err;
+    }
+
+    return components;
+}
+
+test "stronglyConnectedComponents: simple cycle and tail" {
+    const allocator = std.testing.allocator;
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+
+    var g = AG(void, void).init(allocator);
+    defer g.deinit();
+
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+
+    _ = try g.addEdge(0, 1, {});
+    _ = try g.addEdge(1, 2, {});
+    _ = try g.addEdge(2, 0, {});
+    _ = try g.addEdge(2, 3, {});
+
+    const sccs = try stronglyConnectedComponents(allocator, g);
+    defer allocator.free(sccs);
+
+    try std.testing.expectEqual(sccs[0], sccs[1]);
+    try std.testing.expectEqual(sccs[0], sccs[2]);
+    try std.testing.expect(sccs[0] != sccs[3]);
+}

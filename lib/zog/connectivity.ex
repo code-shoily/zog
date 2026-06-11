@@ -10,7 +10,8 @@ defmodule Zog.Connectivity do
       extra_modules: [zog: {"../../priv/zog/src/root.zig", []}],
       nifs: [
         nif_core_numbers: [concurrency: :dirty_cpu],
-        nif_analyze_connectivity: [concurrency: :dirty_cpu]
+        nif_analyze_connectivity: [concurrency: :dirty_cpu],
+        nif_strongly_connected_components: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -44,6 +45,13 @@ defmodule Zog.Connectivity do
         defer g.deinit();
 
         return try zog.connectivity.coreNumbers(beam.allocator, g);
+    }
+
+    pub fn nif_strongly_connected_components(node_count: usize, from: []u32, to: []u32, weight: []f64) ![]u32 {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        return try zog.connectivity.stronglyConnectedComponents(beam.allocator, g);
     }
 
     pub fn nif_analyze_connectivity(node_count: usize, from: []u32, to: []u32, weight: []f64) !beam.term {
@@ -84,6 +92,29 @@ defmodule Zog.Connectivity do
           cores
           |> Enum.with_index()
           |> Map.new(fn {core, idx} -> {elem(labels_tuple, idx), core} end)
+      end
+    end
+
+    @doc """
+    Finds strongly connected components in the graph natively.
+    Returns a list of lists of node labels.
+    """
+    @spec strongly_connected_components(Model.t()) :: [[Model.label()]]
+    def strongly_connected_components(%Model{} = builder) do
+      node_count = Model.node_count(builder)
+      {from, to, weights} = Model.to_edge_arrays(builder)
+
+      labels = Model.all_labels(builder)
+
+      case nif_strongly_connected_components(node_count, from, to, weights) do
+        [] ->
+          []
+
+        assignments ->
+          labels
+          |> Enum.zip(assignments)
+          |> Enum.group_by(fn {_lbl, comp} -> comp end, fn {lbl, _comp} -> lbl end)
+          |> Map.values()
       end
     end
 
@@ -172,6 +203,10 @@ defmodule Zog.Connectivity do
     """
 
     def core_numbers(_builder) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def strongly_connected_components(_builder) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
     end
 
