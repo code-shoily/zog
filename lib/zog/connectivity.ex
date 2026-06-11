@@ -114,7 +114,14 @@ defmodule Zog.Connectivity do
       Enum.reduce(edges, new_builder, fn {u_id, v_id, w}, acc ->
         u = Model.id_to_label(builder, u_id)
         v = Model.id_to_label(builder, v_id)
-        add_edge_if_kept(acc, u, v, w, u_id < v_id and MapSet.member?(keep_labels, u) and MapSet.member?(keep_labels, v))
+
+        add_edge_if_kept(
+          acc,
+          u,
+          v,
+          w,
+          u_id < v_id and MapSet.member?(keep_labels, u) and MapSet.member?(keep_labels, v)
+        )
       end)
     end
 

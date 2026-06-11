@@ -92,7 +92,7 @@ defmodule Zog.MixProject do
         "Native Resource": [
           Zog.ResourceGraph
         ],
-        "Algorithms": [
+        Algorithms: [
           Zog.Centrality,
           Zog.Community,
           Zog.Connectivity,
