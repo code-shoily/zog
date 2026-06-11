@@ -58,14 +58,18 @@ defmodule Zog.ResourceGraph do
     const zog = @import("zog");
     const ArrayGraph = zog.models.ArrayGraph;
 
-    const GraphResource = struct {
-        graph: ArrayGraph(void, f64),
+    const GraphResource = union(enum) {
+        soa: ArrayGraph(void, f64),
+        hash_graph: zog.models.GraphMap(u32, void, f64, .directed, .dual),
     };
 
     pub const GraphRes = beam.Resource(GraphResource, @import("root"), .{
         .Callbacks = struct {
             pub fn dtor(ptr: *GraphResource) void {
-                ptr.graph.deinit();
+                switch (ptr.*) {
+                    .soa => |*g| g.deinit(),
+                    .hash_graph => |*g| g.deinit(),
+                }
             }
         },
     });
@@ -79,6 +83,41 @@ defmodule Zog.ResourceGraph do
         for (0..node_count) |_| { _ = try g.addNode({}); }
         for (from, to, weight) |f, t, w| { _ = try g.addEdge(f, t, w); }
         return g;
+    }
+
+    fn buildHashGraph(node_count: usize, from: []u32, to: []u32, weight: []f64) !zog.models.GraphMap(u32, void, f64, .directed, .dual) {
+        const allocator = beam.allocator;
+        var g = zog.models.GraphMap(u32, void, f64, .directed, .dual).init(allocator);
+        errdefer g.deinit();
+        try g.nodes.ensureTotalCapacity(@intCast(node_count));
+        for (0..node_count) |i| {
+            try g.addNode(@intCast(i), {});
+        }
+        for (from, to, weight) |f, t, w| {
+            try g.addEdge(f, t, w);
+        }
+        return g;
+    }
+
+    fn nodeCapacity(res: GraphRes) usize {
+        switch (res.unpack()) {
+            .soa => |g| return g.nodeCapacity(),
+            .hash_graph => |g| return g.nodeCount(),
+        }
+    }
+
+    fn nodeCount(res: GraphRes) usize {
+        switch (res.unpack()) {
+            .soa => |g| return g.nodeCount(),
+            .hash_graph => |g| return g.nodeCount(),
+        }
+    }
+
+    fn edgeCount(res: GraphRes) usize {
+        switch (res.unpack()) {
+            .soa => |g| return g.edgeCount(),
+            .hash_graph => |g| return g.edgeCount(),
+        }
     }
 
     fn extractScores(result: anytype, node_count: usize) ![]f64 {
@@ -101,9 +140,20 @@ defmodule Zog.ResourceGraph do
         return assignments;
     }
 
-    pub fn new(node_count: usize, from: []u32, to: []u32, weight: []f64) !GraphRes {
-        const g = try buildGraph(node_count, from, to, weight);
-        return GraphRes.create(.{ .graph = g }, .{ .released = false });
+    const BackendType = enum { soa, hash_graph };
+
+    pub fn new(node_count: usize, from: []u32, to: []u32, weight: []f64, backend: beam.term) !GraphRes {
+        const b = try beam.get(BackendType, backend, .{});
+        switch (b) {
+            .soa => {
+                const g = try buildGraph(node_count, from, to, weight);
+                return GraphRes.create(.{ .soa = g }, .{ .released = false });
+            },
+            .hash_graph => {
+                const g = try buildHashGraph(node_count, from, to, weight);
+                return GraphRes.create(.{ .hash_graph = g }, .{ .released = false });
+            }
+        }
     }
 
     pub fn nif_destroy(res: GraphRes) void {
@@ -111,79 +161,112 @@ defmodule Zog.ResourceGraph do
     }
 
     pub fn nif_betweenness_unweighted(res: GraphRes) ![]f64 {
-        const g = res.unpack().graph;
-        var result = try zog.centrality.betweennessUnweighted(beam.allocator, g);
-        defer result.deinit();
-        return extractScores(result, g.nodeCapacity());
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.centrality.betweennessUnweighted(allocator, g),
+            .hash_graph => |g| try zog.centrality.betweennessUnweighted(allocator, g),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit();
+        return extractScores(mutable_result, nodeCapacity(res));
     }
 
     pub fn nif_betweenness_f64(res: GraphRes) ![]f64 {
-        const g = res.unpack().graph;
-        var result = try zog.centrality.betweennessF64(beam.allocator, g);
-        defer result.deinit();
-        return extractScores(result, g.nodeCapacity());
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.centrality.betweennessF64(allocator, g),
+            .hash_graph => |g| try zog.centrality.betweennessF64(allocator, g),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit();
+        return extractScores(mutable_result, nodeCapacity(res));
     }
 
     pub fn nif_closeness_f64(res: GraphRes) ![]f64 {
-        const g = res.unpack().graph;
-        var result = try zog.centrality.closenessF64(beam.allocator, g);
-        defer result.deinit();
-        return extractScores(result, g.nodeCapacity());
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.centrality.closenessF64(allocator, g),
+            .hash_graph => |g| try zog.centrality.closenessF64(allocator, g),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit();
+        return extractScores(mutable_result, nodeCapacity(res));
     }
 
     pub fn nif_harmonic_centrality_f64(res: GraphRes) ![]f64 {
-        const g = res.unpack().graph;
-        var result = try zog.centrality.harmonicCentralityF64(beam.allocator, g);
-        defer result.deinit();
-        return extractScores(result, g.nodeCapacity());
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.centrality.harmonicCentralityF64(allocator, g),
+            .hash_graph => |g| try zog.centrality.harmonicCentralityF64(allocator, g),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit();
+        return extractScores(mutable_result, nodeCapacity(res));
     }
 
     pub fn pagerank(res: GraphRes, damping: f64, max_iterations: usize, tolerance: f64) ![]f64 {
-        const g = res.unpack().graph;
-        var result = try zog.centrality.pagerank(beam.allocator, g, .{
+        const allocator = beam.allocator;
+        const opts: zog.centrality.PageRankOptions = .{
             .damping = damping,
             .max_iterations = max_iterations,
             .tolerance = tolerance,
-        });
-        defer result.deinit();
-        return extractScores(result, g.nodeCapacity());
+        };
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.centrality.pagerank(allocator, g, opts),
+            .hash_graph => |g| try zog.centrality.pagerank(allocator, g, opts),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit();
+        return extractScores(mutable_result, nodeCapacity(res));
     }
 
     pub fn eigenvector(res: GraphRes, max_iterations: usize, tolerance: f64) ![]f64 {
-        const g = res.unpack().graph;
-        var result = try zog.centrality.eigenvector(beam.allocator, g, max_iterations, tolerance);
-        defer result.deinit();
-        return extractScores(result, g.nodeCapacity());
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.centrality.eigenvector(allocator, g, max_iterations, tolerance),
+            .hash_graph => |g| try zog.centrality.eigenvector(allocator, g, max_iterations, tolerance),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit();
+        return extractScores(mutable_result, nodeCapacity(res));
     }
 
     pub fn katz(res: GraphRes, alpha: f64, beta: f64, max_iterations: usize, tolerance: f64) ![]f64 {
-        const g = res.unpack().graph;
-        var result = try zog.centrality.katz(beam.allocator, g, alpha, beta, max_iterations, tolerance);
-        defer result.deinit();
-        return extractScores(result, g.nodeCapacity());
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.centrality.katz(allocator, g, alpha, beta, max_iterations, tolerance),
+            .hash_graph => |g| try zog.centrality.katz(allocator, g, alpha, beta, max_iterations, tolerance),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit();
+        return extractScores(mutable_result, nodeCapacity(res));
     }
 
     pub fn alpha_centrality(res: GraphRes, alpha: f64, initial: f64, max_iterations: usize, tolerance: f64) ![]f64 {
-        const g = res.unpack().graph;
-        var result = try zog.centrality.alphaCentrality(beam.allocator, g, alpha, initial, max_iterations, tolerance);
-        defer result.deinit();
-        return extractScores(result, g.nodeCapacity());
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.centrality.alphaCentrality(allocator, g, alpha, initial, max_iterations, tolerance),
+            .hash_graph => |g| try zog.centrality.alphaCentrality(allocator, g, alpha, initial, max_iterations, tolerance),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit();
+        return extractScores(mutable_result, nodeCapacity(res));
     }
 
     pub fn louvain(res: GraphRes, min_modularity_gain: f64, max_iterations: usize, seed: u64) ![]usize {
-        const g = res.unpack().graph;
-        var result = try zog.community.louvain.detectWeightedWithOptions(
-            beam.allocator,
-            g,
-            .{
-                .min_modularity_gain = min_modularity_gain,
-                .max_iterations = max_iterations,
-                .seed = seed,
-            },
-            zog.utils.identityF64,
-        );
-        defer result.deinit();
-        return extractAssignments(result, g.nodeCapacity());
+        const allocator = beam.allocator;
+        const opts: zog.community.louvain.LouvainOptions = .{
+            .min_modularity_gain = min_modularity_gain,
+            .max_iterations = max_iterations,
+            .seed = seed,
+        };
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.community.louvain.detectWeightedWithOptions(allocator, g, opts, zog.utils.identityF64),
+            .hash_graph => |g| try zog.community.louvain.detectWeightedWithOptions(allocator, g, opts, zog.utils.identityF64),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit();
+        return extractAssignments(mutable_result, nodeCapacity(res));
     }
 
     pub fn leiden(
@@ -193,20 +276,20 @@ defmodule Zog.ResourceGraph do
         seed: u64,
         theta: f64,
     ) ![]usize {
-        const g = res.unpack().graph;
-        var result = try zog.community.leiden.detectWeightedWithOptions(
-            beam.allocator,
-            g,
-            .{
-                .min_modularity_gain = min_modularity_gain,
-                .max_iterations = max_iterations,
-                .seed = seed,
-                .theta = theta,
-            },
-            zog.utils.identityF64,
-        );
-        defer result.deinit();
-        return extractAssignments(result, g.nodeCapacity());
+        const allocator = beam.allocator;
+        const opts: zog.community.leiden.LeidenOptions = .{
+            .min_modularity_gain = min_modularity_gain,
+            .max_iterations = max_iterations,
+            .seed = seed,
+            .theta = theta,
+        };
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.community.leiden.detectWeightedWithOptions(allocator, g, opts, zog.utils.identityF64),
+            .hash_graph => |g| try zog.community.leiden.detectWeightedWithOptions(allocator, g, opts, zog.utils.identityF64),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit();
+        return extractAssignments(mutable_result, nodeCapacity(res));
     }
 
     pub fn leiden_hierarchical(
@@ -216,26 +299,25 @@ defmodule Zog.ResourceGraph do
         seed: u64,
         theta: f64,
     ) ![][]usize {
-        const g = res.unpack().graph;
-        var result = try zog.community.leiden.detectHierarchicalWeightedWithOptions(
-            beam.allocator,
-            g,
-            .{
-                .min_modularity_gain = min_modularity_gain,
-                .max_iterations = max_iterations,
-                .seed = seed,
-                .theta = theta,
-            },
-            zog.utils.identityF64,
-        );
-        defer result.deinit();
-
         const allocator = beam.allocator;
-        const node_count = g.nodeCapacity();
-        const outer = try allocator.alloc([]usize, result.levels.len);
+        const opts: zog.community.leiden.LeidenOptions = .{
+            .min_modularity_gain = min_modularity_gain,
+            .max_iterations = max_iterations,
+            .seed = seed,
+            .theta = theta,
+        };
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.community.leiden.detectHierarchicalWeightedWithOptions(allocator, g, opts, zog.utils.identityF64),
+            .hash_graph => |g| try zog.community.leiden.detectHierarchicalWeightedWithOptions(allocator, g, opts, zog.utils.identityF64),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit();
+
+        const node_count = nodeCapacity(res);
+        const outer = try allocator.alloc([]usize, mutable_result.levels.len);
         errdefer allocator.free(outer);
 
-        for (result.levels, 0..) |level, i| {
+        for (mutable_result.levels, 0..) |level, i| {
             const level_copy = try allocator.alloc(usize, node_count);
             errdefer allocator.free(level_copy);
             @memcpy(level_copy, level);
@@ -246,13 +328,16 @@ defmodule Zog.ResourceGraph do
     }
 
     pub fn modularity_f64(res: GraphRes, assignments: []usize) !f64 {
-        const g = res.unpack().graph;
-        var map = std.AutoHashMap(u32, usize).init(beam.allocator);
+        const allocator = beam.allocator;
+        var map = std.AutoHashMap(u32, usize).init(allocator);
         defer map.deinit();
         for (assignments, 0..) |comm, i| {
             try map.put(@intCast(i), comm);
         }
-        return try zog.community.metrics.modularity(beam.allocator, g, map, zog.utils.identityF64);
+        return switch (res.unpack()) {
+            .soa => |g| try zog.community.metrics.modularity(allocator, g, map, zog.utils.identityF64),
+            .hash_graph => |g| try zog.community.metrics.modularity(allocator, g, map, zog.utils.identityF64),
+        };
     }
 
     fn extractMatrix(result: anytype, node_count: usize) !beam.term {
@@ -267,9 +352,13 @@ defmodule Zog.ResourceGraph do
     }
 
     pub fn nif_floyd_warshall(res: GraphRes) !beam.term {
-        const g = res.unpack().graph;
-        const node_count = g.nodeCapacity();
-        var result = zog.pathfinding.floydWarshall(beam.allocator, g) catch |err| {
+        const allocator = beam.allocator;
+        const node_count = nodeCapacity(res);
+        const result_or_err = switch (res.unpack()) {
+            .soa => |g| zog.pathfinding.floydWarshall(allocator, g),
+            .hash_graph => |g| zog.pathfinding.floydWarshall(allocator, g),
+        };
+        var result = result_or_err catch |err| {
             if (err == error.NegativeCycle) {
                 return beam.make(.{.@"error", .negative_cycle}, .{});
             }
@@ -280,12 +369,13 @@ defmodule Zog.ResourceGraph do
     }
 
     pub fn nif_johnsons(res: GraphRes) !beam.term {
-        const g = res.unpack().graph;
-        const node_count = g.nodeCapacity();
-        var result = zog.pathfinding.johnsonsGeneric(
-            beam.allocator, g, f64, 0.0,
-            zog.utils.addF64, zog.utils.subF64, zog.utils.compareF64,
-        ) catch |err| {
+        const allocator = beam.allocator;
+        const node_count = nodeCapacity(res);
+        const result_or_err = switch (res.unpack()) {
+            .soa => |g| zog.pathfinding.johnsonsGeneric(allocator, g, f64, 0.0, zog.utils.addF64, zog.utils.subF64, zog.utils.compareF64),
+            .hash_graph => |g| zog.pathfinding.johnsonsGeneric(allocator, g, f64, 0.0, zog.utils.addF64, zog.utils.subF64, zog.utils.compareF64),
+        };
+        var result = result_or_err catch |err| {
             if (err == error.NegativeCycle) {
                 return beam.make(.{.@"error", .negative_cycle}, .{});
             }
@@ -296,16 +386,20 @@ defmodule Zog.ResourceGraph do
     }
 
     pub fn nif_dijkstra(res: GraphRes, start_node: u32, goal_node: u32) !beam.term {
-        const g = res.unpack().graph;
-        const opt_res = zog.pathfinding.dijkstra(beam.allocator, g, start_node, goal_node) catch |err| {
+        const allocator = beam.allocator;
+        const opt_res_or_err = switch (res.unpack()) {
+            .soa => |g| zog.pathfinding.dijkstra(allocator, g, start_node, goal_node),
+            .hash_graph => |g| zog.pathfinding.dijkstra(allocator, g, start_node, goal_node),
+        };
+        const opt_res = opt_res_or_err catch |err| {
             return err;
         };
 
         if (opt_res) |res_val| {
             var path_res = res_val;
-            defer path_res.deinit(beam.allocator);
+            defer path_res.deinit(allocator);
 
-            const path_slice = try beam.allocator.alloc(u32, path_res.path.items.len);
+            const path_slice = try allocator.alloc(u32, path_res.path.items.len);
             @memcpy(path_slice, path_res.path.items);
 
             return beam.make(.{.ok, .{path_slice, path_res.weight}}, .{});
@@ -315,70 +409,100 @@ defmodule Zog.ResourceGraph do
     }
 
     pub fn nif_density(res: GraphRes) !f64 {
-        const g = res.unpack().graph;
-        const n = g.nodeCount();
+        const n = nodeCount(res);
         if (n <= 1) return 0.0;
         const possible_edges = @as(f64, @floatFromInt(n * (n - 1)));
-        return @as(f64, @floatFromInt(g.edgeCount())) / possible_edges;
+        return @as(f64, @floatFromInt(edgeCount(res))) / possible_edges;
     }
 
     pub fn nif_triangle_count(res: GraphRes) !usize {
-        const g = res.unpack().graph;
-        return try zog.community.metrics.countTriangles(beam.allocator, g);
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.community.metrics.countTriangles(allocator, g),
+            .hash_graph => |g| try zog.community.metrics.countTriangles(allocator, g),
+        };
     }
 
     pub fn nif_average_clustering_coefficient(res: GraphRes) !f64 {
-        const g = res.unpack().graph;
-        return try zog.community.metrics.averageClusteringCoefficient(beam.allocator, g);
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.community.metrics.averageClusteringCoefficient(allocator, g),
+            .hash_graph => |g| try zog.community.metrics.averageClusteringCoefficient(allocator, g),
+        };
     }
 
     pub fn nif_local_clustering_coefficient(res: GraphRes) ![]f64 {
-        const g = res.unpack().graph;
-        const node_count = g.nodeCapacity();
-        var scores = try beam.allocator.alloc(f64, node_count);
-        errdefer beam.allocator.free(scores);
-        for (0..node_count) |i| {
-            scores[i] = zog.community.metrics.clusteringCoefficient(beam.allocator, g, @intCast(i)) catch 0.0;
+        const allocator = beam.allocator;
+        const node_count = nodeCapacity(res);
+        var scores = try allocator.alloc(f64, node_count);
+        errdefer allocator.free(scores);
+        switch (res.unpack()) {
+            .soa => |g| {
+                for (0..node_count) |i| {
+                    scores[i] = zog.community.metrics.clusteringCoefficient(allocator, g, @intCast(i)) catch 0.0;
+                }
+            },
+            .hash_graph => |g| {
+                for (0..node_count) |i| {
+                    scores[i] = zog.community.metrics.clusteringCoefficient(allocator, g, @intCast(i)) catch 0.0;
+                }
+            },
         }
         return scores;
     }
 
     pub fn nif_assortativity(res: GraphRes) !f64 {
-        const g = res.unpack().graph;
-        return try zog.metrics.assortativity(beam.allocator, g);
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.metrics.assortativity(allocator, g),
+            .hash_graph => |g| try zog.metrics.assortativity(allocator, g),
+        };
     }
 
     pub fn nif_core_numbers(res: GraphRes) ![]u32 {
-        const g = res.unpack().graph;
-        return try zog.connectivity.coreNumbers(beam.allocator, g);
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.connectivity.coreNumbers(allocator, g),
+            .hash_graph => |g| try zog.connectivity.coreNumbers(allocator, g),
+        };
     }
 
     pub fn nif_strongly_connected_components(res: GraphRes) ![]u32 {
-        const g = res.unpack().graph;
-        return try zog.connectivity.stronglyConnectedComponents(beam.allocator, g);
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.connectivity.stronglyConnectedComponents(allocator, g),
+            .hash_graph => |g| try zog.connectivity.stronglyConnectedComponents(allocator, g),
+        };
     }
 
     pub fn nif_kruskal(res: GraphRes) !beam.term {
-        const g = res.unpack().graph;
-        const result = try zog.mst.kruskal(beam.allocator, g);
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.mst.kruskal(allocator, g),
+            .hash_graph => |g| try zog.mst.kruskal(allocator, g),
+        };
         errdefer {
-            beam.allocator.free(result.from);
-            beam.allocator.free(result.to);
-            beam.allocator.free(result.weight);
+            allocator.free(result.from);
+            allocator.free(result.to);
+            allocator.free(result.weight);
         }
 
         const term = beam.make(.{.ok, result.from, result.to, result.weight}, .{});
 
-        beam.allocator.free(result.from);
-        beam.allocator.free(result.to);
-        beam.allocator.free(result.weight);
+        allocator.free(result.from);
+        allocator.free(result.to);
+        allocator.free(result.weight);
 
         return term;
     }
 
     pub fn nif_bellman_ford(res: GraphRes, start_node: u32, goal_node: u32) !beam.term {
-        const g = res.unpack().graph;
-        const opt_res = zog.pathfinding.bellmanFord(beam.allocator, g, start_node, goal_node) catch |err| {
+        const allocator = beam.allocator;
+        const opt_res_or_err = switch (res.unpack()) {
+            .soa => |g| zog.pathfinding.bellmanFord(allocator, g, start_node, goal_node),
+            .hash_graph => |g| zog.pathfinding.bellmanFord(allocator, g, start_node, goal_node),
+        };
+        const opt_res = opt_res_or_err catch |err| {
             if (err == error.NegativeCycle) {
                 return beam.make(.{.@"error", .negative_cycle}, .{});
             }
@@ -387,9 +511,9 @@ defmodule Zog.ResourceGraph do
 
         if (opt_res) |p_res| {
             var path_res = p_res;
-            defer path_res.deinit(beam.allocator);
+            defer path_res.deinit(allocator);
 
-            const path_slice = try beam.allocator.alloc(u32, path_res.path.items.len);
+            const path_slice = try allocator.alloc(u32, path_res.path.items.len);
             @memcpy(path_slice, path_res.path.items);
 
             return beam.make(.{.ok, .{path_slice, path_res.weight}}, .{});
@@ -399,17 +523,20 @@ defmodule Zog.ResourceGraph do
     }
 
     pub fn nif_analyze_connectivity(res: GraphRes) !beam.term {
-        const g = res.unpack().graph;
-        const res_conn = try zog.connectivity.analyzeConnectivity(beam.allocator, g);
+        const allocator = beam.allocator;
+        const res_conn = switch (res.unpack()) {
+            .soa => |g| try zog.connectivity.analyzeConnectivity(allocator, g),
+            .hash_graph => |g| try zog.connectivity.analyzeConnectivity(allocator, g),
+        };
         errdefer {
-            beam.allocator.free(res_conn.bridges);
-            beam.allocator.free(res_conn.articulation_points);
+            allocator.free(res_conn.bridges);
+            allocator.free(res_conn.articulation_points);
         }
 
         const term = beam.make(.{.ok, res_conn.bridges, res_conn.articulation_points}, .{});
 
-        beam.allocator.free(res_conn.bridges);
-        beam.allocator.free(res_conn.articulation_points);
+        allocator.free(res_conn.bridges);
+        allocator.free(res_conn.articulation_points);
 
         return term;
     }
@@ -467,28 +594,32 @@ defmodule Zog.ResourceGraph do
 
     pub fn nif_max_flow(res: GraphRes, source: u32, sink: u32) !FlowNifResult {
         const allocator = beam.allocator;
-        const g = res.unpack().graph;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.flow.max_flow.edmondsKarpF64(allocator, g, source, sink),
+            .hash_graph => |g| try zog.flow.max_flow.edmondsKarpF64(allocator, g, source, sink),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit(allocator);
 
-        var result = try zog.flow.max_flow.edmondsKarpF64(allocator, g, source, sink);
-        defer result.deinit(allocator);
-
-        var cut = try zog.flow.max_flow.minCut(allocator, result, f64, 0.0, zog.utils.compareF64);
+        var cut = try zog.flow.max_flow.minCut(allocator, mutable_result, f64, 0.0, zog.utils.compareF64);
         defer cut.deinit(allocator);
 
-        return try toFlowNifResult(allocator, result.max_flow, result.residual, cut.source_side, cut.sink_side);
+        return try toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side);
     }
 
     pub fn nif_push_relabel(res: GraphRes, source: u32, sink: u32) !FlowNifResult {
         const allocator = beam.allocator;
-        const g = res.unpack().graph;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.flow.max_flow.pushRelabelF64(allocator, g, source, sink),
+            .hash_graph => |g| try zog.flow.max_flow.pushRelabelF64(allocator, g, source, sink),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit(allocator);
 
-        var result = try zog.flow.max_flow.pushRelabelF64(allocator, g, source, sink);
-        defer result.deinit(allocator);
-
-        var cut = try zog.flow.max_flow.minCut(allocator, result, f64, 0.0, zog.utils.compareF64);
+        var cut = try zog.flow.max_flow.minCut(allocator, mutable_result, f64, 0.0, zog.utils.compareF64);
         defer cut.deinit(allocator);
 
-        return try toFlowNifResult(allocator, result.max_flow, result.residual, cut.source_side, cut.sink_side);
+        return try toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side);
     }
 
     const MinCutNifResult = struct {
@@ -499,9 +630,10 @@ defmodule Zog.ResourceGraph do
 
     pub fn nif_global_min_cut(res: GraphRes) !MinCutNifResult {
         const allocator = beam.allocator;
-        const g = res.unpack().graph;
-
-        const result = try zog.flow.min_cut.globalMinCutF64(allocator, g);
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.flow.min_cut.globalMinCutF64(allocator, g),
+            .hash_graph => |g| try zog.flow.min_cut.globalMinCutF64(allocator, g),
+        };
 
         return .{
             .cut_value = result.weight,
@@ -510,9 +642,8 @@ defmodule Zog.ResourceGraph do
         };
     }
 
-    fn getOrInsertNode(
+    fn getOrInsertNodeId(
         arena: std.mem.Allocator,
-        g: *ArrayGraph(void, f64),
         label_to_id: *std.StringHashMap(u32),
         labels_list: *std.ArrayList([]const u8),
         next_id: *u32,
@@ -522,7 +653,6 @@ defmodule Zog.ResourceGraph do
             return id;
         }
         const id = next_id.*;
-        _ = try g.addNode({});
         const key_copy = try arena.dupe(u8, label);
         try label_to_id.put(key_copy, id);
         try labels_list.append(arena, key_copy);
@@ -530,7 +660,15 @@ defmodule Zog.ResourceGraph do
         return id;
     }
 
-    pub fn nif_read_edgelist(file_path: []const u8, is_directed: bool) !beam.term {
+    const ParsedEdge = struct {
+        from: u32,
+        to: u32,
+        weight: f64,
+    };
+
+    pub fn nif_read_edgelist(file_path: []const u8, is_directed: bool, backend: beam.term) !beam.term {
+        const b = try beam.get(BackendType, backend, .{});
+
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
         const arena_allocator = arena.allocator();
@@ -538,13 +676,13 @@ defmodule Zog.ResourceGraph do
         var file = try std.fs.cwd().openFile(file_path, .{});
         defer file.close();
 
-        var g = ArrayGraph(void, f64).init(beam.allocator);
-        errdefer g.deinit();
-
         var label_to_id = std.StringHashMap(u32).init(arena_allocator);
         var labels_list: std.ArrayList([]const u8) = .empty;
         defer labels_list.deinit(arena_allocator);
         var next_id: u32 = 0;
+
+        var edges: std.ArrayList(ParsedEdge) = .empty;
+        defer edges.deinit(arena_allocator);
 
         var read_buffer: [4096]u8 = undefined;
         var file_reader = file.reader(&read_buffer);
@@ -567,21 +705,51 @@ defmodule Zog.ResourceGraph do
 
             const weight = if (opt_weight) |w_str| std.fmt.parseFloat(f64, w_str) catch 1.0 else 1.0;
 
-            const src_id = try getOrInsertNode(arena_allocator, &g, &label_to_id, &labels_list, &next_id, src_lbl);
-            const dst_id = try getOrInsertNode(arena_allocator, &g, &label_to_id, &labels_list, &next_id, dst_lbl);
+            const src_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, src_lbl);
+            const dst_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, dst_lbl);
 
-            _ = try g.addEdge(src_id, dst_id, weight);
-            if (!is_directed) {
-                _ = try g.addEdge(dst_id, src_id, weight);
-            }
+            try edges.append(arena_allocator, .{ .from = src_id, .to = dst_id, .weight = weight });
         }
 
-        const resource = try GraphRes.create(.{ .graph = g }, .{ .released = false });
-        const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
-        return beam.make(.{.ok, resource, labels_slice}, .{});
+        switch (b) {
+            .soa => {
+                var g = ArrayGraph(void, f64).init(beam.allocator);
+                errdefer g.deinit();
+                try g.nodes.ensureTotalCapacity(beam.allocator, next_id);
+                for (0..next_id) |_| { _ = try g.addNode({}); }
+                for (edges.items) |edge| {
+                    _ = try g.addEdge(edge.from, edge.to, edge.weight);
+                    if (!is_directed) {
+                        _ = try g.addEdge(edge.to, edge.from, edge.weight);
+                    }
+                }
+                const resource = try GraphRes.create(.{ .soa = g }, .{ .released = false });
+                const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
+                return beam.make(.{.ok, resource, labels_slice}, .{});
+            },
+            .hash_graph => {
+                var g = zog.models.GraphMap(u32, void, f64, .directed, .dual).init(beam.allocator);
+                errdefer g.deinit();
+                try g.nodes.ensureTotalCapacity(@intCast(next_id));
+                for (0..next_id) |i| {
+                    try g.addNode(@intCast(i), {});
+                }
+                for (edges.items) |edge| {
+                    try g.addEdge(edge.from, edge.to, edge.weight);
+                    if (!is_directed) {
+                        try g.addEdge(edge.to, edge.from, edge.weight);
+                    }
+                }
+                const resource = try GraphRes.create(.{ .hash_graph = g }, .{ .released = false });
+                const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
+                return beam.make(.{.ok, resource, labels_slice}, .{});
+            }
+        }
     }
 
-    pub fn nif_read_adjlist(file_path: []const u8, is_directed: bool) !beam.term {
+    pub fn nif_read_adjlist(file_path: []const u8, is_directed: bool, backend: beam.term) !beam.term {
+        const b = try beam.get(BackendType, backend, .{});
+
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
         const arena_allocator = arena.allocator();
@@ -589,13 +757,13 @@ defmodule Zog.ResourceGraph do
         var file = try std.fs.cwd().openFile(file_path, .{});
         defer file.close();
 
-        var g = ArrayGraph(void, f64).init(beam.allocator);
-        errdefer g.deinit();
-
         var label_to_id = std.StringHashMap(u32).init(arena_allocator);
         var labels_list: std.ArrayList([]const u8) = .empty;
         defer labels_list.deinit(arena_allocator);
         var next_id: u32 = 0;
+
+        var edges: std.ArrayList(ParsedEdge) = .empty;
+        defer edges.deinit(arena_allocator);
 
         var read_buffer: [4096]u8 = undefined;
         var file_reader = file.reader(&read_buffer);
@@ -615,7 +783,7 @@ defmodule Zog.ResourceGraph do
             const src_lbl = std.mem.trim(u8, trimmed[0..colon_idx], " \t");
             const neighbors_part = trimmed[colon_idx + 1 ..];
 
-            const src_id = try getOrInsertNode(arena_allocator, &g, &label_to_id, &labels_list, &next_id, src_lbl);
+            const src_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, src_lbl);
 
             var neighbors_it = std.mem.tokenizeAny(u8, neighbors_part, " \t");
             while (neighbors_it.next()) |neighbor_token| {
@@ -624,20 +792,50 @@ defmodule Zog.ResourceGraph do
                 const opt_w = neighbor_parts.next();
                 const weight = if (opt_w) |w_str| std.fmt.parseFloat(f64, w_str) catch 1.0 else 1.0;
 
-                const dst_id = try getOrInsertNode(arena_allocator, &g, &label_to_id, &labels_list, &next_id, dst_lbl);
-                _ = try g.addEdge(src_id, dst_id, weight);
-                if (!is_directed) {
-                    _ = try g.addEdge(dst_id, src_id, weight);
-                }
+                const dst_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, dst_lbl);
+                try edges.append(arena_allocator, .{ .from = src_id, .to = dst_id, .weight = weight });
             }
         }
 
-        const resource = try GraphRes.create(.{ .graph = g }, .{ .released = false });
-        const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
-        return beam.make(.{.ok, resource, labels_slice}, .{});
+        switch (b) {
+            .soa => {
+                var g = ArrayGraph(void, f64).init(beam.allocator);
+                errdefer g.deinit();
+                try g.nodes.ensureTotalCapacity(beam.allocator, next_id);
+                for (0..next_id) |_| { _ = try g.addNode({}); }
+                for (edges.items) |edge| {
+                    _ = try g.addEdge(edge.from, edge.to, edge.weight);
+                    if (!is_directed) {
+                        _ = try g.addEdge(edge.to, edge.from, edge.weight);
+                    }
+                }
+                const resource = try GraphRes.create(.{ .soa = g }, .{ .released = false });
+                const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
+                return beam.make(.{.ok, resource, labels_slice}, .{});
+            },
+            .hash_graph => {
+                var g = zog.models.GraphMap(u32, void, f64, .directed, .dual).init(beam.allocator);
+                errdefer g.deinit();
+                try g.nodes.ensureTotalCapacity(@intCast(next_id));
+                for (0..next_id) |i| {
+                    try g.addNode(@intCast(i), {});
+                }
+                for (edges.items) |edge| {
+                    try g.addEdge(edge.from, edge.to, edge.weight);
+                    if (!is_directed) {
+                        try g.addEdge(edge.to, edge.from, edge.weight);
+                    }
+                }
+                const resource = try GraphRes.create(.{ .hash_graph = g }, .{ .released = false });
+                const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
+                return beam.make(.{.ok, resource, labels_slice}, .{});
+            }
+        }
     }
 
-    pub fn nif_read_tgf(file_path: []const u8, is_directed: bool) !beam.term {
+    pub fn nif_read_tgf(file_path: []const u8, is_directed: bool, backend: beam.term) !beam.term {
+        const b = try beam.get(BackendType, backend, .{});
+
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
         const arena_allocator = arena.allocator();
@@ -645,13 +843,13 @@ defmodule Zog.ResourceGraph do
         var file = try std.fs.cwd().openFile(file_path, .{});
         defer file.close();
 
-        var g = ArrayGraph(void, f64).init(beam.allocator);
-        errdefer g.deinit();
-
         var label_to_id = std.StringHashMap(u32).init(arena_allocator);
         var labels_list: std.ArrayList([]const u8) = .empty;
         defer labels_list.deinit(arena_allocator);
         var next_id: u32 = 0;
+
+        var edges: std.ArrayList(ParsedEdge) = .empty;
+        defer edges.deinit(arena_allocator);
 
         var parsing_edges = false;
         var read_buffer: [4096]u8 = undefined;
@@ -676,7 +874,7 @@ defmodule Zog.ResourceGraph do
             if (!parsing_edges) {
                 var parts = std.mem.tokenizeAny(u8, trimmed, " \t");
                 const node_lbl = parts.next() orelse continue;
-                _ = try getOrInsertNode(arena_allocator, &g, &label_to_id, &labels_list, &next_id, node_lbl);
+                _ = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, node_lbl);
             } else {
                 var parts = std.mem.tokenizeAny(u8, trimmed, " \t");
                 const src_lbl = parts.next() orelse continue;
@@ -684,19 +882,47 @@ defmodule Zog.ResourceGraph do
                 const opt_w = parts.next();
                 const weight = if (opt_w) |w_str| std.fmt.parseFloat(f64, w_str) catch 1.0 else 1.0;
 
-                const src_id = try getOrInsertNode(arena_allocator, &g, &label_to_id, &labels_list, &next_id, src_lbl);
-                const dst_id = try getOrInsertNode(arena_allocator, &g, &label_to_id, &labels_list, &next_id, dst_lbl);
+                const src_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, src_lbl);
+                const dst_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, dst_lbl);
 
-                _ = try g.addEdge(src_id, dst_id, weight);
-                if (!is_directed) {
-                    _ = try g.addEdge(dst_id, src_id, weight);
-                }
+                try edges.append(arena_allocator, .{ .from = src_id, .to = dst_id, .weight = weight });
             }
         }
 
-        const resource = try GraphRes.create(.{ .graph = g }, .{ .released = false });
-        const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
-        return beam.make(.{.ok, resource, labels_slice}, .{});
+        switch (b) {
+            .soa => {
+                var g = ArrayGraph(void, f64).init(beam.allocator);
+                errdefer g.deinit();
+                try g.nodes.ensureTotalCapacity(beam.allocator, next_id);
+                for (0..next_id) |_| { _ = try g.addNode({}); }
+                for (edges.items) |edge| {
+                    _ = try g.addEdge(edge.from, edge.to, edge.weight);
+                    if (!is_directed) {
+                        _ = try g.addEdge(edge.to, edge.from, edge.weight);
+                    }
+                }
+                const resource = try GraphRes.create(.{ .soa = g }, .{ .released = false });
+                const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
+                return beam.make(.{.ok, resource, labels_slice}, .{});
+            },
+            .hash_graph => {
+                var g = zog.models.GraphMap(u32, void, f64, .directed, .dual).init(beam.allocator);
+                errdefer g.deinit();
+                try g.nodes.ensureTotalCapacity(@intCast(next_id));
+                for (0..next_id) |i| {
+                    try g.addNode(@intCast(i), {});
+                }
+                for (edges.items) |edge| {
+                    try g.addEdge(edge.from, edge.to, edge.weight);
+                    if (!is_directed) {
+                        try g.addEdge(edge.to, edge.from, edge.weight);
+                    }
+                }
+                const resource = try GraphRes.create(.{ .hash_graph = g }, .{ .released = false });
+                const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
+                return beam.make(.{.ok, resource, labels_slice}, .{});
+            }
+        }
     }
     """
 
@@ -709,13 +935,14 @@ defmodule Zog.ResourceGraph do
     @doc """
     Builds a native graph resource from a `SoA`.
     """
-    @spec new(SoA.t()) :: t()
-    def new(%SoA{} = builder) do
+    @spec new(SoA.t(), keyword()) :: t()
+    def new(%SoA{} = builder, opts \\ []) do
+      backend = Keyword.get(opts, :backend, :soa)
       node_count = SoA.node_count(builder)
       {from, to, weights} = SoA.to_edge_arrays(builder)
 
       %{
-        resource: new(node_count, from, to, weights),
+        resource: new(node_count, from, to, weights, backend),
         builder: builder
       }
     end
@@ -724,11 +951,11 @@ defmodule Zog.ResourceGraph do
       @doc """
       Builds a native graph resource directly from a `Yog.Graph`.
       """
-      @spec from_yog(Yog.graph()) :: t()
-      def from_yog(yog_graph) do
+      @spec from_yog(Yog.graph(), keyword()) :: t()
+      def from_yog(yog_graph, opts \\ []) do
         yog_graph
         |> SoA.from_graph()
-        |> new()
+        |> new(opts)
       end
 
       @doc """
@@ -766,9 +993,10 @@ defmodule Zog.ResourceGraph do
     @spec read_edgelist(Path.t(), keyword()) :: t()
     def read_edgelist(path, opts \\ []) do
       directed = Keyword.get(opts, :directed, true)
+      backend = Keyword.get(opts, :backend, :soa)
       path_str = Path.expand(path)
 
-      case nif_read_edgelist(path_str, directed) do
+      case nif_read_edgelist(path_str, directed, backend) do
         {:ok, resource, labels} ->
           build_from_labels(resource, labels, directed)
       end
@@ -780,9 +1008,10 @@ defmodule Zog.ResourceGraph do
     @spec read_adjlist(Path.t(), keyword()) :: t()
     def read_adjlist(path, opts \\ []) do
       directed = Keyword.get(opts, :directed, true)
+      backend = Keyword.get(opts, :backend, :soa)
       path_str = Path.expand(path)
 
-      case nif_read_adjlist(path_str, directed) do
+      case nif_read_adjlist(path_str, directed, backend) do
         {:ok, resource, labels} ->
           build_from_labels(resource, labels, directed)
       end
@@ -794,9 +1023,10 @@ defmodule Zog.ResourceGraph do
     @spec read_tgf(Path.t(), keyword()) :: t()
     def read_tgf(path, opts \\ []) do
       directed = Keyword.get(opts, :directed, true)
+      backend = Keyword.get(opts, :backend, :soa)
       path_str = Path.expand(path)
 
-      case nif_read_tgf(path_str, directed) do
+      case nif_read_tgf(path_str, directed, backend) do
         {:ok, resource, labels} ->
           build_from_labels(resource, labels, directed)
       end

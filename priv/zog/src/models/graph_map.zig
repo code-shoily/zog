@@ -158,6 +158,10 @@ pub fn GraphMap(
             return self.nodes.count();
         }
 
+        pub fn nodeCapacity(self: Self) usize {
+            return self.nodes.count();
+        }
+
         pub fn edgeCount(self: Self) usize {
             var count: usize = 0;
             var it = self.out_edges.valueIterator();
