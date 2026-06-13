@@ -39,9 +39,25 @@ Traditional NIFs suffer from serialization overhead when translating complex Eli
 
 `Zog` solves this using the **`ResourceGraph`** pattern:
 1. **Load/Build Once**: Create a native memory representation of your graph via `Zog.ResourceGraph.new/1` (from a `Zog.Model`), or load it directly from disk into native memory using NIF-level file parsers (`read_edgelist/2`, `read_adjlist/2`, `read_tgf/2`).
-2. **Amortize Serialization**: The graph remains allocated inside native Zig memory as an Erlang NIF resource reference (`Zog.ResourceGraph.t()`).
+2. **Amortize Serialization**: The graph remains allocated inside native Zig memory as Erlang NIF resource references (`Zog.ResourceGraph.t()`).
 3. **Execute Repeatedly**: Run multiple heavy algorithms (Centrality, Leiden, Pathfinding, Min-Cut) directly on the reference.
 4. **Collect Outputs**: Only the final scalar metrics or integer arrays are returned back to Elixir.
+
+### Native Memory Backends
+
+`ResourceGraph` supports two alternative backend engines:
+
+* **`:soa` (ArrayGraph)**: Stores nodes and edges in flat, contiguous structure-of-arrays (SoA) memory slices. This layout maximizes CPU cache locality and provides the highest execution speed. **This is the default and recommended backend** for build-once, run-many workloads.
+* **`:hash_graph` (GraphMap)**: Uses standard pointer-heavy hash tables with collision/resize overhead. This backend should **only** be chosen if your application requires dynamic native mutation of nodes and edges between NIF calls, as it carries a substantial performance penalty relative to `:soa`.
+
+To choose a backend, pass the `:backend` option:
+```elixir
+# Create via SoA builder
+native_graph = Zog.ResourceGraph.new(graph, backend: :soa)
+
+# Or load directly from disk
+native_graph = Zog.ResourceGraph.read_edgelist("edges.txt", backend: :hash_graph)
+```
 
 ---
 

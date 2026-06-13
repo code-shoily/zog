@@ -3,8 +3,36 @@ defmodule Zog.ResourceGraph do
   Native graph resource backed by Zog (Zig) via Zigler.
 
   Unlike the Copy-In/Copy-Out pattern, `ResourceGraph` keeps the Zig
-  `ArrayGraph` alive as a NIF resource between calls. Build once, run many
-  algorithms, destroy when done.
+  `ArrayGraph` or `GraphMap` alive as a NIF resource between calls. Build once,
+  run many algorithms, destroy when done.
+
+  ## Backends
+
+  Zog supports two native graph backends, selectable via the `:backend` option:
+
+  * `:soa` (default) - Structure of Arrays (`ArrayGraph`).
+    * **Structure**: Stores nodes and edges in flat, contiguous memory slices.
+    * **Performance**: Provides maximum execution speed and optimal cache locality.
+    * **Use Case**: Recommended for read-heavy, build-once-run-many query workloads where the topology does not change between NIF calls.
+  * `:hash_graph` - Hash Map Graph (`GraphMap`).
+    * **Structure**: Stores nodes and edges using standard hash tables with buckets and dynamic resizing.
+    * **Performance**: Incurs significant overhead due to pointer-heavy hashing, collision resolution, and lack of cache locality.
+    * **Use Case**: Use only if your workload relies on dynamic graph mutation (adding or deleting nodes/edges natively) between algorithm executions.
+
+  ## Examples
+
+  Create a resource graph using the high-performance `:soa` backend:
+
+      graph = Zog.directed() |> Zog.add_edge("A", "B", 1.0)
+      res = Zog.ResourceGraph.new(graph, backend: :soa)
+      # compute centralities...
+      Zog.ResourceGraph.destroy(res)
+
+  Create a resource graph using the `:hash_graph` backend:
+
+      res = Zog.ResourceGraph.read_edgelist("edges.txt", backend: :hash_graph)
+      # compute centralities...
+      Zog.ResourceGraph.destroy(res)
   """
   alias Zog.Community.Dendrogram
   alias Zog.Community.Result
@@ -1031,6 +1059,10 @@ defmodule Zog.ResourceGraph do
 
     @doc """
     Builds a native graph resource from a `SoA`.
+
+    ## Options
+
+      * `:backend` - Choose the native graph backend, either `:soa` or `:hash_graph` (defaults to `:soa`).
     """
     @spec new(SoA.t(), keyword()) :: t()
     def new(%SoA{} = builder, opts \\ []) do
@@ -1106,6 +1138,11 @@ defmodule Zog.ResourceGraph do
 
     @doc """
     Reads a graph from an edge list file directly in native memory.
+
+    ## Options
+
+      * `:directed` - Boolean flag representing if the graph is directed (defaults to `true`).
+      * `:backend` - Choose the native graph backend, either `:soa` or `:hash_graph` (defaults to `:soa`).
     """
     @spec read_edgelist(Path.t(), keyword()) :: t()
     def read_edgelist(path, opts \\ []) do
@@ -1121,6 +1158,11 @@ defmodule Zog.ResourceGraph do
 
     @doc """
     Reads a graph from an adjacency list file directly in native memory.
+
+    ## Options
+
+      * `:directed` - Boolean flag representing if the graph is directed (defaults to `true`).
+      * `:backend` - Choose the native graph backend, either `:soa` or `:hash_graph` (defaults to `:soa`).
     """
     @spec read_adjlist(Path.t(), keyword()) :: t()
     def read_adjlist(path, opts \\ []) do
@@ -1136,6 +1178,11 @@ defmodule Zog.ResourceGraph do
 
     @doc """
     Reads a graph from a Trivial Graph Format (TGF) file directly in native memory.
+
+    ## Options
+
+      * `:directed` - Boolean flag representing if the graph is directed (defaults to `true`).
+      * `:backend` - Choose the native graph backend, either `:soa` or `:hash_graph` (defaults to `:soa`).
     """
     @spec read_tgf(Path.t(), keyword()) :: t()
     def read_tgf(path, opts \\ []) do
