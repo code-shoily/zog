@@ -231,6 +231,7 @@ defmodule Zog.SoA do
   """
   @spec id_to_label(t(), id()) :: label() | nil
   def id_to_label(%__MODULE__{integer_labels: true}, id), do: id
+
   def id_to_label(%__MODULE__{id_to_label: id_to_label}, id) do
     Map.get(id_to_label, id)
   end
@@ -240,6 +241,7 @@ defmodule Zog.SoA do
   """
   @spec label_to_id(t(), label()) :: id() | nil
   def label_to_id(%__MODULE__{integer_labels: true}, label), do: label
+
   def label_to_id(%__MODULE__{label_to_id: label_to_id}, label) do
     Map.get(label_to_id, label)
   end
@@ -251,6 +253,7 @@ defmodule Zog.SoA do
   def all_labels(%__MODULE__{integer_labels: true, next_id: next_id}) do
     Enum.to_list(0..(next_id - 1))
   end
+
   def all_labels(%__MODULE__{nodes: nodes}), do: Enum.reverse(nodes)
 
   @doc """
@@ -304,6 +307,7 @@ defmodule Zog.SoA do
       edges =
         Enum.reduce(out_edges, [], fn {src, dsts}, acc ->
           src_idx = Map.fetch!(label_to_id, src)
+
           Enum.reduce(dsts, acc, fn {dst, weight}, inner_acc ->
             dst_idx = Map.fetch!(label_to_id, dst)
             [{src_idx, dst_idx, to_float(weight)} | inner_acc]
@@ -381,7 +385,8 @@ defmodule Zog.SoA do
       label_to_id = vertices |> Enum.with_index() |> Map.new()
 
       edges =
-        Enum.reduce(Graph.edges(libgraph), [], fn %Graph.Edge{v1: v1, v2: v2, weight: weight}, acc ->
+        Enum.reduce(Graph.edges(libgraph), [], fn %Graph.Edge{v1: v1, v2: v2, weight: weight},
+                                                  acc ->
           src_idx = Map.fetch!(label_to_id, v1)
           dst_idx = Map.fetch!(label_to_id, v2)
           w = to_float(weight)

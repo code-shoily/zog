@@ -319,7 +319,14 @@ defmodule Zog.Pathfinding do
     """
     @spec astar(SoA.t(), SoA.label(), SoA.label(), map() | list(), map() | list(), atom()) ::
             {:ok, {[SoA.label()], float()}} | {:error, :no_path}
-    def astar(%SoA{} = builder, start_label, goal_label, x_coords, y_coords, heuristic \\ :euclidean) do
+    def astar(
+          %SoA{} = builder,
+          start_label,
+          goal_label,
+          x_coords,
+          y_coords,
+          heuristic \\ :euclidean
+        ) do
       if heuristic not in [:euclidean, :manhattan, :chebyshev] do
         raise ArgumentError, "heuristic must be one of :euclidean, :manhattan, :chebyshev"
       end
@@ -334,7 +341,17 @@ defmodule Zog.Pathfinding do
         {from, to, weights} = SoA.to_edge_arrays(builder)
         {x_list, y_list} = build_coordinate_lists(builder, x_coords, y_coords)
 
-        case nif_astar(node_count, from, to, weights, start_id, goal_id, x_list, y_list, heuristic) do
+        case nif_astar(
+               node_count,
+               from,
+               to,
+               weights,
+               start_id,
+               goal_id,
+               x_list,
+               y_list,
+               heuristic
+             ) do
           {:ok, {path_ids, weight}} ->
             path_labels = Enum.map(path_ids, &SoA.id_to_label(builder, &1))
             {:ok, {path_labels, weight}}
@@ -388,7 +405,10 @@ defmodule Zog.Pathfinding do
           end)
         else
           if length(x_coords) != node_count do
-            raise(ArgumentError, "Expected X coordinate list to have length #{node_count}, got #{length(x_coords)}")
+            raise(
+              ArgumentError,
+              "Expected X coordinate list to have length #{node_count}, got #{length(x_coords)}"
+            )
           end
 
           Enum.map(x_coords, &to_float/1)
@@ -413,7 +433,10 @@ defmodule Zog.Pathfinding do
           end)
         else
           if length(y_coords) != node_count do
-            raise(ArgumentError, "Expected Y coordinate list to have length #{node_count}, got #{length(y_coords)}")
+            raise(
+              ArgumentError,
+              "Expected Y coordinate list to have length #{node_count}, got #{length(y_coords)}"
+            )
           end
 
           Enum.map(y_coords, &to_float/1)

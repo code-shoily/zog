@@ -433,7 +433,9 @@ defmodule Zog.ResourceGraphTest do
         x_coords = %{"A" => 0.0, "B" => 1.0, "C" => 2.0}
         y_coords = %{"A" => 0.0, "B" => 0.0, "C" => 0.0}
 
-        assert {:ok, {["A", "B", "C"], 2.0}} = ResourceGraph.astar(graph, "A", "C", x_coords, y_coords)
+        assert {:ok, {["A", "B", "C"], 2.0}} =
+                 ResourceGraph.astar(graph, "A", "C", x_coords, y_coords)
+
         ResourceGraph.destroy(graph)
       end
     end

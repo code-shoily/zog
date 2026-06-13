@@ -57,12 +57,14 @@ defmodule Zog.GeneratorTest do
       # p = 1 undirected
       builder_1 = Generator.erdos_renyi(n, 1.0, kind: :undirected)
       assert SoA.node_count(builder_1) == n
-      assert SoA.edge_count(builder_1) == 90 # 10 * 9 (since undirected stores both directions)
+      # 10 * 9 (since undirected stores both directions)
+      assert SoA.edge_count(builder_1) == 90
 
       # p = 1 directed
       builder_1_dir = Generator.erdos_renyi(n, 1.0, kind: :directed)
       assert SoA.node_count(builder_1_dir) == n
-      assert SoA.edge_count(builder_1_dir) == 90 # 10 * 9
+      # 10 * 9
+      assert SoA.edge_count(builder_1_dir) == 90
     end
   end
 
@@ -92,6 +94,7 @@ defmodule Zog.GeneratorTest do
       builder = Generator.barabasi_albert(n, m)
 
       edges = SoA.all_edges(builder)
+
       for {u, v, _w} <- edges do
         assert u != v
       end

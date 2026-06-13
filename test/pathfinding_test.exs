@@ -187,17 +187,23 @@ defmodule Zog.PathfindingTest do
       x_coords = %{"A" => 0.0, "B" => 1.0, "C" => 2.0, "D" => 0.0, "E" => 1.0, "F" => 2.0}
       y_coords = %{"A" => 0.0, "B" => 0.0, "C" => 0.0, "D" => 1.0, "E" => 1.0, "F" => 1.0}
 
-      assert {:ok, {path, weight}} = Pathfinding.astar(builder, "A", "F", x_coords, y_coords, :euclidean)
+      assert {:ok, {path, weight}} =
+               Pathfinding.astar(builder, "A", "F", x_coords, y_coords, :euclidean)
+
       assert weight == 3.0
       assert "A" in path
       assert "F" in path
       assert length(path) == 4
 
-      assert {:ok, {path, weight}} = Pathfinding.astar(builder, "A", "F", x_coords, y_coords, :manhattan)
+      assert {:ok, {path, weight}} =
+               Pathfinding.astar(builder, "A", "F", x_coords, y_coords, :manhattan)
+
       assert weight == 3.0
       assert length(path) == 4
 
-      assert {:ok, {path, weight}} = Pathfinding.astar(builder, "A", "F", x_coords, y_coords, :chebyshev)
+      assert {:ok, {path, weight}} =
+               Pathfinding.astar(builder, "A", "F", x_coords, y_coords, :chebyshev)
+
       assert weight == 3.0
       assert length(path) == 4
     end
@@ -211,7 +217,8 @@ defmodule Zog.PathfindingTest do
       x_coords = [0.0, 1.0, 2.0]
       y_coords = [0.0, 0.0, 0.0]
 
-      assert {:ok, {["A", "B", "C"], 2.0}} = Pathfinding.astar(builder, "A", "C", x_coords, y_coords)
+      assert {:ok, {["A", "B", "C"], 2.0}} =
+               Pathfinding.astar(builder, "A", "C", x_coords, y_coords)
     end
 
     test "raises error on invalid heuristic" do

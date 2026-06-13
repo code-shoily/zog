@@ -1602,7 +1602,8 @@ defmodule Zog.ResourceGraph do
       * `:seed` - Random seed (defaults to `0`).
       * `:raw` - If true, returns a list of community IDs directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
-    @spec label_propagation(t(), keyword()) :: %{SoA.label() => non_neg_integer()} | [non_neg_integer()]
+    @spec label_propagation(t(), keyword()) ::
+            %{SoA.label() => non_neg_integer()} | [non_neg_integer()]
     def label_propagation(%{resource: res, builder: builder}, opts \\ []) do
       max_iterations = Keyword.get(opts, :max_iterations, 100)
       seed = Keyword.get(opts, :seed, 0)
@@ -1735,7 +1736,14 @@ defmodule Zog.ResourceGraph do
     """
     @spec astar(t(), SoA.label(), SoA.label(), map() | list(), map() | list(), atom()) ::
             {:ok, {[SoA.label()], float()}} | {:error, :no_path}
-    def astar(%{resource: res, builder: builder}, start_label, goal_label, x_coords, y_coords, heuristic \\ :euclidean) do
+    def astar(
+          %{resource: res, builder: builder},
+          start_label,
+          goal_label,
+          x_coords,
+          y_coords,
+          heuristic \\ :euclidean
+        ) do
       if heuristic not in [:euclidean, :manhattan, :chebyshev] do
         raise ArgumentError, "heuristic must be one of :euclidean, :manhattan, :chebyshev"
       end
@@ -1800,7 +1808,10 @@ defmodule Zog.ResourceGraph do
           end)
         else
           if length(x_coords) != node_count do
-            raise(ArgumentError, "Expected X coordinate list to have length #{node_count}, got #{length(x_coords)}")
+            raise(
+              ArgumentError,
+              "Expected X coordinate list to have length #{node_count}, got #{length(x_coords)}"
+            )
           end
 
           Enum.map(x_coords, &to_float/1)
@@ -1825,7 +1836,10 @@ defmodule Zog.ResourceGraph do
           end)
         else
           if length(y_coords) != node_count do
-            raise(ArgumentError, "Expected Y coordinate list to have length #{node_count}, got #{length(y_coords)}")
+            raise(
+              ArgumentError,
+              "Expected Y coordinate list to have length #{node_count}, got #{length(y_coords)}"
+            )
           end
 
           Enum.map(y_coords, &to_float/1)

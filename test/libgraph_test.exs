@@ -25,7 +25,7 @@ defmodule Zog.LibgraphTest do
       # to_libgraph
       roundtrip = SoA.to_libgraph(builder)
       assert Graph.vertices(roundtrip) |> Enum.sort() == ["A", "B", "C"]
-      
+
       edges = Graph.edges(roundtrip)
       assert length(edges) == 2
       assert Enum.any?(edges, fn e -> e.v1 == "A" && e.v2 == "B" && e.weight == 1.5 end)
@@ -41,7 +41,8 @@ defmodule Zog.LibgraphTest do
 
       builder = SoA.from_libgraph(libgraph)
       assert SoA.node_count(builder) == 2
-      assert SoA.edge_count(builder) == 2 # Undirected edges are stored bidirectionally in Zog.SoA
+      # Undirected edges are stored bidirectionally in Zog.SoA
+      assert SoA.edge_count(builder) == 2
       assert builder.kind == :undirected
 
       roundtrip = SoA.to_libgraph(builder)
@@ -58,7 +59,7 @@ defmodule Zog.LibgraphTest do
 
       builder = Zog.from_libgraph(libgraph)
       assert Zog.node_count(builder) == 2
-      
+
       roundtrip = Zog.to_libgraph(builder)
       assert Graph.edge(roundtrip, "A", "B")
     end
@@ -73,7 +74,7 @@ defmodule Zog.LibgraphTest do
       # Build ResourceGraph directly from libgraph
       graph = ResourceGraph.from_libgraph(libgraph)
       assert is_reference(graph.resource)
-      
+
       # Convert it back
       roundtrip = ResourceGraph.to_libgraph(graph)
       assert Graph.edge(roundtrip, "A", "B")

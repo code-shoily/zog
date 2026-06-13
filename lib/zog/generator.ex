@@ -15,7 +15,8 @@ defmodule Zog.Generator do
     - `:kind` - Graph kind, either `:directed` or `:undirected` (default).
   """
   @spec erdos_renyi(non_neg_integer(), float(), keyword()) :: SoA.t()
-  def erdos_renyi(n, p, opts \\ []) when is_integer(n) and n >= 0 and is_float(p) and p >= 0.0 and p <= 1.0 do
+  def erdos_renyi(n, p, opts \\ [])
+      when is_integer(n) and n >= 0 and is_float(p) and p >= 0.0 and p <= 1.0 do
     kind = Keyword.get(opts, :kind, :undirected)
     builder = Zog.new(kind)
 
@@ -33,6 +34,7 @@ defmodule Zog.Generator do
 
       p >= 1.0 ->
         builder = Enum.reduce(0..(n - 1), builder, fn i, acc -> SoA.add_node(acc, i) end)
+
         if n > 1 do
           Enum.reduce(0..(n - 2), builder, fn u, acc ->
             Enum.reduce((u + 1)..(n - 1), acc, fn v, acc2 ->
@@ -81,6 +83,7 @@ defmodule Zog.Generator do
 
       p >= 1.0 ->
         builder = Enum.reduce(0..(n - 1), builder, fn i, acc -> SoA.add_node(acc, i) end)
+
         Enum.reduce(0..(n - 1), builder, fn u, acc ->
           Enum.reduce(0..(n - 1), acc, fn v, acc2 ->
             if u == v do
@@ -126,7 +129,8 @@ defmodule Zog.Generator do
     - `:kind` - Graph kind, either `:directed` or `:undirected` (default).
   """
   @spec barabasi_albert(integer(), integer(), keyword()) :: SoA.t()
-  def barabasi_albert(n, m, opts \\ []) when is_integer(n) and is_integer(m) and n > m and m >= 1 do
+  def barabasi_albert(n, m, opts \\ [])
+      when is_integer(n) and is_integer(m) and n > m and m >= 1 do
     kind = Keyword.get(opts, :kind, :undirected)
     builder = Zog.new(kind)
 
@@ -273,7 +277,8 @@ defmodule Zog.Generator do
     - `:kind` - Graph kind, either `:directed` or `:undirected` (default).
   """
   @spec grid_2d(integer(), integer(), keyword()) :: SoA.t()
-  def grid_2d(rows, cols, opts \\ []) when is_integer(rows) and rows >= 1 and is_integer(cols) and cols >= 1 do
+  def grid_2d(rows, cols, opts \\ [])
+      when is_integer(rows) and rows >= 1 and is_integer(cols) and cols >= 1 do
     kind = Keyword.get(opts, :kind, :undirected)
     builder = Zog.new(kind)
 

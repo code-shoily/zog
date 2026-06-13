@@ -54,12 +54,14 @@ defmodule Zog.IO do
 
   defp serialize(builder, :csv) do
     header = "Source,Target,Weight\n"
+
     rows =
       for {from_id, to_id, weight} <- Zog.SoA.all_edges(builder), into: "" do
         from_label = Zog.SoA.id_to_label(builder, from_id)
         to_label = Zog.SoA.id_to_label(builder, to_id)
         "#{from_label},#{to_label},#{weight}\n"
       end
+
     header <> rows
   end
 
