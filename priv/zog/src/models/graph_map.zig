@@ -154,31 +154,32 @@ pub fn GraphMap(
 
         // --- Queries ---
 
-        pub fn nodeCount(self: Self) usize {
+        pub fn nodeCount(self: *const Self) usize {
             return self.nodes.count();
         }
 
-        pub fn nodeCapacity(self: Self) usize {
+        pub fn nodeCapacity(self: *const Self) usize {
             return self.nodes.count();
         }
 
-        pub fn edgeCount(self: Self) usize {
+        pub fn edgeCount(self: *const Self) usize {
             var count: usize = 0;
-            var it = self.out_edges.valueIterator();
+            var m_self = @constCast(self);
+            var it = m_self.out_edges.valueIterator();
             while (it.next()) |list| {
                 count += list.items.len;
             }
             return if (dir == .undirected) count / 2 else count;
         }
 
-        pub fn outDegree(self: Self, id: NodeId) usize {
+        pub fn outDegree(self: *const Self, id: NodeId) usize {
             if (self.out_edges.get(id)) |list| {
                 return list.items.len;
             }
             return 0;
         }
 
-        pub fn inDegree(self: Self, id: NodeId) usize {
+        pub fn inDegree(self: *const Self, id: NodeId) usize {
             if (storage == .dual) {
                 if (self.in_edges.get(id)) |list| {
                     return list.items.len;
@@ -189,7 +190,8 @@ pub fn GraphMap(
                     return self.outDegree(id);
                 }
                 var count: usize = 0;
-                var it = self.out_edges.valueIterator();
+                var m_self = @constCast(self);
+                var it = m_self.out_edges.valueIterator();
                 while (it.next()) |list| {
                     for (list.items) |edge| {
                         if (std.meta.eql(edge.to, id)) count += 1;
@@ -199,19 +201,19 @@ pub fn GraphMap(
             }
         }
 
-        pub fn hasNode(self: Self, id: NodeId) bool {
+        pub fn hasNode(self: *const Self, id: NodeId) bool {
             return self.nodes.contains(id);
         }
 
-        pub fn hasEdge(self: Self, from: NodeId, to: NodeId) bool {
+        pub fn hasEdge(self: *const Self, from: NodeId, to: NodeId) bool {
             return self.edgeData(from, to) != null;
         }
 
-        pub fn nodeData(self: Self, id: NodeId) ?NodeData {
+        pub fn nodeData(self: *const Self, id: NodeId) ?NodeData {
             return self.nodes.get(id);
         }
 
-        pub fn edgeData(self: Self, from: NodeId, to: NodeId) ?EdgeData {
+        pub fn edgeData(self: *const Self, from: NodeId, to: NodeId) ?EdgeData {
             const list = self.out_edges.get(from) orelse return null;
             for (list.items) |edge| {
                 if (std.meta.eql(edge.to, to)) return edge.data;
@@ -219,11 +221,12 @@ pub fn GraphMap(
             return null;
         }
 
-        pub fn transpose(self: Self, alloc: Allocator) !Self {
+        pub fn transpose(self: *const Self, alloc: Allocator) !Self {
             var new_graph = Self.init(alloc);
             errdefer new_graph.deinit();
 
-            var node_it = self.nodes.iterator();
+            var m_self = @constCast(self);
+            var node_it = m_self.nodes.iterator();
             while (node_it.next()) |entry| {
                 try new_graph.addNode(entry.key_ptr.*, entry.value_ptr.*);
             }
@@ -294,12 +297,12 @@ pub fn GraphMap(
             }
         };
 
-        pub fn successors(self: Self, id: NodeId) SuccessorIterator {
+        pub fn successors(self: *const Self, id: NodeId) SuccessorIterator {
             const list = self.out_edges.get(id);
             return .{ .items = if (list) |l| l.items else &.{} };
         }
 
-        pub fn predecessors(self: Self, id: NodeId) SuccessorIterator {
+        pub fn predecessors(self: *const Self, id: NodeId) SuccessorIterator {
             if (storage == .single) {
                 @compileError("predecessors() is only available for .dual storage graphs");
             }
@@ -318,8 +321,9 @@ pub fn GraphMap(
             }
         };
 
-        pub fn nodeIds(self: Self) NodeIdIterator {
-            return .{ .it = self.nodes.keyIterator() };
+        pub fn nodeIds(self: *const Self) NodeIdIterator {
+            var m_self = @constCast(self);
+            return .{ .it = m_self.nodes.keyIterator() };
         }
 
         fn addInternal(self: *Self, map: anytype, src: NodeId, dst: NodeId, data: EdgeData) !void {
