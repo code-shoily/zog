@@ -1,22 +1,5 @@
 # Zog ⚡
 
-> **জোগ** • (*zōg*)
-> *noun*
-> 1. native connection, union, addition, sum
-> 2. high-performance NIF layer for Yog
-
-```text
-            ℤ ------------ 𝕆
-                          /
-                         /
-                        /
-                       ℤ
-                      /
-                     /
-                    /
-            জো ----------- গ
-```
-
 [![Hex Version](https://img.shields.io/hexpm/v/zog.svg)](https://hex.pm/packages/zog)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/zog/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
