@@ -541,7 +541,7 @@ fn toFlowNifResult(
     };
 }
 
-pub fn nif_max_flow(res: GraphRes, source: u32, sink: u32) !FlowNifResult {
+pub fn nif_max_flow(res: GraphRes, source: u32, sink: u32) !beam.term {
     const allocator = beam.allocator;
     const result = switch (res.unpack()) {
         .soa => |g| try zog.flow.max_flow.edmondsKarpF64(allocator, g, source, sink),
@@ -553,10 +553,26 @@ pub fn nif_max_flow(res: GraphRes, source: u32, sink: u32) !FlowNifResult {
     var cut = try zog.flow.max_flow.minCut(allocator, mutable_result, f64, 0.0, zog.utils.compareF64);
     defer cut.deinit(allocator);
 
-    return try toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side);
+    const flow_res = try toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side);
+    defer {
+        allocator.free(flow_res.residual_from);
+        allocator.free(flow_res.residual_to);
+        allocator.free(flow_res.residual_cap);
+        allocator.free(flow_res.source_side);
+        allocator.free(flow_res.sink_side);
+    }
+
+    return beam.make(.{
+        .max_flow = flow_res.max_flow,
+        .residual_from = flow_res.residual_from,
+        .residual_to = flow_res.residual_to,
+        .residual_cap = flow_res.residual_cap,
+        .source_side = flow_res.source_side,
+        .sink_side = flow_res.sink_side,
+    }, .{});
 }
 
-pub fn nif_push_relabel(res: GraphRes, source: u32, sink: u32) !FlowNifResult {
+pub fn nif_push_relabel(res: GraphRes, source: u32, sink: u32) !beam.term {
     const allocator = beam.allocator;
     const result = switch (res.unpack()) {
         .soa => |g| try zog.flow.max_flow.pushRelabelF64(allocator, g, source, sink),
@@ -568,27 +584,41 @@ pub fn nif_push_relabel(res: GraphRes, source: u32, sink: u32) !FlowNifResult {
     var cut = try zog.flow.max_flow.minCut(allocator, mutable_result, f64, 0.0, zog.utils.compareF64);
     defer cut.deinit(allocator);
 
-    return try toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side);
+    const flow_res = try toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side);
+    defer {
+        allocator.free(flow_res.residual_from);
+        allocator.free(flow_res.residual_to);
+        allocator.free(flow_res.residual_cap);
+        allocator.free(flow_res.source_side);
+        allocator.free(flow_res.sink_side);
+    }
+
+    return beam.make(.{
+        .max_flow = flow_res.max_flow,
+        .residual_from = flow_res.residual_from,
+        .residual_to = flow_res.residual_to,
+        .residual_cap = flow_res.residual_cap,
+        .source_side = flow_res.source_side,
+        .sink_side = flow_res.sink_side,
+    }, .{});
 }
 
-const MinCutNifResult = struct {
-    cut_value: f64,
-    source_side: []u32,
-    sink_side: []u32,
-};
-
-pub fn nif_global_min_cut(res: GraphRes) !MinCutNifResult {
+pub fn nif_global_min_cut(res: GraphRes) !beam.term {
     const allocator = beam.allocator;
     const result = switch (res.unpack()) {
         .soa => |g| try zog.flow.min_cut.globalMinCutF64(allocator, g),
         .hash_graph => |g| try zog.flow.min_cut.globalMinCutF64(allocator, g),
     };
+    defer {
+        allocator.free(result.group_a);
+        allocator.free(result.group_b);
+    }
 
-    return .{
+    return beam.make(.{
         .cut_value = result.weight,
         .source_side = result.group_a,
         .sink_side = result.group_b,
-    };
+    }, .{});
 }
 
 fn getOrInsertNodeId(
