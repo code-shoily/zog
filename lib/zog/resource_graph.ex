@@ -1685,19 +1685,24 @@ defmodule Zog.ResourceGraph do
     @doc """
     Computes the shortest path and its weight between two nodes using Dijkstra's algorithm directly on the native graph resource.
     """
-    @spec dijkstra(t(), SoA.label(), SoA.label()) ::
+    @spec dijkstra(t(), SoA.label(), SoA.label(), keyword()) ::
             {:ok, {[SoA.label()], float()}} | {:error, :no_path}
-    def dijkstra(%{resource: res, builder: builder}, start_label, goal_label) do
-      start_id = Map.get(builder.label_to_id, start_label)
-      goal_id = Map.get(builder.label_to_id, goal_label)
+    def dijkstra(%{resource: res, builder: builder}, start_label, goal_label, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
+      start_id = if raw, do: start_label, else: Map.get(builder.label_to_id, start_label)
+      goal_id = if raw, do: goal_label, else: Map.get(builder.label_to_id, goal_label)
 
       if is_nil(start_id) or is_nil(goal_id) do
         {:error, :no_path}
       else
         case nif_dijkstra(res, start_id, goal_id) do
           {:ok, {path_ids, weight}} ->
-            path_labels = Enum.map(path_ids, &SoA.id_to_label(builder, &1))
-            {:ok, {path_labels, weight}}
+            if raw do
+              {:ok, {path_ids, weight}}
+            else
+              path_labels = Enum.map(path_ids, &SoA.id_to_label(builder, &1))
+              {:ok, {path_labels, weight}}
+            end
 
           {:error, :no_path} ->
             {:error, :no_path}
@@ -1708,19 +1713,24 @@ defmodule Zog.ResourceGraph do
     @doc """
     Computes the shortest path and its weight between two nodes using Bellman-Ford algorithm directly on the native graph resource.
     """
-    @spec bellman_ford(t(), SoA.label(), SoA.label()) ::
+    @spec bellman_ford(t(), SoA.label(), SoA.label(), keyword()) ::
             {:ok, {[SoA.label()], float()}} | {:error, :no_path} | {:error, :negative_cycle}
-    def bellman_ford(%{resource: res, builder: builder}, start_label, goal_label) do
-      start_id = Map.get(builder.label_to_id, start_label)
-      goal_id = Map.get(builder.label_to_id, goal_label)
+    def bellman_ford(%{resource: res, builder: builder}, start_label, goal_label, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
+      start_id = if raw, do: start_label, else: Map.get(builder.label_to_id, start_label)
+      goal_id = if raw, do: goal_label, else: Map.get(builder.label_to_id, goal_label)
 
       if is_nil(start_id) or is_nil(goal_id) do
         {:error, :no_path}
       else
         case nif_bellman_ford(res, start_id, goal_id) do
           {:ok, {path_ids, weight}} ->
-            path_labels = Enum.map(path_ids, &SoA.id_to_label(builder, &1))
-            {:ok, {path_labels, weight}}
+            if raw do
+              {:ok, {path_ids, weight}}
+            else
+              path_labels = Enum.map(path_ids, &SoA.id_to_label(builder, &1))
+              {:ok, {path_labels, weight}}
+            end
 
           {:error, :no_path} ->
             {:error, :no_path}
@@ -1734,7 +1744,7 @@ defmodule Zog.ResourceGraph do
     @doc """
     Computes the shortest path and its weight between two nodes using A* algorithm directly on the native graph resource.
     """
-    @spec astar(t(), SoA.label(), SoA.label(), map() | list(), map() | list(), atom()) ::
+    @spec astar(t(), SoA.label(), SoA.label(), map() | list(), map() | list(), atom(), keyword()) ::
             {:ok, {[SoA.label()], float()}} | {:error, :no_path}
     def astar(
           %{resource: res, builder: builder},
@@ -1742,24 +1752,30 @@ defmodule Zog.ResourceGraph do
           goal_label,
           x_coords,
           y_coords,
-          heuristic \\ :euclidean
+          heuristic \\ :euclidean,
+          opts \\ []
         ) do
       if heuristic not in [:euclidean, :manhattan, :chebyshev] do
         raise ArgumentError, "heuristic must be one of :euclidean, :manhattan, :chebyshev"
       end
 
-      start_id = Map.get(builder.label_to_id, start_label)
-      goal_id = Map.get(builder.label_to_id, goal_label)
+      raw = Keyword.get(opts, :raw, false)
+      start_id = if raw, do: start_label, else: Map.get(builder.label_to_id, start_label)
+      goal_id = if raw, do: goal_label, else: Map.get(builder.label_to_id, goal_label)
 
       if is_nil(start_id) or is_nil(goal_id) do
         {:error, :no_path}
       else
-        {x_list, y_list} = build_coordinate_lists(builder, x_coords, y_coords)
+        {x_list, y_list} = build_coordinate_lists(builder, x_coords, y_coords, raw)
 
         case nif_astar(res, start_id, goal_id, x_list, y_list, heuristic) do
           {:ok, {path_ids, weight}} ->
-            path_labels = Enum.map(path_ids, &SoA.id_to_label(builder, &1))
-            {:ok, {path_labels, weight}}
+            if raw do
+              {:ok, {path_ids, weight}}
+            else
+              path_labels = Enum.map(path_ids, &SoA.id_to_label(builder, &1))
+              {:ok, {path_labels, weight}}
+            end
 
           {:error, :no_path} ->
             {:error, :no_path}
@@ -1770,10 +1786,11 @@ defmodule Zog.ResourceGraph do
     @doc """
     Checks if a target node is reachable from a start node using BFS traversal directly on the native graph resource.
     """
-    @spec is_reachable(t(), SoA.label(), SoA.label()) :: boolean()
-    def is_reachable(%{resource: res, builder: builder}, start_label, goal_label) do
-      start_id = Map.get(builder.label_to_id, start_label)
-      goal_id = Map.get(builder.label_to_id, goal_label)
+    @spec is_reachable(t(), SoA.label(), SoA.label(), keyword()) :: boolean()
+    def is_reachable(%{resource: res, builder: builder}, start_label, goal_label, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
+      start_id = if raw, do: start_label, else: Map.get(builder.label_to_id, start_label)
+      goal_id = if raw, do: goal_label, else: Map.get(builder.label_to_id, goal_label)
 
       if is_nil(start_id) or is_nil(goal_id) do
         false
@@ -1786,23 +1803,23 @@ defmodule Zog.ResourceGraph do
       end
     end
 
-    defp build_coordinate_lists(builder, x_coords, y_coords) do
+    defp build_coordinate_lists(builder, x_coords, y_coords, raw) do
       node_count = SoA.node_count(builder)
 
       x_list =
         if is_map(x_coords) or Keyword.keyword?(x_coords) do
           Enum.map(0..(node_count - 1), fn id ->
-            label = SoA.id_to_label(builder, id)
+            key = if raw, do: id, else: SoA.id_to_label(builder, id)
 
             val =
               if is_map(x_coords) do
-                Map.get(x_coords, label)
+                Map.get(x_coords, key)
               else
-                Keyword.get(x_coords, label)
+                Keyword.get(x_coords, key)
               end
 
             case val do
-              nil -> raise(ArgumentError, "Missing X coordinate for node #{inspect(label)}")
+              nil -> raise(ArgumentError, "Missing X coordinate for node #{inspect(key)}")
               val -> to_float(val)
             end
           end)
@@ -1820,17 +1837,17 @@ defmodule Zog.ResourceGraph do
       y_list =
         if is_map(y_coords) or Keyword.keyword?(y_coords) do
           Enum.map(0..(node_count - 1), fn id ->
-            label = SoA.id_to_label(builder, id)
+            key = if raw, do: id, else: SoA.id_to_label(builder, id)
 
             val =
               if is_map(y_coords) do
-                Map.get(y_coords, label)
+                Map.get(y_coords, key)
               else
-                Keyword.get(y_coords, label)
+                Keyword.get(y_coords, key)
               end
 
             case val do
-              nil -> raise(ArgumentError, "Missing Y coordinate for node #{inspect(label)}")
+              nil -> raise(ArgumentError, "Missing Y coordinate for node #{inspect(key)}")
               val -> to_float(val)
             end
           end)
@@ -1956,25 +1973,30 @@ defmodule Zog.ResourceGraph do
       end
     end
 
-    @doc """
-    Computes the Minimum Spanning Tree (MST) of an undirected ResourceGraph natively using Kruskal's algorithm.
-    """
-    @spec kruskal(t()) :: {:ok, [Yog.MST.edge()]}
-    def kruskal(%{builder: %SoA{kind: :directed}}) do
+    @spec kruskal(t(), keyword()) :: {:ok, [Yog.MST.edge()]}
+    def kruskal(graph, opts \\ [])
+
+    def kruskal(%{builder: %SoA{kind: :directed}}, _opts) do
       raise ArgumentError, "Kruskal's MST algorithm requires an undirected graph"
     end
 
-    def kruskal(%{resource: res, builder: builder}) do
+    def kruskal(%{resource: res, builder: builder}, opts) do
+      raw = Keyword.get(opts, :raw, false)
+
       case nif_kruskal(res) do
         {:ok, mst_from, mst_to, mst_weights} ->
           edges =
             Enum.zip([mst_from, mst_to, mst_weights])
             |> Enum.map(fn {f_idx, t_idx, w} ->
-              %{
-                from: SoA.id_to_label(builder, f_idx),
-                to: SoA.id_to_label(builder, t_idx),
-                weight: w
-              }
+              if raw do
+                %{from: f_idx, to: t_idx, weight: w}
+              else
+                %{
+                  from: SoA.id_to_label(builder, f_idx),
+                  to: SoA.id_to_label(builder, t_idx),
+                  weight: w
+                }
+              end
             end)
 
           {:ok, edges}
@@ -1984,44 +2006,67 @@ defmodule Zog.ResourceGraph do
     @doc """
     Analyzes an undirected ResourceGraph natively to find all bridges and articulation points.
     """
-    @spec analyze(t()) :: %{
+    @spec analyze(t(), keyword()) :: %{
             bridges: [{SoA.label(), SoA.label()}],
             articulation_points: [SoA.label()]
           }
-    def analyze(%{resource: res, builder: builder}) do
-      labels = SoA.all_labels(builder)
-      labels_tuple = List.to_tuple(labels)
+    def analyze(%{resource: res, builder: builder}, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
 
       case nif_analyze_connectivity(res) do
         {:ok, bridges, articulation_points} ->
-          bridges_tuples =
-            bridges
-            |> Enum.map(fn [u_idx, v_idx] ->
-              make_sorted_edge(elem(labels_tuple, u_idx), elem(labels_tuple, v_idx))
-            end)
-            |> Enum.sort()
+          if raw do
+            bridges_tuples =
+              bridges
+              |> Enum.map(fn [u_idx, v_idx] ->
+                if u_idx < v_idx, do: {u_idx, v_idx}, else: {v_idx, u_idx}
+              end)
+              |> Enum.sort()
 
-          ap_labels =
-            articulation_points
-            |> Enum.map(fn idx -> elem(labels_tuple, idx) end)
-            |> Enum.sort()
+            %{bridges: bridges_tuples, articulation_points: Enum.sort(articulation_points)}
+          else
+            labels = SoA.all_labels(builder)
+            labels_tuple = List.to_tuple(labels)
 
-          %{bridges: bridges_tuples, articulation_points: ap_labels}
+            bridges_tuples =
+              bridges
+              |> Enum.map(fn [u_idx, v_idx] ->
+                make_sorted_edge(elem(labels_tuple, u_idx), elem(labels_tuple, v_idx))
+              end)
+              |> Enum.sort()
+
+            ap_labels =
+              articulation_points
+              |> Enum.map(fn idx -> elem(labels_tuple, idx) end)
+              |> Enum.sort()
+
+            %{bridges: bridges_tuples, articulation_points: ap_labels}
+          end
       end
     end
 
     @doc """
     Computes the maximum flow and minimum cut natively on a `ResourceGraph`.
     """
-    @spec max_flow(t(), SoA.label(), SoA.label(), atom()) :: %{
+    @spec max_flow(t(), SoA.label(), SoA.label(), atom() | keyword(), keyword()) :: %{
             max_flow: float(),
             residual_graph: SoA.t(),
             source_side: list(SoA.label()),
             sink_side: list(SoA.label())
           }
-    def max_flow(%{resource: res, builder: builder}, source, sink, algorithm \\ :edmonds_karp) do
-      source_idx = SoA.label_to_id(builder, source)
-      sink_idx = SoA.label_to_id(builder, sink)
+    def max_flow(graph, source, sink, algorithm_or_opts \\ :edmonds_karp, opts \\ []) do
+      {algorithm, actual_opts} =
+        if is_list(algorithm_or_opts) do
+          {:edmonds_karp, algorithm_or_opts}
+        else
+          {algorithm_or_opts, opts}
+        end
+
+      %{resource: res, builder: builder} = graph
+      raw = Keyword.get(actual_opts, :raw, false)
+
+      source_idx = if raw, do: source, else: SoA.label_to_id(builder, source)
+      sink_idx = if raw, do: sink, else: SoA.label_to_id(builder, sink)
 
       if is_nil(source_idx) or is_nil(sink_idx) do
         raise ArgumentError, "source or sink node not found in graph"
@@ -2036,16 +2081,34 @@ defmodule Zog.ResourceGraph do
             nif_max_flow(res, source_idx, sink_idx)
         end
 
-      source_side = Enum.map(result.source_side, &SoA.id_to_label(builder, &1))
-      sink_side = Enum.map(result.sink_side, &SoA.id_to_label(builder, &1))
+      source_side =
+        if raw do
+          result.source_side
+        else
+          Enum.map(result.source_side, &SoA.id_to_label(builder, &1))
+        end
+
+      sink_side =
+        if raw do
+          result.sink_side
+        else
+          Enum.map(result.sink_side, &SoA.id_to_label(builder, &1))
+        end
 
       residual_graph =
         Enum.zip([result.residual_from, result.residual_to, result.residual_cap])
-        |> Enum.reduce(SoA.directed(), fn {f_idx, t_idx, cap}, g ->
-          f_lbl = SoA.id_to_label(builder, f_idx)
-          t_lbl = SoA.id_to_label(builder, t_idx)
-          SoA.add_edge(g, f_lbl, t_lbl, cap)
-        end)
+        |> Enum.reduce(
+          if(raw, do: %SoA{kind: :directed, integer_labels: true}, else: SoA.directed()),
+          fn {f_idx, t_idx, cap}, g ->
+            if raw do
+              SoA.add_edge(g, f_idx, t_idx, cap)
+            else
+              f_lbl = SoA.id_to_label(builder, f_idx)
+              t_lbl = SoA.id_to_label(builder, t_idx)
+              SoA.add_edge(g, f_lbl, t_lbl, cap)
+            end
+          end
+        )
 
       %{
         max_flow: result.max_flow,
@@ -2058,16 +2121,28 @@ defmodule Zog.ResourceGraph do
     @doc """
     Computes the global minimum cut of the undirected network using the Stoer-Wagner algorithm.
     """
-    @spec global_min_cut(t()) :: %{
+    @spec global_min_cut(t(), keyword()) :: %{
             cut_value: float(),
             source_side: list(SoA.label()),
             sink_side: list(SoA.label())
           }
-    def global_min_cut(%{resource: res, builder: builder}) do
+    def global_min_cut(%{resource: res, builder: builder}, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
       result = nif_global_min_cut(res)
 
-      source_side = Enum.map(result.source_side, &SoA.id_to_label(builder, &1))
-      sink_side = Enum.map(result.sink_side, &SoA.id_to_label(builder, &1))
+      source_side =
+        if raw do
+          result.source_side
+        else
+          Enum.map(result.source_side, &SoA.id_to_label(builder, &1))
+        end
+
+      sink_side =
+        if raw do
+          result.sink_side
+        else
+          Enum.map(result.sink_side, &SoA.id_to_label(builder, &1))
+        end
 
       %{
         cut_value: result.cut_value,
@@ -2160,30 +2235,39 @@ defmodule Zog.ResourceGraph do
           :assortativity,
           :core_numbers,
           :strongly_connected_components,
-          :analyze
+          :analyze,
+          :kruskal
         ] do
       def unquote(fun)(_graph, _opts \\ []) do
         raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
       end
     end
 
-    def max_flow(_graph, _source, _sink, _algorithm \\ :edmonds_karp) do
+    def max_flow(_graph, _source, _sink, _algorithm_or_opts \\ :edmonds_karp, _opts \\ []) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
     end
 
-    def global_min_cut(_graph) do
+    def global_min_cut(_graph, _opts \\ []) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
     end
 
-    def dijkstra(_graph, _start_label, _goal_label) do
+    def dijkstra(_graph, _start_label, _goal_label, _opts \\ []) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
     end
 
-    def astar(_graph, _start_label, _goal_label, _x_coords, _y_coords, _heuristic \\ :euclidean) do
+    def astar(
+          _graph,
+          _start_label,
+          _goal_label,
+          _x_coords,
+          _y_coords,
+          _heuristic \\ :euclidean,
+          _opts \\ []
+        ) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
     end
 
-    def is_reachable(_graph, _start_label, _goal_label) do
+    def is_reachable(_graph, _start_label, _goal_label, _opts \\ []) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
     end
 

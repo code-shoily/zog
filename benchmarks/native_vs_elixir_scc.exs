@@ -40,14 +40,26 @@ defmodule NativeVsElixirSccBenchmark do
           fn graph -> Zog.ResourceGraph.strongly_connected_components(graph) end
         )
 
+      resource_raw_ms =
+        bench_resource_amortized(
+          fn -> Zog.ResourceGraph.new(builder) end,
+          fn graph -> Zog.ResourceGraph.strongly_connected_components(graph, raw: true) end
+        )
+
       IO.puts("  #{name}")
       IO.puts("    Pure Elixir:    #{elixir_ms}ms")
       IO.puts("    Zog Copy-In:    #{copyin_ms}ms")
       IO.puts("    ResourceGraph:  #{resource_ms}ms")
+      IO.puts("    Resource (Raw): #{resource_raw_ms}ms")
 
       if resource_ms > 0 do
         speedup = Float.round(elixir_ms / resource_ms, 1)
         IO.puts("    → ResourceGraph is #{speedup}x faster than pure Elixir")
+      end
+
+      if resource_raw_ms > 0 do
+        raw_speedup = Float.round(elixir_ms / resource_raw_ms, 1)
+        IO.puts("    → Resource (Raw) is #{raw_speedup}x faster than pure Elixir")
       end
 
       IO.puts("")
