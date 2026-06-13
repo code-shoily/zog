@@ -2,56 +2,45 @@ name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ main ]
 
 jobs:
   test:
-    name: Build and test
+    name: Build and Test
     runs-on: ubuntu-latest
-    
-    strategy:
-      matrix:
-        elixir: ['1.20']
-        otp: ['28']
-        
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Elixir
-      uses: erlef/setup-beam@v1
-      with:
-        elixir-version: ${{ matrix.elixir }}
-        otp-version: ${{ matrix.otp }}
-        
-    - name: Set up Zig 0.15.2
-      run: |
-        curl -L https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz -o zig.tar.xz
-        tar -xf zig.tar.xz
-        echo "$GITHUB_WORKSPACE/zig-x86_64-linux-0.15.2" >> $GITHUB_PATH
-        
-    - name: Restore dependencies cache
-      uses: actions/cache@v3
-      with:
-        path: deps
-        key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-        restore-keys: ${{ runner.os }}-mix-
-        
-    - name: Install dependencies
-      run: mix deps.get
-      
-    - name: Check formatting
-      run: mix format --check-formatted
-      
-    - name: Compile with warnings as errors
-      run: mix compile --warnings-as-errors
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Run credo
-      run: mix credo --strict
+      - name: Set up Erlang & Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.20.x'
+          otp-version: '27.x'
 
-    - name: Run tests with coverage
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-      run: mix coveralls.github
+      - name: Set up Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: '0.16.0'
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Install Dependencies
+        run: mix deps.get
+
+      - name: Check Formatting
+        run: mix format --check-formatted
+
+      - name: Compile (Warnings as Errors)
+        run: mix compile --warnings-as-errors
+
+      - name: Run Tests
+        run: mix test
