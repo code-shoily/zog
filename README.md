@@ -6,18 +6,15 @@
 > 2. high-performance NIF layer for Yog
 
 ```text
-                     ℤ
-                    /|\
-                   / | \
-                  /  |  \
-                 ℤ   |   O--------G
-                /    |    \      /
-               /     |     \    /
-              /      |      \  /
-             জো------+-------গ
-            / \      |      / \
-           /   \     |     /   \
-         ✦       ✦   |   ✦       ✦
+            ℤ ------------ 𝕆
+                          /
+                         /
+                        /
+                       ℤ
+                      /
+                     /
+                    /
+            জো ----------- গ
 ```
 
 [![Hex Version](https://img.shields.io/hexpm/v/zog.svg)](https://hex.pm/packages/zog)
