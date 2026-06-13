@@ -13,7 +13,8 @@ defmodule Zog.SoA do
     id_to_label: %{},
     nodes: [],
     edges: [],
-    next_id: 0
+    next_id: 0,
+    integer_labels: false
   ]
 
   @typedoc "Graph type"
@@ -26,7 +27,8 @@ defmodule Zog.SoA do
           id_to_label: %{id() => label()},
           nodes: [label()],
           edges: [{id(), id(), float()}],
-          next_id: non_neg_integer()
+          next_id: non_neg_integer(),
+          integer_labels: boolean()
         }
 
   @typedoc "Any type can be used as a label"
@@ -228,6 +230,7 @@ defmodule Zog.SoA do
   Returns the label for a given internal id.
   """
   @spec id_to_label(t(), id()) :: label() | nil
+  def id_to_label(%__MODULE__{integer_labels: true}, id), do: id
   def id_to_label(%__MODULE__{id_to_label: id_to_label}, id) do
     Map.get(id_to_label, id)
   end
@@ -236,6 +239,7 @@ defmodule Zog.SoA do
   Returns the internal id for a given label.
   """
   @spec label_to_id(t(), label()) :: id() | nil
+  def label_to_id(%__MODULE__{integer_labels: true}, label), do: label
   def label_to_id(%__MODULE__{label_to_id: label_to_id}, label) do
     Map.get(label_to_id, label)
   end
@@ -244,6 +248,9 @@ defmodule Zog.SoA do
   Returns all labels in insertion order.
   """
   @spec all_labels(t()) :: [label()]
+  def all_labels(%__MODULE__{integer_labels: true, next_id: next_id}) do
+    Enum.to_list(0..(next_id - 1))
+  end
   def all_labels(%__MODULE__{nodes: nodes}), do: Enum.reverse(nodes)
 
   @doc """

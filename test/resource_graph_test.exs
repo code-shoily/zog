@@ -538,4 +538,54 @@ defmodule Zog.ResourceGraphTest do
       ResourceGraph.destroy(graph)
     end
   end
+
+  describe "integer_labels: true option" do
+    test "reads integer edgelist and performs centrality/community detection correctly" do
+      temp_edge_list =
+        Path.join(System.tmp_dir!(), "edge_list_int_#{System.unique_integer([:positive])}.txt")
+
+      File.write!(temp_edge_list, "0 1 1.5\n1 2 2.0\n2 0 1.0\n")
+
+      # Read with integer_labels: true
+      graph = ResourceGraph.read_edgelist(temp_edge_list, integer_labels: true)
+
+      assert graph.builder.integer_labels == true
+      assert graph.builder.next_id == 3
+
+      # Test pagerank without raw mapping -> returns map of integers to scores
+      pr = ResourceGraph.pagerank(graph)
+      assert is_map(pr)
+      assert Map.has_key?(pr, 0)
+      assert Map.has_key?(pr, 1)
+      assert Map.has_key?(pr, 2)
+
+      # Test pagerank with raw mapping -> returns list of scores
+      pr_raw = ResourceGraph.pagerank(graph, raw: true)
+      assert is_list(pr_raw)
+      assert length(pr_raw) == 3
+
+      ResourceGraph.destroy(graph)
+      File.rm!(temp_edge_list)
+    end
+
+    test "reads integer adjlist and tgf files correctly" do
+      temp_adj = Path.join(System.tmp_dir!(), "adj_int_#{System.unique_integer([:positive])}.txt")
+      File.write!(temp_adj, "0: 1,1.5 2,2.0\n1:\n2: 0,1.0\n")
+
+      g_adj = ResourceGraph.read_adjlist(temp_adj, integer_labels: true)
+      assert g_adj.builder.integer_labels == true
+      assert g_adj.builder.next_id == 3
+      ResourceGraph.destroy(g_adj)
+      File.rm!(temp_adj)
+
+      temp_tgf = Path.join(System.tmp_dir!(), "tgf_int_#{System.unique_integer([:positive])}.tgf")
+      File.write!(temp_tgf, "0\n1\n2\n#\n0 1 1.5\n1 2 2.0\n2 0 1.0\n")
+
+      g_tgf = ResourceGraph.read_tgf(temp_tgf, integer_labels: true)
+      assert g_tgf.builder.integer_labels == true
+      assert g_tgf.builder.next_id == 3
+      ResourceGraph.destroy(g_tgf)
+      File.rm!(temp_tgf)
+    end
+  end
 end

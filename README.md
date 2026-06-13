@@ -73,6 +73,21 @@ scores = Zog.ResourceGraph.pagerank(native_graph)
 raw_scores = Zog.ResourceGraph.pagerank(native_graph, raw: true)
 ```
 
+### Direct Integer Parsing with `:integer_labels`
+
+For large networks where node labels are already contiguous (or near-contiguous) integers (e.g. standard SNAP datasets like Slashdot, LiveJournal, or Stanford web graphs), you can completely bypass string parsing, string hash-map lookups, and heap-allocated label arrays by passing the `integer_labels: true` option to the parser:
+
+```elixir
+# Reads graph by parsing and storing labels as integers directly in Zig
+large_graph = Zog.ResourceGraph.read_edgelist("slashdot_edges.txt", integer_labels: true)
+
+# Node labels are now integers instead of binaries
+# pagerank/1 returns %{0 => 0.05, 1 => 0.12, ...} instead of %{"0" => 0.05, ...}
+scores = Zog.ResourceGraph.pagerank(large_graph)
+```
+
+Combined with the `:raw` option, this allows Zog to load and process large-scale networks with zero memory allocation or serialization overhead for node labels.
+
 ---
 
 ## Installation

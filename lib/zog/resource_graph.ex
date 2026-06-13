@@ -784,7 +784,7 @@ defmodule Zog.ResourceGraph do
         weight: f64,
     };
 
-    pub fn nif_read_edgelist(file_path: []const u8, is_directed: bool, backend: beam.term) !beam.term {
+    pub fn nif_read_edgelist(file_path: []const u8, is_directed: bool, backend: beam.term, integer_labels: bool) !beam.term {
         const b = try beam.get(BackendType, backend, .{});
         const io = beam.io.get(beam.allocator);
 
@@ -828,8 +828,20 @@ defmodule Zog.ResourceGraph do
 
             const weight = if (opt_weight) |w_str| std.fmt.parseFloat(f64, w_str) catch 1.0 else 1.0;
 
-            const src_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, src_lbl);
-            const dst_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, dst_lbl);
+            var src_id: u32 = 0;
+            var dst_id: u32 = 0;
+
+            if (integer_labels) {
+                src_id = std.fmt.parseInt(u32, src_lbl, 10) catch continue;
+                dst_id = std.fmt.parseInt(u32, dst_lbl, 10) catch continue;
+                const max_val = @max(src_id, dst_id);
+                if (max_val >= next_id) {
+                    next_id = max_val + 1;
+                }
+            } else {
+                src_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, src_lbl);
+                dst_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, dst_lbl);
+            }
 
             try edges.append(arena_allocator, .{ .from = src_id, .to = dst_id, .weight = weight });
         }
@@ -847,8 +859,12 @@ defmodule Zog.ResourceGraph do
                     }
                 }
                 const resource = try GraphRes.create(.{ .soa = g }, .{ .released = false });
-                const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
-                return beam.make(.{.ok, resource, labels_slice}, .{});
+                if (integer_labels) {
+                    return beam.make(.{.ok, resource, next_id}, .{});
+                } else {
+                    const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
+                    return beam.make(.{.ok, resource, labels_slice}, .{});
+                }
             },
             .hash_graph => {
                 var g = zog.models.GraphMap(u32, void, f64, .directed, .dual).init(beam.allocator);
@@ -864,13 +880,17 @@ defmodule Zog.ResourceGraph do
                     }
                 }
                 const resource = try GraphRes.create(.{ .hash_graph = g }, .{ .released = false });
-                const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
-                return beam.make(.{.ok, resource, labels_slice}, .{});
+                if (integer_labels) {
+                    return beam.make(.{.ok, resource, next_id}, .{});
+                } else {
+                    const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
+                    return beam.make(.{.ok, resource, labels_slice}, .{});
+                }
             }
         }
     }
 
-    pub fn nif_read_adjlist(file_path: []const u8, is_directed: bool, backend: beam.term) !beam.term {
+    pub fn nif_read_adjlist(file_path: []const u8, is_directed: bool, backend: beam.term, integer_labels: bool) !beam.term {
         const b = try beam.get(BackendType, backend, .{});
         const io = beam.io.get(beam.allocator);
 
@@ -907,7 +927,15 @@ defmodule Zog.ResourceGraph do
             const src_lbl = std.mem.trim(u8, trimmed[0..colon_idx], " \t");
             const neighbors_part = trimmed[colon_idx + 1 ..];
 
-            const src_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, src_lbl);
+            var src_id: u32 = 0;
+            if (integer_labels) {
+                src_id = std.fmt.parseInt(u32, src_lbl, 10) catch continue;
+                if (src_id >= next_id) {
+                    next_id = src_id + 1;
+                }
+            } else {
+                src_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, src_lbl);
+            }
 
             var neighbors_it = std.mem.tokenizeAny(u8, neighbors_part, " \t");
             while (neighbors_it.next()) |neighbor_token| {
@@ -916,7 +944,15 @@ defmodule Zog.ResourceGraph do
                 const opt_w = neighbor_parts.next();
                 const weight = if (opt_w) |w_str| std.fmt.parseFloat(f64, w_str) catch 1.0 else 1.0;
 
-                const dst_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, dst_lbl);
+                var dst_id: u32 = 0;
+                if (integer_labels) {
+                    dst_id = std.fmt.parseInt(u32, dst_lbl, 10) catch continue;
+                    if (dst_id >= next_id) {
+                        next_id = dst_id + 1;
+                    }
+                } else {
+                    dst_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, dst_lbl);
+                }
                 try edges.append(arena_allocator, .{ .from = src_id, .to = dst_id, .weight = weight });
             }
         }
@@ -934,8 +970,12 @@ defmodule Zog.ResourceGraph do
                     }
                 }
                 const resource = try GraphRes.create(.{ .soa = g }, .{ .released = false });
-                const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
-                return beam.make(.{.ok, resource, labels_slice}, .{});
+                if (integer_labels) {
+                    return beam.make(.{.ok, resource, next_id}, .{});
+                } else {
+                    const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
+                    return beam.make(.{.ok, resource, labels_slice}, .{});
+                }
             },
             .hash_graph => {
                 var g = zog.models.GraphMap(u32, void, f64, .directed, .dual).init(beam.allocator);
@@ -951,13 +991,17 @@ defmodule Zog.ResourceGraph do
                     }
                 }
                 const resource = try GraphRes.create(.{ .hash_graph = g }, .{ .released = false });
-                const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
-                return beam.make(.{.ok, resource, labels_slice}, .{});
+                if (integer_labels) {
+                    return beam.make(.{.ok, resource, next_id}, .{});
+                } else {
+                    const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
+                    return beam.make(.{.ok, resource, labels_slice}, .{});
+                }
             }
         }
     }
 
-    pub fn nif_read_tgf(file_path: []const u8, is_directed: bool, backend: beam.term) !beam.term {
+    pub fn nif_read_tgf(file_path: []const u8, is_directed: bool, backend: beam.term, integer_labels: bool) !beam.term {
         const b = try beam.get(BackendType, backend, .{});
         const io = beam.io.get(beam.allocator);
 
@@ -999,7 +1043,14 @@ defmodule Zog.ResourceGraph do
             if (!parsing_edges) {
                 var parts = std.mem.tokenizeAny(u8, trimmed, " \t");
                 const node_lbl = parts.next() orelse continue;
-                _ = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, node_lbl);
+                if (integer_labels) {
+                    const val = std.fmt.parseInt(u32, node_lbl, 10) catch continue;
+                    if (val >= next_id) {
+                        next_id = val + 1;
+                    }
+                } else {
+                    _ = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, node_lbl);
+                }
             } else {
                 var parts = std.mem.tokenizeAny(u8, trimmed, " \t");
                 const src_lbl = parts.next() orelse continue;
@@ -1007,8 +1058,19 @@ defmodule Zog.ResourceGraph do
                 const opt_w = parts.next();
                 const weight = if (opt_w) |w_str| std.fmt.parseFloat(f64, w_str) catch 1.0 else 1.0;
 
-                const src_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, src_lbl);
-                const dst_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, dst_lbl);
+                var src_id: u32 = 0;
+                var dst_id: u32 = 0;
+                if (integer_labels) {
+                    src_id = std.fmt.parseInt(u32, src_lbl, 10) catch continue;
+                    dst_id = std.fmt.parseInt(u32, dst_lbl, 10) catch continue;
+                    const max_val = @max(src_id, dst_id);
+                    if (max_val >= next_id) {
+                        next_id = max_val + 1;
+                    }
+                } else {
+                    src_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, src_lbl);
+                    dst_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, dst_lbl);
+                }
 
                 try edges.append(arena_allocator, .{ .from = src_id, .to = dst_id, .weight = weight });
             }
@@ -1027,8 +1089,12 @@ defmodule Zog.ResourceGraph do
                     }
                 }
                 const resource = try GraphRes.create(.{ .soa = g }, .{ .released = false });
-                const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
-                return beam.make(.{.ok, resource, labels_slice}, .{});
+                if (integer_labels) {
+                    return beam.make(.{.ok, resource, next_id}, .{});
+                } else {
+                    const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
+                    return beam.make(.{.ok, resource, labels_slice}, .{});
+                }
             },
             .hash_graph => {
                 var g = zog.models.GraphMap(u32, void, f64, .directed, .dual).init(beam.allocator);
@@ -1044,8 +1110,12 @@ defmodule Zog.ResourceGraph do
                     }
                 }
                 const resource = try GraphRes.create(.{ .hash_graph = g }, .{ .released = false });
-                const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
-                return beam.make(.{.ok, resource, labels_slice}, .{});
+                if (integer_labels) {
+                    return beam.make(.{.ok, resource, next_id}, .{});
+                } else {
+                    const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
+                    return beam.make(.{.ok, resource, labels_slice}, .{});
+                }
             }
         }
     }
@@ -1143,14 +1213,16 @@ defmodule Zog.ResourceGraph do
 
       * `:directed` - Boolean flag representing if the graph is directed (defaults to `true`).
       * `:backend` - Choose the native graph backend, either `:soa` or `:hash_graph` (defaults to `:soa`).
+      * `:integer_labels` - If true, parses labels as integers directly in Zig, bypassing string hash-map lookups (defaults to `false`).
     """
     @spec read_edgelist(Path.t(), keyword()) :: t()
     def read_edgelist(path, opts \\ []) do
       directed = Keyword.get(opts, :directed, true)
       backend = Keyword.get(opts, :backend, :soa)
+      integer_labels = Keyword.get(opts, :integer_labels, false)
       path_str = Path.expand(path)
 
-      case nif_read_edgelist(path_str, directed, backend) do
+      case nif_read_edgelist(path_str, directed, backend, integer_labels) do
         {:ok, resource, labels} ->
           build_from_labels(resource, labels, directed)
       end
@@ -1163,14 +1235,16 @@ defmodule Zog.ResourceGraph do
 
       * `:directed` - Boolean flag representing if the graph is directed (defaults to `true`).
       * `:backend` - Choose the native graph backend, either `:soa` or `:hash_graph` (defaults to `:soa`).
+      * `:integer_labels` - If true, parses labels as integers directly in Zig, bypassing string hash-map lookups (defaults to `false`).
     """
     @spec read_adjlist(Path.t(), keyword()) :: t()
     def read_adjlist(path, opts \\ []) do
       directed = Keyword.get(opts, :directed, true)
       backend = Keyword.get(opts, :backend, :soa)
+      integer_labels = Keyword.get(opts, :integer_labels, false)
       path_str = Path.expand(path)
 
-      case nif_read_adjlist(path_str, directed, backend) do
+      case nif_read_adjlist(path_str, directed, backend, integer_labels) do
         {:ok, resource, labels} ->
           build_from_labels(resource, labels, directed)
       end
@@ -1183,17 +1257,38 @@ defmodule Zog.ResourceGraph do
 
       * `:directed` - Boolean flag representing if the graph is directed (defaults to `true`).
       * `:backend` - Choose the native graph backend, either `:soa` or `:hash_graph` (defaults to `:soa`).
+      * `:integer_labels` - If true, parses labels as integers directly in Zig, bypassing string hash-map lookups (defaults to `false`).
     """
     @spec read_tgf(Path.t(), keyword()) :: t()
     def read_tgf(path, opts \\ []) do
       directed = Keyword.get(opts, :directed, true)
       backend = Keyword.get(opts, :backend, :soa)
+      integer_labels = Keyword.get(opts, :integer_labels, false)
       path_str = Path.expand(path)
 
-      case nif_read_tgf(path_str, directed, backend) do
+      case nif_read_tgf(path_str, directed, backend, integer_labels) do
         {:ok, resource, labels} ->
           build_from_labels(resource, labels, directed)
       end
+    end
+
+    defp build_from_labels(resource, labels, directed) when is_integer(labels) do
+      kind = if directed, do: :directed, else: :undirected
+
+      builder = %SoA{
+        kind: kind,
+        label_to_id: %{},
+        id_to_label: %{},
+        nodes: [],
+        edges: [],
+        next_id: labels,
+        integer_labels: true
+      }
+
+      %{
+        resource: resource,
+        builder: builder
+      }
     end
 
     defp build_from_labels(resource, labels, directed) do
@@ -1207,7 +1302,8 @@ defmodule Zog.ResourceGraph do
         id_to_label: id_to_label,
         nodes: Enum.reverse(labels),
         edges: [],
-        next_id: length(labels)
+        next_id: length(labels),
+        integer_labels: false
       }
 
       %{
