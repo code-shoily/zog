@@ -29,6 +29,7 @@ defmodule Zog.ResourceGraph do
         louvain: [concurrency: :dirty_cpu],
         leiden: [concurrency: :dirty_cpu],
         leiden_hierarchical: [concurrency: :dirty_cpu],
+        label_propagation: [concurrency: :dirty_cpu],
         modularity_f64: [concurrency: :dirty_cpu],
         nif_floyd_warshall: [concurrency: :dirty_cpu],
         nif_johnsons: [concurrency: :dirty_cpu],
@@ -327,6 +328,21 @@ defmodule Zog.ResourceGraph do
         }
 
         return outer;
+    }
+
+    pub fn label_propagation(res: GraphRes, max_iterations: usize, seed: u64) ![]usize {
+        const allocator = beam.allocator;
+        const opts: zog.community.label_propagation.LabelPropagationOptions = .{
+            .max_iterations = max_iterations,
+            .seed = seed,
+        };
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.community.label_propagation.labelPropagation(allocator, g, opts),
+            .hash_graph => |g| try zog.community.label_propagation.labelPropagation(allocator, g, opts),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit();
+        return extractAssignments(mutable_result, nodeCapacity(res));
     }
 
     pub fn modularity_f64(res: GraphRes, assignments: []usize) !f64 {
@@ -1279,6 +1295,18 @@ defmodule Zog.ResourceGraph do
     end
 
     @doc """
+    Label Propagation community detection.
+    """
+    @spec label_propagation(t(), keyword()) :: %{SoA.label() => non_neg_integer()}
+    def label_propagation(%{resource: res, builder: builder}, opts \\ []) do
+      max_iterations = Keyword.get(opts, :max_iterations, 100)
+      seed = Keyword.get(opts, :seed, 0)
+
+      assignments = label_propagation(res, max_iterations, seed)
+      map_assignments(builder, assignments)
+    end
+
+    @doc """
     Computes modularity for a given community partition.
     """
     @spec modularity(t(), %{SoA.label() => non_neg_integer()}) :: float()
@@ -1767,6 +1795,7 @@ defmodule Zog.ResourceGraph do
           :louvain,
           :leiden,
           :leiden_hierarchical,
+          :label_propagation,
           :modularity,
           :floyd_warshall,
           :johnsons,

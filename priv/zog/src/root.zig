@@ -24,6 +24,7 @@ pub const community = struct {
     pub const metrics = @import("community/metrics.zig");
     pub const louvain = @import("community/louvain.zig");
     pub const leiden = @import("community/leiden.zig");
+    pub const label_propagation = @import("community/label_propagation.zig");
 };
 
 test {
@@ -44,4 +45,5 @@ test {
     _ = @import("community/metrics.zig");
     _ = @import("community/louvain.zig");
     _ = @import("community/leiden.zig");
+    _ = @import("community/label_propagation.zig");
 }

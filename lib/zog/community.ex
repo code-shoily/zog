@@ -14,6 +14,7 @@ defmodule Zog.Community do
         louvain: [concurrency: :dirty_cpu],
         leiden: [concurrency: :dirty_cpu],
         leiden_hierarchical: [concurrency: :dirty_cpu],
+        label_propagation: [concurrency: :dirty_cpu],
         modularity_f64: [concurrency: :dirty_cpu]
       ]
 
@@ -151,6 +152,30 @@ defmodule Zog.Community do
         return outer;
     }
 
+    pub fn label_propagation(
+        node_count: usize,
+        from: []u32,
+        to: []u32,
+        weight: []f64,
+        max_iterations: usize,
+        seed: u64,
+    ) ![]usize {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        var result = try zog.community.label_propagation.labelPropagation(
+            beam.allocator,
+            g,
+            .{
+                .max_iterations = max_iterations,
+                .seed = seed,
+            },
+        );
+        defer result.deinit();
+
+        return extractAssignments(result, node_count);
+    }
+
     pub fn modularity_f64(
         node_count: usize,
         from: []u32,
@@ -248,6 +273,25 @@ defmodule Zog.Community do
     end
 
     @doc """
+    Detects communities using the Label Propagation Algorithm (LPA).
+    """
+    @spec label_propagation(SoA.t(), keyword()) :: %{
+            SoA.label() => non_neg_integer()
+          }
+    def label_propagation(%SoA{} = builder, opts \\ []) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
+
+      max_iterations = Keyword.get(opts, :max_iterations, 100)
+      seed = Keyword.get(opts, :seed, 0)
+
+      assignments =
+        label_propagation(node_count, from, to, weights, max_iterations, seed)
+
+      map_assignments(builder, assignments)
+    end
+
+    @doc """
     Computes the modularity of a given community partition.
     """
     @spec modularity(SoA.t(), %{SoA.label() => non_neg_integer()}) :: float()
@@ -287,6 +331,7 @@ defmodule Zog.Community do
           :louvain,
           :leiden,
           :leiden_hierarchical,
+          :label_propagation,
           :modularity
         ] do
       def unquote(fun)(_builder, _opts \\ []) do

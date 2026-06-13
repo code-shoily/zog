@@ -234,6 +234,33 @@ defmodule Zog.ResourceGraphTest do
     end
   end
 
+  describe "label_propagation/1" do
+    test "two triangles" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+        |> Zog.add_edge("C", "A", 1.0)
+        |> Zog.add_edge("D", "E", 1.0)
+        |> Zog.add_edge("E", "F", 1.0)
+        |> Zog.add_edge("F", "D", 1.0)
+
+      for backend <- [:soa, :hash_graph] do
+        graph = ResourceGraph.new(builder, backend: backend)
+        communities = ResourceGraph.label_propagation(graph, max_iterations: 10, seed: 123)
+
+        # Each triangle should be its own community
+        assert Map.get(communities, "A") == Map.get(communities, "B")
+        assert Map.get(communities, "A") == Map.get(communities, "C")
+        assert Map.get(communities, "D") == Map.get(communities, "E")
+        assert Map.get(communities, "D") == Map.get(communities, "F")
+        assert Map.get(communities, "A") != Map.get(communities, "D")
+
+        ResourceGraph.destroy(graph)
+      end
+    end
+  end
+
   describe "metrics" do
     test "density of complete graph" do
       builder =

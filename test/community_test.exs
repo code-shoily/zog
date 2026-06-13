@@ -111,6 +111,58 @@ defmodule Zog.CommunityTest do
     end
   end
 
+  describe "label_propagation/2" do
+    test "triangle forms a single community" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+        |> Zog.add_edge("C", "A", 1.0)
+
+      assignments = Community.label_propagation(builder)
+
+      assert map_size(assignments) == 3
+      assert assignments["A"] == assignments["B"]
+      assert assignments["B"] == assignments["C"]
+    end
+
+    test "two disconnected triangles form two communities" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+        |> Zog.add_edge("C", "A", 1.0)
+        |> Zog.add_edge("D", "E", 1.0)
+        |> Zog.add_edge("E", "F", 1.0)
+        |> Zog.add_edge("F", "D", 1.0)
+
+      assignments = Community.label_propagation(builder, max_iterations: 10, seed: 123)
+
+      # Nodes in the first triangle share a community
+      assert assignments["A"] == assignments["B"]
+      assert assignments["B"] == assignments["C"]
+
+      # Nodes in the second triangle share a community
+      assert assignments["D"] == assignments["E"]
+      assert assignments["E"] == assignments["F"]
+
+      # The two communities are different
+      refute assignments["A"] == assignments["D"]
+    end
+
+    test "empty graph returns empty map" do
+      builder = Zog.undirected()
+      assignments = Community.label_propagation(builder)
+      assert assignments == %{}
+    end
+
+    test "single node returns single community" do
+      builder = Zog.undirected() |> Zog.add_node("A")
+      assignments = Community.label_propagation(builder)
+      assert assignments == %{"A" => 0}
+    end
+  end
+
   describe "leiden_hierarchical/2" do
     test "returns a valid Dendrogram for simple triangles" do
       builder =
