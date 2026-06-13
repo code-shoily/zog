@@ -142,9 +142,36 @@ defmodule Zog.SoA do
   """
   @spec from_list(graph_type(), [{label(), label(), term()}]) :: t()
   def from_list(graph_type, edges) do
-    Enum.reduce(edges, new(graph_type), fn {src, dst, weight}, builder ->
-      add_edge(builder, src, dst, weight)
-    end)
+    vertices =
+      Enum.reduce(edges, MapSet.new(), fn {src, dst, _weight}, acc ->
+        acc |> MapSet.put(src) |> MapSet.put(dst)
+      end)
+      |> MapSet.to_list()
+      |> Enum.sort()
+
+    label_to_id = vertices |> Enum.with_index() |> Map.new()
+
+    flat_edges =
+      Enum.reduce(edges, [], fn {src, dst, weight}, acc ->
+        src_idx = Map.fetch!(label_to_id, src)
+        dst_idx = Map.fetch!(label_to_id, dst)
+        w = to_float(weight)
+
+        if graph_type == :undirected do
+          [{dst_idx, src_idx, w}, {src_idx, dst_idx, w} | acc]
+        else
+          [{src_idx, dst_idx, w} | acc]
+        end
+      end)
+
+    %__MODULE__{
+      kind: graph_type,
+      label_to_id: label_to_id,
+      id_to_label: invert_map(label_to_id),
+      nodes: Enum.reverse(vertices),
+      edges: Enum.reverse(flat_edges),
+      next_id: length(vertices)
+    }
   end
 
   @doc """
@@ -152,9 +179,35 @@ defmodule Zog.SoA do
   """
   @spec from_unweighted_list(graph_type(), [{label(), label()}]) :: t()
   def from_unweighted_list(graph_type, edges) do
-    Enum.reduce(edges, new(graph_type), fn {src, dst}, builder ->
-      add_unweighted_edge(builder, src, dst)
-    end)
+    vertices =
+      Enum.reduce(edges, MapSet.new(), fn {src, dst}, acc ->
+        acc |> MapSet.put(src) |> MapSet.put(dst)
+      end)
+      |> MapSet.to_list()
+      |> Enum.sort()
+
+    label_to_id = vertices |> Enum.with_index() |> Map.new()
+
+    flat_edges =
+      Enum.reduce(edges, [], fn {src, dst}, acc ->
+        src_idx = Map.fetch!(label_to_id, src)
+        dst_idx = Map.fetch!(label_to_id, dst)
+
+        if graph_type == :undirected do
+          [{dst_idx, src_idx, 1.0}, {src_idx, dst_idx, 1.0} | acc]
+        else
+          [{src_idx, dst_idx, 1.0} | acc]
+        end
+      end)
+
+    %__MODULE__{
+      kind: graph_type,
+      label_to_id: label_to_id,
+      id_to_label: invert_map(label_to_id),
+      nodes: Enum.reverse(vertices),
+      edges: Enum.reverse(flat_edges),
+      next_id: length(vertices)
+    }
   end
 
   # ============= Queries =============
@@ -242,14 +295,13 @@ defmodule Zog.SoA do
       label_to_id = node_ids |> Enum.with_index() |> Map.new()
 
       edges =
-        for {src, dsts} <- out_edges,
-            {dst, weight} <- dsts,
-            reduce: [] do
-          acc ->
-            src_idx = Map.fetch!(label_to_id, src)
+        Enum.reduce(out_edges, [], fn {src, dsts}, acc ->
+          src_idx = Map.fetch!(label_to_id, src)
+          Enum.reduce(dsts, acc, fn {dst, weight}, inner_acc ->
             dst_idx = Map.fetch!(label_to_id, dst)
-            [{src_idx, dst_idx, to_float(weight)} | acc]
-        end
+            [{src_idx, dst_idx, to_float(weight)} | inner_acc]
+          end)
+        end)
 
       %__MODULE__{
         kind: kind,
@@ -318,16 +370,30 @@ defmodule Zog.SoA do
     @spec from_libgraph(Graph.t()) :: t()
     def from_libgraph(%Graph{} = libgraph) do
       kind = if libgraph.type == :directed, do: :directed, else: :undirected
-      vertices = Graph.vertices(libgraph)
+      vertices = Graph.vertices(libgraph) |> Enum.sort()
+      label_to_id = vertices |> Enum.with_index() |> Map.new()
 
-      builder =
-        Enum.reduce(vertices, new(kind), fn vertex, acc ->
-          add_node(acc, vertex)
+      edges =
+        Enum.reduce(Graph.edges(libgraph), [], fn %Graph.Edge{v1: v1, v2: v2, weight: weight}, acc ->
+          src_idx = Map.fetch!(label_to_id, v1)
+          dst_idx = Map.fetch!(label_to_id, v2)
+          w = to_float(weight)
+
+          if kind == :undirected do
+            [{dst_idx, src_idx, w}, {src_idx, dst_idx, w} | acc]
+          else
+            [{src_idx, dst_idx, w} | acc]
+          end
         end)
 
-      Enum.reduce(Graph.edges(libgraph), builder, fn %Graph.Edge{v1: v1, v2: v2, weight: weight}, acc ->
-        add_edge(acc, v1, v2, weight)
-      end)
+      %__MODULE__{
+        kind: kind,
+        label_to_id: label_to_id,
+        id_to_label: invert_map(label_to_id),
+        nodes: Enum.reverse(vertices),
+        edges: Enum.reverse(edges),
+        next_id: length(vertices)
+      }
     end
 
     @doc """
