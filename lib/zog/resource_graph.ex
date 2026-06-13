@@ -1227,153 +1227,298 @@ defmodule Zog.ResourceGraph do
 
     @doc """
     Unweighted betweenness centrality.
+
+    ## Options
+
+      * `:raw` - If true, returns a list of scores directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
-    @spec betweenness_unweighted(t()) :: %{SoA.label() => float()}
-    def betweenness_unweighted(%{resource: res, builder: builder}) do
+    @spec betweenness_unweighted(t(), keyword()) :: %{SoA.label() => float()} | [float()]
+    def betweenness_unweighted(%{resource: res, builder: builder}, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
       raw_scores = nif_betweenness_unweighted(res)
       scores = maybe_scale_undirected(builder, raw_scores)
-      map_scores(builder, scores)
+
+      if raw do
+        scores
+      else
+        map_scores(builder, scores)
+      end
     end
 
     @doc """
     Weighted betweenness centrality.
+
+    ## Options
+
+      * `:raw` - If true, returns a list of scores directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
-    @spec betweenness_f64(t()) :: %{SoA.label() => float()}
-    def betweenness_f64(%{resource: res, builder: builder}) do
+    @spec betweenness_f64(t(), keyword()) :: %{SoA.label() => float()} | [float()]
+    def betweenness_f64(%{resource: res, builder: builder}, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
       raw_scores = nif_betweenness_f64(res)
       scores = maybe_scale_undirected(builder, raw_scores)
-      map_scores(builder, scores)
+
+      if raw do
+        scores
+      else
+        map_scores(builder, scores)
+      end
     end
 
     @doc """
     Closeness centrality.
+
+    ## Options
+
+      * `:raw` - If true, returns a list of scores directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
-    @spec closeness_f64(t()) :: %{SoA.label() => float()}
-    def closeness_f64(%{resource: res, builder: builder}) do
+    @spec closeness_f64(t(), keyword()) :: %{SoA.label() => float()} | [float()]
+    def closeness_f64(%{resource: res, builder: builder}, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
       scores = nif_closeness_f64(res)
-      map_scores(builder, scores)
+
+      if raw do
+        scores
+      else
+        map_scores(builder, scores)
+      end
     end
 
     @doc """
     Harmonic centrality.
+
+    ## Options
+
+      * `:raw` - If true, returns a list of scores directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
-    @spec harmonic_centrality_f64(t()) :: %{SoA.label() => float()}
-    def harmonic_centrality_f64(%{resource: res, builder: builder}) do
+    @spec harmonic_centrality_f64(t(), keyword()) :: %{SoA.label() => float()} | [float()]
+    def harmonic_centrality_f64(%{resource: res, builder: builder}, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
       scores = nif_harmonic_centrality_f64(res)
-      map_scores(builder, scores)
+
+      if raw do
+        scores
+      else
+        map_scores(builder, scores)
+      end
     end
 
     @doc """
     PageRank centrality.
+
+    ## Options
+
+      * `:damping` - PageRank damping factor (defaults to `0.85`).
+      * `:max_iterations` - Maximum iteration steps (defaults to `100`).
+      * `:tolerance` - Convergence tolerance (defaults to `0.0001`).
+      * `:raw` - If true, returns a list of scores directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
-    @spec pagerank(t(), keyword()) :: %{SoA.label() => float()}
+    @spec pagerank(t(), keyword()) :: %{SoA.label() => float()} | [float()]
     def pagerank(%{resource: res, builder: builder}, opts \\ []) do
       damping = Keyword.get(opts, :damping, 0.85)
       max_iterations = Keyword.get(opts, :max_iterations, 100)
       tolerance = Keyword.get(opts, :tolerance, 0.0001)
+      raw = Keyword.get(opts, :raw, false)
 
       scores = pagerank(res, damping, max_iterations, tolerance)
-      map_scores(builder, scores)
+
+      if raw do
+        scores
+      else
+        map_scores(builder, scores)
+      end
     end
 
     @doc """
     Eigenvector centrality.
+
+    ## Options
+
+      * `:max_iterations` - Maximum iteration steps (defaults to `100`).
+      * `:tolerance` - Convergence tolerance (defaults to `0.0001`).
+      * `:raw` - If true, returns a list of scores directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
-    @spec eigenvector(t(), keyword()) :: %{SoA.label() => float()}
+    @spec eigenvector(t(), keyword()) :: %{SoA.label() => float()} | [float()]
     def eigenvector(%{resource: res, builder: builder}, opts \\ []) do
       max_iterations = Keyword.get(opts, :max_iterations, 100)
       tolerance = Keyword.get(opts, :tolerance, 0.0001)
+      raw = Keyword.get(opts, :raw, false)
 
       scores = eigenvector(res, max_iterations, tolerance)
-      map_scores(builder, scores)
+
+      if raw do
+        scores
+      else
+        map_scores(builder, scores)
+      end
     end
 
     @doc """
     Katz centrality.
+
+    ## Options
+
+      * `:alpha` - Attenuation factor (defaults to `0.1`).
+      * `:beta` - Weight parameter (defaults to `1.0`).
+      * `:max_iterations` - Maximum iteration steps (defaults to `100`).
+      * `:tolerance` - Convergence tolerance (defaults to `0.0001`).
+      * `:raw` - If true, returns a list of scores directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
-    @spec katz(t(), keyword()) :: %{SoA.label() => float()}
+    @spec katz(t(), keyword()) :: %{SoA.label() => float()} | [float()]
     def katz(%{resource: res, builder: builder}, opts \\ []) do
       alpha = Keyword.get(opts, :alpha, 0.1)
       beta = Keyword.get(opts, :beta, 1.0)
       max_iterations = Keyword.get(opts, :max_iterations, 100)
       tolerance = Keyword.get(opts, :tolerance, 0.0001)
+      raw = Keyword.get(opts, :raw, false)
 
       scores = katz(res, alpha, beta, max_iterations, tolerance)
-      map_scores(builder, scores)
+
+      if raw do
+        scores
+      else
+        map_scores(builder, scores)
+      end
     end
 
     @doc """
     Alpha centrality.
+
+    ## Options
+
+      * `:alpha` - Attenuation factor (defaults to `0.5`).
+      * `:initial` - Initial values (defaults to `1.0`).
+      * `:max_iterations` - Maximum iteration steps (defaults to `100`).
+      * `:tolerance` - Convergence tolerance (defaults to `0.0001`).
+      * `:raw` - If true, returns a list of scores directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
-    @spec alpha_centrality(t(), keyword()) :: %{SoA.label() => float()}
+    @spec alpha_centrality(t(), keyword()) :: %{SoA.label() => float()} | [float()]
     def alpha_centrality(%{resource: res, builder: builder}, opts \\ []) do
       alpha = Keyword.get(opts, :alpha, 0.5)
       initial = Keyword.get(opts, :initial, 1.0)
       max_iterations = Keyword.get(opts, :max_iterations, 100)
       tolerance = Keyword.get(opts, :tolerance, 0.0001)
+      raw = Keyword.get(opts, :raw, false)
 
       scores = alpha_centrality(res, alpha, initial, max_iterations, tolerance)
-      map_scores(builder, scores)
+
+      if raw do
+        scores
+      else
+        map_scores(builder, scores)
+      end
     end
 
     @doc """
     Louvain community detection.
+
+    ## Options
+
+      * `:min_modularity_gain` - Minimum modularity gain to stop iterations (defaults to `0.000001`).
+      * `:max_iterations` - Maximum iteration steps (defaults to `100`).
+      * `:seed` - Random seed for execution (defaults to `42`).
+      * `:raw` - If true, returns a list of community IDs directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
-    @spec louvain(t(), keyword()) :: %{SoA.label() => non_neg_integer()}
+    @spec louvain(t(), keyword()) :: %{SoA.label() => non_neg_integer()} | [non_neg_integer()]
     def louvain(%{resource: res, builder: builder}, opts \\ []) do
       min_modularity_gain = Keyword.get(opts, :min_modularity_gain, 0.000001)
       max_iterations = Keyword.get(opts, :max_iterations, 100)
       seed = Keyword.get(opts, :seed, 42)
+      raw = Keyword.get(opts, :raw, false)
 
       assignments = louvain(res, min_modularity_gain, max_iterations, seed)
-      map_assignments(builder, assignments)
+
+      if raw do
+        assignments
+      else
+        map_assignments(builder, assignments)
+      end
     end
 
     @doc """
     Leiden community detection.
+
+    ## Options
+
+      * `:min_modularity_gain` - Minimum modularity gain to stop iterations (defaults to `0.000001`).
+      * `:max_iterations` - Maximum iteration steps (defaults to `100`).
+      * `:seed` - Random seed for execution (defaults to `42`).
+      * `:theta` - Resolution parameter theta (defaults to `1.0`).
+      * `:raw` - If true, returns a list of community IDs directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
-    @spec leiden(t(), keyword()) :: %{SoA.label() => non_neg_integer()}
+    @spec leiden(t(), keyword()) :: %{SoA.label() => non_neg_integer()} | [non_neg_integer()]
     def leiden(%{resource: res, builder: builder}, opts \\ []) do
       min_modularity_gain = Keyword.get(opts, :min_modularity_gain, 0.000001)
       max_iterations = Keyword.get(opts, :max_iterations, 100)
       seed = Keyword.get(opts, :seed, 42)
       theta = Keyword.get(opts, :theta, 1.0)
+      raw = Keyword.get(opts, :raw, false)
 
       assignments = leiden(res, min_modularity_gain, max_iterations, seed, theta)
-      map_assignments(builder, assignments)
+
+      if raw do
+        assignments
+      else
+        map_assignments(builder, assignments)
+      end
     end
 
     @doc """
     Leiden hierarchical community detection.
+
+    ## Options
+
+      * `:min_modularity_gain` - Minimum modularity gain to stop iterations (defaults to `0.000001`).
+      * `:max_iterations` - Maximum iteration steps (defaults to `100`).
+      * `:seed` - Random seed for execution (defaults to `42`).
+      * `:theta` - Resolution parameter theta (defaults to `1.0`).
+      * `:raw` - If true, returns a raw list of lists of community assignments for each level instead of a `Dendrogram` struct.
     """
-    @spec leiden_hierarchical(t(), keyword()) :: Dendrogram.t()
+    @spec leiden_hierarchical(t(), keyword()) :: Dendrogram.t() | [[non_neg_integer()]]
     def leiden_hierarchical(%{resource: res, builder: builder}, opts \\ []) do
       min_modularity_gain = Keyword.get(opts, :min_modularity_gain, 0.000001)
       max_iterations = Keyword.get(opts, :max_iterations, 100)
       seed = Keyword.get(opts, :seed, 42)
       theta = Keyword.get(opts, :theta, 1.0)
+      raw = Keyword.get(opts, :raw, false)
 
       levels_arrays = leiden_hierarchical(res, min_modularity_gain, max_iterations, seed, theta)
 
-      levels =
-        Enum.map(levels_arrays, fn assignments ->
-          mapped = map_assignments(builder, assignments)
-          Result.new(mapped)
-        end)
+      if raw do
+        levels_arrays
+      else
+        levels =
+          Enum.map(levels_arrays, fn assignments ->
+            mapped = map_assignments(builder, assignments)
+            Result.new(mapped)
+          end)
 
-      Dendrogram.new(levels, [])
+        Dendrogram.new(levels, [])
+      end
     end
 
     @doc """
     Label Propagation community detection.
+
+    ## Options
+
+      * `:max_iterations` - Maximum iteration steps (defaults to `100`).
+      * `:seed` - Random seed (defaults to `0`).
+      * `:raw` - If true, returns a list of community IDs directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
-    @spec label_propagation(t(), keyword()) :: %{SoA.label() => non_neg_integer()}
+    @spec label_propagation(t(), keyword()) :: %{SoA.label() => non_neg_integer()} | [non_neg_integer()]
     def label_propagation(%{resource: res, builder: builder}, opts \\ []) do
       max_iterations = Keyword.get(opts, :max_iterations, 100)
       seed = Keyword.get(opts, :seed, 0)
+      raw = Keyword.get(opts, :raw, false)
 
       assignments = label_propagation(res, max_iterations, seed)
-      map_assignments(builder, assignments)
+
+      if raw do
+        assignments
+      else
+        map_assignments(builder, assignments)
+      end
     end
 
     @doc """
@@ -1623,11 +1768,21 @@ defmodule Zog.ResourceGraph do
 
     @doc """
     Local clustering coefficient for each node.
+
+    ## Options
+
+      * `:raw` - If true, returns a list of coefficients directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
-    @spec local_clustering_coefficient(t()) :: %{SoA.label() => float()}
-    def local_clustering_coefficient(%{resource: res, builder: builder}) do
+    @spec local_clustering_coefficient(t(), keyword()) :: %{SoA.label() => float()} | [float()]
+    def local_clustering_coefficient(%{resource: res, builder: builder}, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
       scores = nif_local_clustering_coefficient(res)
-      map_scores(builder, scores)
+
+      if raw do
+        scores
+      else
+        map_scores(builder, scores)
+      end
     end
 
     @doc """
@@ -1640,35 +1795,54 @@ defmodule Zog.ResourceGraph do
 
     @doc """
     Calculates all core numbers for all nodes in the ResourceGraph.
+
+    ## Options
+
+      * `:raw` - If true, returns a list of core numbers directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
-    @spec core_numbers(t()) :: %{SoA.label() => integer()}
-    def core_numbers(%{resource: res, builder: builder}) do
+    @spec core_numbers(t(), keyword()) :: %{SoA.label() => integer()} | [integer()]
+    def core_numbers(%{resource: res, builder: builder}, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
       labels = SoA.all_labels(builder)
       labels_tuple = List.to_tuple(labels)
 
       case nif_core_numbers(res) do
         [] ->
-          %{}
+          if raw, do: [], else: %{}
 
         cores ->
-          cores
-          |> Enum.with_index()
-          |> Map.new(fn {core, idx} -> {elem(labels_tuple, idx), core} end)
+          if raw do
+            cores
+          else
+            cores
+            |> Enum.with_index()
+            |> Map.new(fn {core, idx} -> {elem(labels_tuple, idx), core} end)
+          end
       end
     end
 
     @doc """
     Finds strongly connected components in the ResourceGraph natively.
     Returns a list of lists of node labels.
+
+    ## Options
+
+      * `:raw` - If true, returns a list of component IDs directly corresponding to internal `u32` node IDs instead of grouping and mapping to Elixir labels.
     """
-    @spec strongly_connected_components(t()) :: [[SoA.label()]]
-    def strongly_connected_components(%{resource: res, builder: builder}) do
+    @spec strongly_connected_components(t(), keyword()) :: [[SoA.label()]] | [non_neg_integer()]
+    def strongly_connected_components(%{resource: res, builder: builder}, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
+
       case nif_strongly_connected_components(res) do
         [] ->
           []
 
         assignments ->
-          group_sccs(builder, assignments)
+          if raw do
+            assignments
+          else
+            group_sccs(builder, assignments)
+          end
       end
     end
 

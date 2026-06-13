@@ -495,4 +495,47 @@ defmodule Zog.ResourceGraphTest do
       ResourceGraph.destroy(graph)
     end
   end
+
+  describe "raw: true option" do
+    test "returns raw lists instead of mapped maps for various algorithms" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+        |> Zog.add_edge("C", "A", 1.0)
+        |> Zog.add_edge("B", "D", 1.0)
+
+      graph = ResourceGraph.new(builder)
+
+      # Test centralities
+      assert is_list(ResourceGraph.pagerank(graph, raw: true))
+      assert is_list(ResourceGraph.betweenness_unweighted(graph, raw: true))
+      assert is_list(ResourceGraph.betweenness_f64(graph, raw: true))
+      assert is_list(ResourceGraph.closeness_f64(graph, raw: true))
+      assert is_list(ResourceGraph.harmonic_centrality_f64(graph, raw: true))
+      assert is_list(ResourceGraph.eigenvector(graph, raw: true))
+      assert is_list(ResourceGraph.katz(graph, raw: true))
+      assert is_list(ResourceGraph.alpha_centrality(graph, raw: true))
+
+      # Test community detection
+      assert is_list(ResourceGraph.louvain(graph, raw: true))
+      assert is_list(ResourceGraph.leiden(graph, raw: true))
+      assert is_list(ResourceGraph.leiden_hierarchical(graph, raw: true))
+      assert is_list(ResourceGraph.label_propagation(graph, raw: true))
+
+      # Test other algorithms
+      assert is_list(ResourceGraph.local_clustering_coefficient(graph, raw: true))
+      assert is_list(ResourceGraph.core_numbers(graph, raw: true))
+      assert is_list(ResourceGraph.strongly_connected_components(graph, raw: true))
+
+      # Verify contents/shapes
+      assert length(ResourceGraph.pagerank(graph, raw: true)) == 4
+      assert Enum.all?(ResourceGraph.pagerank(graph, raw: true), &is_float/1)
+
+      assert length(ResourceGraph.louvain(graph, raw: true)) == 4
+      assert Enum.all?(ResourceGraph.louvain(graph, raw: true), &is_integer/1)
+
+      ResourceGraph.destroy(graph)
+    end
+  end
 end

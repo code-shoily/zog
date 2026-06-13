@@ -59,6 +59,20 @@ native_graph = Zog.ResourceGraph.new(graph, backend: :soa)
 native_graph = Zog.ResourceGraph.read_edgelist("edges.txt", backend: :hash_graph)
 ```
 
+### Bypassing Label Mapping with `:raw`
+
+By default, when returning results for node-level queries (such as PageRank, Betweenness Centrality, Louvain/Leiden community detection, etc.), `Zog` automatically maps the native indices back to your original Elixir labels. For large graphs (e.g., millions of nodes), constructing large Elixir maps on the BEAM heap incurs serialization and memory overhead.
+
+To bypass this overhead, pass `raw: true` as an option. When enabled, `Zog` returns flat lists of floats or integers directly from native memory where the list index corresponds to the internal `u32` node ID:
+
+```elixir
+# Returns %{"node_A" => 0.15, "node_B" => 0.35, ...}
+scores = Zog.ResourceGraph.pagerank(native_graph)
+
+# Returns [0.15, 0.35, ...] directly (O(1) serialization overhead on the BEAM heap)
+raw_scores = Zog.ResourceGraph.pagerank(native_graph, raw: true)
+```
+
 ---
 
 ## Installation
