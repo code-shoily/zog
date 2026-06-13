@@ -758,13 +758,14 @@ defmodule Zog.ResourceGraph do
 
     pub fn nif_read_edgelist(file_path: []const u8, is_directed: bool, backend: beam.term) !beam.term {
         const b = try beam.get(BackendType, backend, .{});
+        const io = beam.io.get(beam.allocator);
 
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
         const arena_allocator = arena.allocator();
 
-        var file = try std.fs.cwd().openFile(file_path, .{});
-        defer file.close();
+        var file = try std.Io.Dir.cwd().openFile(io, file_path, .{});
+        defer file.close(io);
 
         var label_to_id = std.StringHashMap(u32).init(arena_allocator);
         var labels_list: std.ArrayList([]const u8) = .empty;
@@ -775,7 +776,7 @@ defmodule Zog.ResourceGraph do
         defer edges.deinit(arena_allocator);
 
         var read_buffer: [4096]u8 = undefined;
-        var file_reader = file.reader(&read_buffer);
+        var file_reader = file.reader(io, &read_buffer);
         const reader = &file_reader.interface;
 
         while (true) {
@@ -843,13 +844,14 @@ defmodule Zog.ResourceGraph do
 
     pub fn nif_read_adjlist(file_path: []const u8, is_directed: bool, backend: beam.term) !beam.term {
         const b = try beam.get(BackendType, backend, .{});
+        const io = beam.io.get(beam.allocator);
 
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
         const arena_allocator = arena.allocator();
 
-        var file = try std.fs.cwd().openFile(file_path, .{});
-        defer file.close();
+        var file = try std.Io.Dir.cwd().openFile(io, file_path, .{});
+        defer file.close(io);
 
         var label_to_id = std.StringHashMap(u32).init(arena_allocator);
         var labels_list: std.ArrayList([]const u8) = .empty;
@@ -860,7 +862,7 @@ defmodule Zog.ResourceGraph do
         defer edges.deinit(arena_allocator);
 
         var read_buffer: [4096]u8 = undefined;
-        var file_reader = file.reader(&read_buffer);
+        var file_reader = file.reader(io, &read_buffer);
         const reader = &file_reader.interface;
 
         while (true) {
@@ -929,13 +931,14 @@ defmodule Zog.ResourceGraph do
 
     pub fn nif_read_tgf(file_path: []const u8, is_directed: bool, backend: beam.term) !beam.term {
         const b = try beam.get(BackendType, backend, .{});
+        const io = beam.io.get(beam.allocator);
 
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
         const arena_allocator = arena.allocator();
 
-        var file = try std.fs.cwd().openFile(file_path, .{});
-        defer file.close();
+        var file = try std.Io.Dir.cwd().openFile(io, file_path, .{});
+        defer file.close(io);
 
         var label_to_id = std.StringHashMap(u32).init(arena_allocator);
         var labels_list: std.ArrayList([]const u8) = .empty;
@@ -947,7 +950,7 @@ defmodule Zog.ResourceGraph do
 
         var parsing_edges = false;
         var read_buffer: [4096]u8 = undefined;
-        var file_reader = file.reader(&read_buffer);
+        var file_reader = file.reader(io, &read_buffer);
         const reader = &file_reader.interface;
 
         while (true) {

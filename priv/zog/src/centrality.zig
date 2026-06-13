@@ -160,22 +160,22 @@ pub fn closeness(
                     }
                 }.lessThan);
 
-                var pq = PQ.init(alloc_param, compare_param);
-                defer pq.deinit();
+                var pq = PQ.initContext(compare_param);
+                defer pq.deinit(alloc_param);
 
                 for (chunk_nodes) |source| {
                     @memset(dist, null);
                     @memset(visited, false);
-                    pq.clearRetainingCapacity();
+                    pq.items.len = 0;
 
                     dist[source] = zero_val;
-                    pq.add(.{ .node = source, .d = zero_val }) catch continue;
+                    pq.push(alloc_param, .{ .node = source, .d = zero_val }) catch continue;
 
                     var reached_count: usize = 0;
                     var total_dist = zero_val;
 
                     while (pq.count() > 0) {
-                        const current = pq.remove();
+                        const current = pq.pop().?;
                         const v = current.node;
                         const d_v = current.d;
 
@@ -194,11 +194,11 @@ pub fn closeness(
                             if (dist[w]) |old_dist| {
                                 if (compare_param(alt, old_dist) == .lt) {
                                     dist[w] = alt;
-                                    pq.add(.{ .node = w, .d = alt }) catch {};
+                                    pq.push(alloc_param, .{ .node = w, .d = alt }) catch {};
                                 }
                             } else {
                                 dist[w] = alt;
-                                pq.add(.{ .node = w, .d = alt }) catch {};
+                                pq.push(alloc_param, .{ .node = w, .d = alt }) catch {};
                             }
                         }
                     }
@@ -370,19 +370,19 @@ pub fn harmonicCentrality(
                     }
                 }.lessThan);
 
-                var pq = PQ.init(alloc_param, compare_param);
-                defer pq.deinit();
+                var pq = PQ.initContext(compare_param);
+                defer pq.deinit(alloc_param);
 
                 for (chunk_nodes) |source| {
                     @memset(dist, null);
                     @memset(visited, false);
-                    pq.clearRetainingCapacity();
+                    pq.items.len = 0;
 
                     dist[source] = zero_val;
-                    pq.add(.{ .node = source, .d = zero_val }) catch continue;
+                    pq.push(alloc_param, .{ .node = source, .d = zero_val }) catch continue;
 
                     while (pq.count() > 0) {
-                        const current = pq.remove();
+                        const current = pq.pop().?;
                         const v = current.node;
                         const d_v = current.d;
 
@@ -398,11 +398,11 @@ pub fn harmonicCentrality(
                             if (dist[w]) |old_dist| {
                                 if (compare_param(alt, old_dist) == .lt) {
                                     dist[w] = alt;
-                                    pq.add(.{ .node = w, .d = alt }) catch {};
+                                    pq.push(alloc_param, .{ .node = w, .d = alt }) catch {};
                                 }
                             } else {
                                 dist[w] = alt;
-                                pq.add(.{ .node = w, .d = alt }) catch {};
+                                pq.push(alloc_param, .{ .node = w, .d = alt }) catch {};
                             }
                         }
                     }
@@ -561,8 +561,8 @@ pub fn betweenness(
             }
         }.lessThan);
 
-        var pq = PQ.init(allocator, compareFn);
-        defer pq.deinit();
+        var pq = PQ.initContext(compareFn);
+        defer pq.deinit(allocator);
 
         var stack = std.ArrayList(u32).empty;
         defer stack.deinit(allocator);
@@ -580,16 +580,16 @@ pub fn betweenness(
             for (0..V) |i| {
                 preds[i].clearRetainingCapacity();
             }
-            pq.clearRetainingCapacity();
+            pq.items.len = 0;
             stack.clearRetainingCapacity();
 
             // Initialize source
             dist[s] = zero;
             sigma[s] = 1;
-            try pq.add(.{ .d = zero, .node = s });
+            try pq.push(allocator, .{ .d = zero, .node = s });
 
             while (pq.count() > 0) {
-                const item = pq.remove();
+                const item = pq.pop().?;
                 const d_v = item.d;
                 const v = item.node;
 
@@ -611,7 +611,7 @@ pub fn betweenness(
                             sigma[w] = sigma[v];
                             preds[w].clearRetainingCapacity();
                             try preds[w].append(allocator, v);
-                            try pq.add(.{ .d = new_dist, .node = w });
+                            try pq.push(allocator, .{ .d = new_dist, .node = w });
                         } else if (ord == .eq) {
                             sigma[w] += sigma[v];
                             try preds[w].append(allocator, v);
@@ -620,7 +620,7 @@ pub fn betweenness(
                         dist[w] = new_dist;
                         sigma[w] = sigma[v];
                         try preds[w].append(allocator, v);
-                        try pq.add(.{ .d = new_dist, .node = w });
+                        try pq.push(allocator, .{ .d = new_dist, .node = w });
                     }
                 }
             }

@@ -29,7 +29,7 @@
 It is designed to be fully standalone for lightweight native graph workloads, yet seamlessly integrates as a NIF-powered acceleration layer for [YogEx](https://hex.pm/packages/yog_ex) or [Yog (Gleam)](https://hex.pm/packages/yog).
 
 > [!IMPORTANT]
-> **Zig Compiler Prerequisite**: `Zog` uses Zigler `0.15.2` and requires the **Zig `0.15.x`** compiler to be installed on your host system to compile the native NIF components.
+> **Zig Compiler Prerequisite**: `Zog` uses Zigler `0.16.0` and requires the **Zig `0.16.x`** compiler to be installed on your host system to compile the native NIF components.
 
 ---
 
@@ -53,7 +53,7 @@ Add `zog` to your list of dependencies in `mix.exs`. Since compiling Zig NIFs re
 def deps do
   [
     {:zog, "~> 0.1.0"},
-    {:zigler, "~> 0.15.2", runtime: false}
+    {:zigler, "~> 0.16.0", runtime: false}
   ]
 end
 ```
@@ -65,7 +65,7 @@ def deps do
   [
     {:yog_ex, "~> 0.99.0"},
     {:zog, "~> 0.1.0"},
-    {:zigler, "~> 0.15.2", runtime: false}
+    {:zigler, "~> 0.16.0", runtime: false}
   ]
 end
 ```

@@ -193,15 +193,15 @@ pub fn singleSourceDistances(
         }
     }.lessThan);
 
-    var pq = PQ.init(allocator, {});
-    defer pq.deinit();
+    var pq = PQ.initContext({});
+    defer pq.deinit(allocator);
 
     const start_idx = try mapper.getOrPut(start_node);
     ws.dist[start_idx] = zero;
-    try pq.add(.{ .node = start_node, .d = zero });
+    try pq.push(allocator, .{ .node = start_node, .d = zero });
 
     while (pq.count() > 0) {
-        const current = pq.remove();
+        const current = pq.pop().?;
 
         const current_idx = mapper.get(current.node);
         const current_dist = ws.dist[current_idx] orelse continue;
@@ -221,7 +221,7 @@ pub fn singleSourceDistances(
 
             if (better) {
                 ws.dist[to_idx] = alt;
-                try pq.add(.{ .node = edge.to, .d = alt });
+                try pq.push(allocator, .{ .node = edge.to, .d = alt });
             }
         }
     }
@@ -353,12 +353,12 @@ pub fn singleSourceShortestPathCounts(
         }
     }.lessThan);
 
-    var pq = PQ.init(allocator, {});
-    defer pq.deinit();
-    try pq.add(.{ .d = zero, .node = source });
+    var pq = PQ.initContext({});
+    defer pq.deinit(allocator);
+    try pq.push(allocator, .{ .d = zero, .node = source });
 
     while (pq.count() > 0) {
-        const item = pq.remove();
+        const item = pq.pop().?;
         const d_v = item.d;
         const v = item.node;
 
@@ -387,7 +387,7 @@ pub fn singleSourceShortestPathCounts(
                         try list.append(allocator, v);
                         try pred.put(w, list);
                     }
-                    try pq.add(.{ .d = new_dist, .node = w });
+                    try pq.push(allocator, .{ .d = new_dist, .node = w });
                 } else if (ord == .eq) {
                     const curr_sigma = sigma.get(w).?;
                     try sigma.put(w, curr_sigma + sigma.get(v).?);
@@ -518,18 +518,18 @@ fn pointToPointSearchInternal(
         }
     }.lessThan);
 
-    var pq = PQ.init(allocator, {});
-    defer pq.deinit();
+    var pq = PQ.initContext({});
+    defer pq.deinit(allocator);
 
     const start_g = zero;
     const start_f = if (is_astar) addFn(start_g, heuristic_ctx_opt.?.calculate(start_node, goal_node)) else start_g;
 
     const start_idx = try mapper.getOrPut(start_node);
     ws.dist[start_idx] = start_g;
-    try pq.add(.{ .node = start_node, .f = start_f, .g = start_g });
+    try pq.push(allocator, .{ .node = start_node, .f = start_f, .g = start_g });
 
     while (pq.count() > 0) {
-        const current = pq.remove();
+        const current = pq.pop().?;
         const current_idx = mapper.get(current.node);
         const best_g = ws.dist[current_idx] orelse continue;
 
@@ -550,7 +550,7 @@ fn pointToPointSearchInternal(
                 ws.dist[to_idx] = tentative_g;
                 ws.prev[to_idx] = current.node;
                 const f = if (is_astar) addFn(tentative_g, heuristic_ctx_opt.?.calculate(edge.to, goal_node)) else tentative_g;
-                try pq.add(.{ .node = edge.to, .f = f, .g = tentative_g });
+                try pq.push(allocator, .{ .node = edge.to, .f = f, .g = tentative_g });
             }
         }
     }
@@ -1038,23 +1038,9 @@ pub fn johnsonsGeneric(
         }
     }
 
-    // 2. Setup Dijkstra
-    const Item = struct {
-        node_idx: usize,
-        d: Weight,
-    };
-    const PQ = std.PriorityQueue(Item, void, struct {
-        fn lessThan(_: void, a: Item, b: Item) std.math.Order {
-            return compareFn(a.d, b.d);
-        }
-    }.lessThan);
-
     var final_matrix = try allocator.alloc(?Weight, n * n);
     errdefer allocator.free(final_matrix);
     @memset(final_matrix, null);
-
-    var pq = PQ.init(allocator, {});
-    defer pq.deinit();
 
     // 3. Run Dijkstra from each node (Parallelized)
     const ParallelDijkstraCtx = struct {
@@ -1085,8 +1071,8 @@ pub fn johnsonsGeneric(
             };
             const LocalPQ = std.PriorityQueue(DijkstraItem, PQContext, PQContext.lessThan);
 
-            var local_pq = LocalPQ.init(ctx.allocator, .{ .compareFn = ctx.compareFn });
-            defer local_pq.deinit();
+            var local_pq = LocalPQ.initContext(.{ .compareFn = ctx.compareFn });
+            defer local_pq.deinit(ctx.allocator);
 
             var dist = ctx.allocator.alloc(?Weight, ctx.n) catch return;
             defer ctx.allocator.free(dist);
@@ -1096,10 +1082,10 @@ pub fn johnsonsGeneric(
                 dist[u_idx] = ctx.zero;
 
                 local_pq.items.len = 0;
-                local_pq.add(.{ .node_idx = u_idx, .d = ctx.zero }) catch continue;
+                local_pq.push(ctx.allocator, .{ .node_idx = u_idx, .d = ctx.zero }) catch continue;
 
                 while (local_pq.count() > 0) {
-                    const current = local_pq.remove();
+                    const current = local_pq.pop().?;
                     const current_dist = dist[current.node_idx] orelse continue;
                     if (ctx.compareFn(current.d, current_dist) == .gt) continue;
 
@@ -1121,7 +1107,7 @@ pub fn johnsonsGeneric(
 
                         if (better) {
                             dist[v_idx] = tentative;
-                            local_pq.add(.{ .node_idx = v_idx, .d = tentative }) catch continue;
+                            local_pq.push(ctx.allocator, .{ .node_idx = v_idx, .d = tentative }) catch continue;
                         }
                     }
                 }
@@ -1184,6 +1170,19 @@ pub fn johnsonsGeneric(
         }
     } else {
         // Serial Dijkstra loop (use existing code pattern)
+        const SerialItem = struct {
+            node_idx: usize,
+            d: Weight,
+        };
+        const PQ = std.PriorityQueue(SerialItem, void, struct {
+            fn lessThan(_: void, a: SerialItem, b: SerialItem) std.math.Order {
+                return compareFn(a.d, b.d);
+            }
+        }.lessThan);
+
+        var pq = PQ.initContext({});
+        defer pq.deinit(allocator);
+
         var dist = try allocator.alloc(?Weight, n);
         defer allocator.free(dist);
 
@@ -1191,11 +1190,11 @@ pub fn johnsonsGeneric(
             @memset(dist, null);
             dist[u_idx] = zero;
 
-            while (pq.removeOrNull()) |_| {}
-            try pq.add(.{ .node_idx = u_idx, .d = zero });
+            pq.items.len = 0;
+            try pq.push(allocator, .{ .node_idx = u_idx, .d = zero });
 
             while (pq.count() > 0) {
-                const current = pq.remove();
+                const current = pq.pop().?;
                 const current_dist = dist[current.node_idx] orelse continue;
                 if (compareFn(current.d, current_dist) == .gt) continue;
 
@@ -1217,7 +1216,7 @@ pub fn johnsonsGeneric(
 
                     if (better) {
                         dist[v_idx] = tentative;
-                        try pq.add(.{ .node_idx = v_idx, .d = tentative });
+                        try pq.push(allocator, .{ .node_idx = v_idx, .d = tentative });
                     }
                 }
             }

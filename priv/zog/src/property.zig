@@ -360,6 +360,21 @@ pub fn dsatur(allocator: std.mem.Allocator, graph: anytype) ![]u32 {
 
     return colors;
 }
+const timespec = extern struct {
+    tv_sec: isize,
+    tv_nsec: isize,
+};
+extern fn clock_gettime(clk_id: c_int, tp: *timespec) c_int;
+
+fn milliTimestamp() i64 {
+    if (@import("builtin").os.tag == .windows) {
+        return 0;
+    } else {
+        var ts: timespec = .{ .tv_sec = 0, .tv_nsec = 0 };
+        _ = clock_gettime(1, &ts); // Use CLOCK_MONOTONIC (1)
+        return @as(i64, @intCast(ts.tv_sec)) * 1000 + @as(i64, @intCast(@divTrunc(ts.tv_nsec, 1_000_000)));
+    }
+}
 
 const ExactColoringState = struct {
     V: usize,
@@ -378,7 +393,7 @@ const ExactColoringState = struct {
 
         self.steps += 1;
         if (self.steps % 1024 == 0) {
-            if (std.time.milliTimestamp() > self.deadline_ms) {
+            if (milliTimestamp() > self.deadline_ms) {
                 self.timed_out = true;
                 return;
             }
@@ -510,7 +525,7 @@ pub fn exactColoring(allocator: std.mem.Allocator, graph: anytype, timeout_ms: u
     defer allocator.free(forbidden_matrix);
     @memset(forbidden_matrix, false);
 
-    const deadline_ms = std.time.milliTimestamp() + @as(i64, @intCast(timeout_ms));
+    const deadline_ms = milliTimestamp() + @as(i64, @intCast(timeout_ms));
 
     var state = ExactColoringState{
         .V = V,
