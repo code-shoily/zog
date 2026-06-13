@@ -394,6 +394,36 @@ defmodule Zog.ResourceGraphTest do
       assert ResourceGraph.dijkstra(graph, "Z", "B") == {:error, :no_path}
       ResourceGraph.destroy(graph)
     end
+
+    test "astar simple pathfinding" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+
+      for backend <- [:soa, :hash_graph] do
+        graph = ResourceGraph.new(builder, backend: backend)
+        x_coords = %{"A" => 0.0, "B" => 1.0, "C" => 2.0}
+        y_coords = %{"A" => 0.0, "B" => 0.0, "C" => 0.0}
+
+        assert {:ok, {["A", "B", "C"], 2.0}} = ResourceGraph.astar(graph, "A", "C", x_coords, y_coords)
+        ResourceGraph.destroy(graph)
+      end
+    end
+
+    test "is_reachable" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_node("C")
+
+      for backend <- [:soa, :hash_graph] do
+        graph = ResourceGraph.new(builder, backend: backend)
+        assert ResourceGraph.is_reachable(graph, "A", "B") == true
+        assert ResourceGraph.is_reachable(graph, "A", "C") == false
+        ResourceGraph.destroy(graph)
+      end
+    end
   end
 
   describe "multiple algorithms on same resource" do

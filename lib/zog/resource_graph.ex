@@ -43,6 +43,8 @@ defmodule Zog.ResourceGraph do
         nif_strongly_connected_components: [concurrency: :dirty_cpu],
         nif_kruskal: [concurrency: :dirty_cpu],
         nif_bellman_ford: [concurrency: :dirty_cpu],
+        nif_astar: [concurrency: :dirty_cpu],
+        nif_is_reachable: [concurrency: :dirty_cpu],
         nif_max_flow: [concurrency: :dirty_cpu],
         nif_push_relabel: [concurrency: :dirty_cpu],
         nif_global_min_cut: [concurrency: :dirty_cpu],
@@ -406,6 +408,48 @@ defmodule Zog.ResourceGraph do
         } else {
             return beam.make(.{.@"error", .no_path}, .{});
         }
+    }
+
+    pub fn nif_astar(
+        res: GraphRes,
+        start_node: u32,
+        goal_node: u32,
+        x_coords: []f64,
+        y_coords: []f64,
+        heuristic: beam.term,
+    ) !beam.term {
+        const allocator = beam.allocator;
+        const HeuristicType = zog.pathfinding.HeuristicType;
+        const h_type = try beam.get(HeuristicType, heuristic, .{});
+
+        const opt_res_or_err = switch (res.unpack()) {
+            .soa => |g| zog.pathfinding.astar(allocator, g, start_node, goal_node, x_coords, y_coords, h_type),
+            .hash_graph => |g| zog.pathfinding.astar(allocator, g, start_node, goal_node, x_coords, y_coords, h_type),
+        };
+        const opt_res = opt_res_or_err catch |err| {
+            return err;
+        };
+
+        if (opt_res) |res_val| {
+            var path_res = res_val;
+            defer path_res.deinit(allocator);
+
+            const path_slice = try allocator.alloc(u32, path_res.path.items.len);
+            @memcpy(path_slice, path_res.path.items);
+
+            return beam.make(.{.ok, .{path_slice, path_res.weight}}, .{});
+        } else {
+            return beam.make(.{.@"error", .no_path}, .{});
+        }
+    }
+
+    pub fn nif_is_reachable(res: GraphRes, start_node: u32, goal_node: u32) !beam.term {
+        const allocator = beam.allocator;
+        const reachable = switch (res.unpack()) {
+            .soa => |g| try zog.pathfinding.isReachable(allocator, g, start_node, goal_node),
+            .hash_graph => |g| try zog.pathfinding.isReachable(allocator, g, start_node, goal_node),
+        };
+        return beam.make(reachable, .{});
     }
 
     pub fn nif_density(res: GraphRes) !f64 {
@@ -1348,6 +1392,114 @@ defmodule Zog.ResourceGraph do
     end
 
     @doc """
+    Computes the shortest path and its weight between two nodes using A* algorithm directly on the native graph resource.
+    """
+    @spec astar(t(), SoA.label(), SoA.label(), map() | list(), map() | list(), atom()) ::
+            {:ok, {[SoA.label()], float()}} | {:error, :no_path}
+    def astar(%{resource: res, builder: builder}, start_label, goal_label, x_coords, y_coords, heuristic \\ :euclidean) do
+      if heuristic not in [:euclidean, :manhattan, :chebyshev] do
+        raise ArgumentError, "heuristic must be one of :euclidean, :manhattan, :chebyshev"
+      end
+
+      start_id = Map.get(builder.label_to_id, start_label)
+      goal_id = Map.get(builder.label_to_id, goal_label)
+
+      if is_nil(start_id) or is_nil(goal_id) do
+        {:error, :no_path}
+      else
+        {x_list, y_list} = build_coordinate_lists(builder, x_coords, y_coords)
+
+        case nif_astar(res, start_id, goal_id, x_list, y_list, heuristic) do
+          {:ok, {path_ids, weight}} ->
+            path_labels = Enum.map(path_ids, &SoA.id_to_label(builder, &1))
+            {:ok, {path_labels, weight}}
+
+          {:error, :no_path} ->
+            {:error, :no_path}
+        end
+      end
+    end
+
+    @doc """
+    Checks if a target node is reachable from a start node using BFS traversal directly on the native graph resource.
+    """
+    @spec is_reachable(t(), SoA.label(), SoA.label()) :: boolean()
+    def is_reachable(%{resource: res, builder: builder}, start_label, goal_label) do
+      start_id = Map.get(builder.label_to_id, start_label)
+      goal_id = Map.get(builder.label_to_id, goal_label)
+
+      if is_nil(start_id) or is_nil(goal_id) do
+        false
+      else
+        if start_id == goal_id do
+          true
+        else
+          nif_is_reachable(res, start_id, goal_id)
+        end
+      end
+    end
+
+    defp build_coordinate_lists(builder, x_coords, y_coords) do
+      node_count = SoA.node_count(builder)
+
+      x_list =
+        if is_map(x_coords) or Keyword.keyword?(x_coords) do
+          Enum.map(0..(node_count - 1), fn id ->
+            label = SoA.id_to_label(builder, id)
+
+            val =
+              if is_map(x_coords) do
+                Map.get(x_coords, label)
+              else
+                Keyword.get(x_coords, label)
+              end
+
+            case val do
+              nil -> raise(ArgumentError, "Missing X coordinate for node #{inspect(label)}")
+              val -> to_float(val)
+            end
+          end)
+        else
+          if length(x_coords) != node_count do
+            raise(ArgumentError, "Expected X coordinate list to have length #{node_count}, got #{length(x_coords)}")
+          end
+
+          Enum.map(x_coords, &to_float/1)
+        end
+
+      y_list =
+        if is_map(y_coords) or Keyword.keyword?(y_coords) do
+          Enum.map(0..(node_count - 1), fn id ->
+            label = SoA.id_to_label(builder, id)
+
+            val =
+              if is_map(y_coords) do
+                Map.get(y_coords, label)
+              else
+                Keyword.get(y_coords, label)
+              end
+
+            case val do
+              nil -> raise(ArgumentError, "Missing Y coordinate for node #{inspect(label)}")
+              val -> to_float(val)
+            end
+          end)
+        else
+          if length(y_coords) != node_count do
+            raise(ArgumentError, "Expected Y coordinate list to have length #{node_count}, got #{length(y_coords)}")
+          end
+
+          Enum.map(y_coords, &to_float/1)
+        end
+
+      {x_list, y_list}
+    end
+
+    defp to_float(x) when is_integer(x), do: :erlang.float(x)
+    defp to_float(x) when is_float(x), do: x
+    defp to_float(other), do: raise(ArgumentError, "invalid coordinate: #{inspect(other)}")
+
+    @doc """
     Graph density.
     """
     @spec density(t()) :: float()
@@ -1641,6 +1793,14 @@ defmodule Zog.ResourceGraph do
     end
 
     def dijkstra(_graph, _start_label, _goal_label) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def astar(_graph, _start_label, _goal_label, _x_coords, _y_coords, _heuristic \\ :euclidean) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def is_reachable(_graph, _start_label, _goal_label) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
     end
 

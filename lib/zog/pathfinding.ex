@@ -12,7 +12,9 @@ defmodule Zog.Pathfinding do
         floyd_warshall: [concurrency: :dirty_cpu],
         johnsons: [concurrency: :dirty_cpu],
         nif_dijkstra: [concurrency: :dirty_cpu],
-        nif_bellman_ford: [concurrency: :dirty_cpu]
+        nif_bellman_ford: [concurrency: :dirty_cpu],
+        nif_astar: [concurrency: :dirty_cpu],
+        nif_is_reachable: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -152,6 +154,55 @@ defmodule Zog.Pathfinding do
             return beam.make(.{.@"error", .no_path}, .{});
         }
     }
+
+    pub fn nif_astar(
+        node_count: usize,
+        from: []u32,
+        to: []u32,
+        weight: []f64,
+        start_node: u32,
+        goal_node: u32,
+        x_coords: []f64,
+        y_coords: []f64,
+        heuristic: beam.term,
+    ) !beam.term {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        const HeuristicType = zog.pathfinding.HeuristicType;
+        const h_type = try beam.get(HeuristicType, heuristic, .{});
+
+        const opt_res = zog.pathfinding.astar(beam.allocator, g, start_node, goal_node, x_coords, y_coords, h_type) catch |err| {
+            return err;
+        };
+
+        if (opt_res) |res| {
+            var path_res = res;
+            defer path_res.deinit(beam.allocator);
+
+            const path_slice = try beam.allocator.alloc(u32, path_res.path.items.len);
+            @memcpy(path_slice, path_res.path.items);
+
+            return beam.make(.{.ok, .{path_slice, path_res.weight}}, .{});
+        } else {
+            return beam.make(.{.@"error", .no_path}, .{});
+        }
+    }
+
+    pub fn nif_is_reachable(
+        node_count: usize,
+        from: []u32,
+        to: []u32,
+        weight: []f64,
+        start_node: u32,
+        goal_node: u32,
+    ) !beam.term {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        const reachable = try zog.pathfinding.isReachable(beam.allocator, g, start_node, goal_node);
+        return beam.make(reachable, .{});
+    }
     """
 
     @doc """
@@ -262,6 +313,118 @@ defmodule Zog.Pathfinding do
         end
       end
     end
+
+    @doc """
+    Computes the shortest path and its weight between two nodes using the A* algorithm.
+    """
+    @spec astar(SoA.t(), SoA.label(), SoA.label(), map() | list(), map() | list(), atom()) ::
+            {:ok, {[SoA.label()], float()}} | {:error, :no_path}
+    def astar(%SoA{} = builder, start_label, goal_label, x_coords, y_coords, heuristic \\ :euclidean) do
+      if heuristic not in [:euclidean, :manhattan, :chebyshev] do
+        raise ArgumentError, "heuristic must be one of :euclidean, :manhattan, :chebyshev"
+      end
+
+      start_id = Map.get(builder.label_to_id, start_label)
+      goal_id = Map.get(builder.label_to_id, goal_label)
+
+      if is_nil(start_id) or is_nil(goal_id) do
+        {:error, :no_path}
+      else
+        node_count = SoA.node_count(builder)
+        {from, to, weights} = SoA.to_edge_arrays(builder)
+        {x_list, y_list} = build_coordinate_lists(builder, x_coords, y_coords)
+
+        case nif_astar(node_count, from, to, weights, start_id, goal_id, x_list, y_list, heuristic) do
+          {:ok, {path_ids, weight}} ->
+            path_labels = Enum.map(path_ids, &SoA.id_to_label(builder, &1))
+            {:ok, {path_labels, weight}}
+
+          {:error, :no_path} ->
+            {:error, :no_path}
+        end
+      end
+    end
+
+    @doc """
+    Checks if a target node is reachable from a start node using BFS traversal.
+    """
+    @spec is_reachable(SoA.t(), SoA.label(), SoA.label()) :: boolean()
+    def is_reachable(%SoA{} = builder, start_label, goal_label) do
+      start_id = Map.get(builder.label_to_id, start_label)
+      goal_id = Map.get(builder.label_to_id, goal_label)
+
+      if is_nil(start_id) or is_nil(goal_id) do
+        false
+      else
+        if start_id == goal_id do
+          true
+        else
+          node_count = SoA.node_count(builder)
+          {from, to, weights} = SoA.to_edge_arrays(builder)
+          nif_is_reachable(node_count, from, to, weights, start_id, goal_id)
+        end
+      end
+    end
+
+    defp build_coordinate_lists(builder, x_coords, y_coords) do
+      node_count = SoA.node_count(builder)
+
+      x_list =
+        if is_map(x_coords) or Keyword.keyword?(x_coords) do
+          Enum.map(0..(node_count - 1), fn id ->
+            label = SoA.id_to_label(builder, id)
+
+            val =
+              if is_map(x_coords) do
+                Map.get(x_coords, label)
+              else
+                Keyword.get(x_coords, label)
+              end
+
+            case val do
+              nil -> raise(ArgumentError, "Missing X coordinate for node #{inspect(label)}")
+              val -> to_float(val)
+            end
+          end)
+        else
+          if length(x_coords) != node_count do
+            raise(ArgumentError, "Expected X coordinate list to have length #{node_count}, got #{length(x_coords)}")
+          end
+
+          Enum.map(x_coords, &to_float/1)
+        end
+
+      y_list =
+        if is_map(y_coords) or Keyword.keyword?(y_coords) do
+          Enum.map(0..(node_count - 1), fn id ->
+            label = SoA.id_to_label(builder, id)
+
+            val =
+              if is_map(y_coords) do
+                Map.get(y_coords, label)
+              else
+                Keyword.get(y_coords, label)
+              end
+
+            case val do
+              nil -> raise(ArgumentError, "Missing Y coordinate for node #{inspect(label)}")
+              val -> to_float(val)
+            end
+          end)
+        else
+          if length(y_coords) != node_count do
+            raise(ArgumentError, "Expected Y coordinate list to have length #{node_count}, got #{length(y_coords)}")
+          end
+
+          Enum.map(y_coords, &to_float/1)
+        end
+
+      {x_list, y_list}
+    end
+
+    defp to_float(x) when is_integer(x), do: :erlang.float(x)
+    defp to_float(x) when is_float(x), do: x
+    defp to_float(other), do: raise(ArgumentError, "invalid coordinate: #{inspect(other)}")
   else
     @moduledoc """
     Native pathfinding algorithms backed by Zog (Zig) via Zigler.
@@ -280,6 +443,14 @@ defmodule Zog.Pathfinding do
     end
 
     def bellman_ford(_builder, _start_label, _goal_label) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def astar(_builder, _start_label, _goal_label, _x_coords, _y_coords, _heuristic \\ :euclidean) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def is_reachable(_builder, _start_label, _goal_label) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
     end
   end

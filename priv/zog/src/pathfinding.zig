@@ -457,6 +457,28 @@ fn reconstructPath(
     };
 }
 
+pub const HeuristicType = enum {
+    euclidean,
+    manhattan,
+    chebyshev,
+};
+
+pub const HeuristicContext = struct {
+    x_coords: []const f64,
+    y_coords: []const f64,
+    type: HeuristicType,
+
+    pub fn calculate(self: @This(), node: u32, goal: u32) f64 {
+        const dx = self.x_coords[node] - self.x_coords[goal];
+        const dy = self.y_coords[node] - self.y_coords[goal];
+        switch (self.type) {
+            .euclidean => return @sqrt(dx * dx + dy * dy),
+            .manhattan => return @abs(dx) + @abs(dy),
+            .chebyshev => return @max(@abs(dx), @abs(dy)),
+        }
+    }
+};
+
 fn pointToPointSearchInternal(
     comptime is_astar: bool,
     allocator: std.mem.Allocator,
@@ -467,7 +489,7 @@ fn pointToPointSearchInternal(
     zero: Weight,
     comptime addFn: fn (a: Weight, b: Weight) Weight,
     comptime compareFn: fn (a: Weight, b: Weight) std.math.Order,
-    heuristic_opt: ?fn (node: @TypeOf(start_node), goal: @TypeOf(start_node)) Weight,
+    heuristic_ctx_opt: ?HeuristicContext,
     workspace_opt: ?*SSSPWorkspace(@TypeOf(start_node), Weight),
 ) !?ShortestPathResult(@TypeOf(start_node), Weight) {
     const NodeId = @TypeOf(start_node);
@@ -500,7 +522,7 @@ fn pointToPointSearchInternal(
     defer pq.deinit();
 
     const start_g = zero;
-    const start_f = if (is_astar) addFn(start_g, heuristic_opt.?(start_node, goal_node)) else start_g;
+    const start_f = if (is_astar) addFn(start_g, heuristic_ctx_opt.?.calculate(start_node, goal_node)) else start_g;
 
     const start_idx = try mapper.getOrPut(start_node);
     ws.dist[start_idx] = start_g;
@@ -527,7 +549,7 @@ fn pointToPointSearchInternal(
             if (better) {
                 ws.dist[to_idx] = tentative_g;
                 ws.prev[to_idx] = current.node;
-                const f = if (is_astar) addFn(tentative_g, heuristic_opt.?(edge.to, goal_node)) else tentative_g;
+                const f = if (is_astar) addFn(tentative_g, heuristic_ctx_opt.?.calculate(edge.to, goal_node)) else tentative_g;
                 try pq.add(.{ .node = edge.to, .f = f, .g = tentative_g });
             }
         }
@@ -557,6 +579,76 @@ pub fn dijkstra(
     goal_node: anytype,
 ) !?ShortestPathResult(@TypeOf(start_node), f64) {
     return dijkstraGeneric(allocator, graph, start_node, goal_node, f64, 0.0, utils.addF64, utils.compareF64, null);
+}
+
+pub fn astarGeneric(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    start_node: u32,
+    goal_node: u32,
+    comptime Weight: type,
+    zero: Weight,
+    comptime addFn: fn (a: Weight, b: Weight) Weight,
+    comptime compareFn: fn (a: Weight, b: Weight) std.math.Order,
+    x_coords: []const f64,
+    y_coords: []const f64,
+    heuristic_type: HeuristicType,
+    workspace_opt: ?*SSSPWorkspace(u32, Weight),
+) !?ShortestPathResult(u32, Weight) {
+    const ctx = HeuristicContext{
+        .x_coords = x_coords,
+        .y_coords = y_coords,
+        .type = heuristic_type,
+    };
+    return pointToPointSearchInternal(true, allocator, graph, start_node, goal_node, Weight, zero, addFn, compareFn, ctx, workspace_opt);
+}
+
+pub fn astar(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    start_node: u32,
+    goal_node: u32,
+    x_coords: []const f64,
+    y_coords: []const f64,
+    heuristic_type: HeuristicType,
+) !?ShortestPathResult(u32, f64) {
+    return astarGeneric(allocator, graph, start_node, goal_node, f64, 0.0, utils.addF64, utils.compareF64, x_coords, y_coords, heuristic_type, null);
+}
+
+pub fn isReachable(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    start_node: u32,
+    goal_node: u32,
+) !bool {
+    if (start_node == goal_node) return true;
+
+    var visited = std.AutoHashMap(u32, void).init(allocator);
+    defer visited.deinit();
+
+    var queue = std.ArrayList(u32).empty;
+    defer queue.deinit(allocator);
+
+    try visited.put(start_node, {});
+    try queue.append(allocator, start_node);
+
+    var head: usize = 0;
+    while (head < queue.items.len) {
+        const current = queue.items[head];
+        head += 1;
+
+        if (current == goal_node) return true;
+
+        var it = graph.successors(current);
+        while (it.next()) |edge| {
+            const gop = try visited.getOrPut(edge.to);
+            if (!gop.found_existing) {
+                try queue.append(allocator, edge.to);
+            }
+        }
+    }
+
+    return false;
 }
 
 
