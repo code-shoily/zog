@@ -204,11 +204,15 @@ defmodule Zog.SoA do
   """
   @spec to_edge_arrays(t()) :: {[id()], [id()], [float()]}
   def to_edge_arrays(%__MODULE__{edges: edges}) do
-    ordered = Enum.reverse(edges)
-    froms = for {f, _, _} <- ordered, do: f
-    tos = for {_, t, _} <- ordered, do: t
-    weights = for {_, _, w} <- ordered, do: w
+    reduce_edges(edges, [], [], [])
+  end
+
+  defp reduce_edges([], froms, tos, weights) do
     {froms, tos, weights}
+  end
+
+  defp reduce_edges([{f, t, w} | tail], froms, tos, weights) do
+    reduce_edges(tail, [f | froms], [t | tos], [w | weights])
   end
 
   # ============= Private Helpers =============

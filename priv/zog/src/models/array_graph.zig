@@ -158,14 +158,23 @@ pub fn ArrayGraph(comptime NodeData: type, comptime EdgeData: type) type {
         pub const SuccessorIterator = struct {
             graph: *const Self,
             next_edge: ?EdgeIndex,
+            is_deleted_slice: []const bool,
+            to_slice: []const NodeIndex,
+            next_edge_slice: []const ?EdgeIndex,
+            node_is_deleted_slice: []const bool,
 
             pub fn next(it: *SuccessorIterator) ?Edge {
                 while (it.next_edge) |idx| {
-                    const edge = it.graph.edges.get(idx);
-                    it.next_edge = edge.next_edge;
-                    if (!edge.is_deleted and !it.graph.nodes.items(.is_deleted)[edge.to]) {
-                        return edge;
+                    const next_idx = it.next_edge_slice[idx];
+                    if (!it.is_deleted_slice[idx]) {
+                        const dest = it.to_slice[idx];
+                        if (!it.node_is_deleted_slice[dest]) {
+                            const edge = it.graph.edges.get(idx);
+                            it.next_edge = next_idx;
+                            return edge;
+                        }
                     }
+                    it.next_edge = next_idx;
                 }
                 return null;
             }
@@ -175,6 +184,10 @@ pub fn ArrayGraph(comptime NodeData: type, comptime EdgeData: type) type {
             return .{
                 .graph = self,
                 .next_edge = self.nodes.items(.first_edge)[id],
+                .is_deleted_slice = self.edges.items(.is_deleted),
+                .to_slice = self.edges.items(.to),
+                .next_edge_slice = self.edges.items(.next_edge),
+                .node_is_deleted_slice = self.nodes.items(.is_deleted),
             };
         }
 
@@ -271,6 +284,11 @@ pub fn ArrayGraph(comptime NodeData: type, comptime EdgeData: type) type {
             graph: *const Self,
             node_i: usize,
             edge_i: ?EdgeIndex,
+            is_deleted_slice: []const bool,
+            to_slice: []const NodeIndex,
+            next_edge_slice: []const ?EdgeIndex,
+            node_is_deleted_slice: []const bool,
+            data_slice: []const EdgeData,
 
             pub const Item = struct {
                 from: NodeIndex,
@@ -281,22 +299,25 @@ pub fn ArrayGraph(comptime NodeData: type, comptime EdgeData: type) type {
             pub fn next(it: *EdgeIterator) ?Item {
                 while (true) {
                     if (it.edge_i) |idx| {
-                        const edge = it.graph.edges.get(idx);
-                        it.edge_i = edge.next_edge;
-                        if (!edge.is_deleted and !it.graph.nodes.items(.is_deleted)[edge.to]) {
+                        const next_idx = it.next_edge_slice[idx];
+                        const is_del = it.is_deleted_slice[idx];
+                        const to = it.to_slice[idx];
+                        it.edge_i = next_idx;
+                        if (!is_del and !it.node_is_deleted_slice[to]) {
                             return .{
                                 .from = @as(NodeIndex, @intCast(it.node_i - 1)),
-                                .to = edge.to,
-                                .data = edge.data,
+                                .to = to,
+                                .data = it.data_slice[idx],
                             };
                         }
                     } else {
                         // find next valid node
+                        const first_edge_slice = it.graph.nodes.items(.first_edge);
                         while (it.node_i < it.graph.nodes.len) {
                             const id = @as(NodeIndex, @intCast(it.node_i));
                             it.node_i += 1;
-                            if (!it.graph.nodes.items(.is_deleted)[id]) {
-                                it.edge_i = it.graph.nodes.items(.first_edge)[id];
+                            if (!it.node_is_deleted_slice[id]) {
+                                it.edge_i = first_edge_slice[id];
                                 break;
                             }
                         } else {
@@ -312,6 +333,11 @@ pub fn ArrayGraph(comptime NodeData: type, comptime EdgeData: type) type {
                 .graph = self,
                 .node_i = 0,
                 .edge_i = null,
+                .is_deleted_slice = self.edges.items(.is_deleted),
+                .to_slice = self.edges.items(.to),
+                .next_edge_slice = self.edges.items(.next_edge),
+                .node_is_deleted_slice = self.nodes.items(.is_deleted),
+                .data_slice = self.edges.items(.data),
             };
         }
     };
