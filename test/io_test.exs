@@ -67,6 +67,32 @@ defmodule Zog.IOTest do
         ResourceGraph.destroy(res_tgf)
         File.rm!(tmp_tgf)
       end
+
+      # 4. CSV
+      tmp_csv = Path.join(System.tmp_dir!(), "csv_#{:rand.uniform(100_000_000)}")
+      :ok = ZogIO.dump(builder, tmp_csv, format: :csv)
+
+      res_csv = ZogIO.load(tmp_csv, format: :csv, directed: true)
+
+      try do
+        assert SoA.node_count(res_csv.builder) == 3
+      after
+        ResourceGraph.destroy(res_csv)
+        File.rm!(tmp_csv)
+      end
+
+      # 5. Pajek
+      tmp_pajek = Path.join(System.tmp_dir!(), "pajek_#{:rand.uniform(100_000_000)}")
+      :ok = ZogIO.dump(builder, tmp_pajek, format: :pajek)
+
+      try do
+        pajek_content = File.read!(tmp_pajek)
+        assert pajek_content =~ "*Vertices 3"
+        assert pajek_content =~ "*Arcs"
+        assert pajek_content =~ "1 \"A\""
+      after
+        File.rm!(tmp_pajek)
+      end
     end
   end
 end

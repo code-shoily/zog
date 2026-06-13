@@ -733,6 +733,10 @@ defmodule Zog.ResourceGraph do
             const dst_lbl = parts.next() orelse continue;
             const opt_weight = parts.next();
 
+            if (std.ascii.eqlIgnoreCase(src_lbl, "source") and std.ascii.eqlIgnoreCase(dst_lbl, "target")) {
+                continue;
+            }
+
             const weight = if (opt_weight) |w_str| std.fmt.parseFloat(f64, w_str) catch 1.0 else 1.0;
 
             const src_id = try getOrInsertNodeId(arena_allocator, &label_to_id, &labels_list, &next_id, src_lbl);
