@@ -1081,6 +1081,26 @@ defmodule Zog.ResourceGraph do
       end
     end
 
+    if Code.ensure_loaded?(Graph) do
+      @doc """
+      Builds a native graph resource directly from a `Graph` (from `libgraph`).
+      """
+      @spec from_libgraph(Graph.t(), keyword()) :: t()
+      def from_libgraph(libgraph, opts \\ []) do
+        libgraph
+        |> SoA.from_libgraph()
+        |> new(opts)
+      end
+
+      @doc """
+      Converts a native graph resource back to a `Graph` (from `libgraph`).
+      """
+      @spec to_libgraph(t()) :: Graph.t()
+      def to_libgraph(%{resource: _res, builder: builder}) do
+        SoA.to_libgraph(builder)
+      end
+    end
+
     @doc """
     Reads a graph from an edge list file directly in native memory.
     """
@@ -1839,6 +1859,16 @@ defmodule Zog.ResourceGraph do
       end
 
       def to_yog(_graph) do
+        raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      end
+    end
+
+    if Code.ensure_loaded?(Graph) do
+      def from_libgraph(_libgraph) do
+        raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      end
+
+      def to_libgraph(_graph) do
         raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
       end
     end

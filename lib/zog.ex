@@ -27,4 +27,10 @@ defmodule Zog do
     defdelegate from_labeled(labeled), to: Zog.SoA
     defdelegate to_graph(builder), to: Zog.SoA
   end
+
+  # Conditional delegation for libgraph conversions
+  if Code.ensure_loaded?(Graph) do
+    defdelegate from_libgraph(libgraph), to: Zog.SoA
+    defdelegate to_libgraph(builder), to: Zog.SoA
+  end
 end

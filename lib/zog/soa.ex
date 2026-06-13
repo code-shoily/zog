@@ -309,4 +309,45 @@ defmodule Zog.SoA do
       end)
     end
   end
+
+  # ============= libgraph Conversions (Optional) =============
+  if Code.ensure_loaded?(Graph) do
+    @doc """
+    Converts a `Graph` (from `libgraph`) into a `Zog.SoA` struct.
+    """
+    @spec from_libgraph(Graph.t()) :: t()
+    def from_libgraph(%Graph{} = libgraph) do
+      kind = if libgraph.type == :directed, do: :directed, else: :undirected
+      vertices = Graph.vertices(libgraph)
+
+      builder =
+        Enum.reduce(vertices, new(kind), fn vertex, acc ->
+          add_node(acc, vertex)
+        end)
+
+      Enum.reduce(Graph.edges(libgraph), builder, fn %Graph.Edge{v1: v1, v2: v2, weight: weight}, acc ->
+        add_edge(acc, v1, v2, weight)
+      end)
+    end
+
+    @doc """
+    Converts the SoA struct back to a `Graph` (from `libgraph`).
+    """
+    @spec to_libgraph(t()) :: Graph.t()
+    def to_libgraph(%__MODULE__{} = builder) do
+      base = Graph.new(type: builder.kind)
+
+      g =
+        Enum.reduce(0..(node_count(builder) - 1), base, fn id, acc ->
+          label = id_to_label(builder, id)
+          Graph.add_vertex(acc, label)
+        end)
+
+      Enum.reduce(all_edges(builder), g, fn {from_id, to_id, weight}, acc ->
+        from_label = id_to_label(builder, from_id)
+        to_label = id_to_label(builder, to_id)
+        Graph.add_edge(acc, from_label, to_label, weight: weight)
+      end)
+    end
+  end
 end

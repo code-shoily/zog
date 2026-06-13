@@ -53,7 +53,8 @@ defmodule Zog.MixProject do
       {:excoveralls, "~> 0.18", only: :test},
       {:jump_credo_checks, "~> 0.1", only: [:dev], runtime: false},
       {:zigler, "~> 0.15.2", runtime: false, optional: true},
-      {:yog_ex, "~> 0.98"}
+      {:yog_ex, "~> 0.98"},
+      {:libgraph, "~> 0.16", optional: true}
     ]
   end
 
