@@ -56,7 +56,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 
 | Algorithm | YogEx Module | Purpose | Zog Status | Notes / Details |
 | :--- | :--- | :--- | :--- | :--- |
-| **Hopcroft-Karp** | `Yog.Matching` | Maximum bipartite matching | ❌ **Missing** | *WIP/Roadmap* — matching algorithms are planned for v0.3.0. |
+| **Hopcroft-Karp** | `Yog.Matching` | Maximum bipartite matching | ✅ **Implemented** | Native Zig via `Zog.Connectivity.maximum_bipartite_matching/1` and `Zog.ResourceGraph.maximum_bipartite_matching/2`. |
 | **Hungarian** | `Yog.Matching` | Weighted bipartite matching | ❌ **Missing** | *WIP/Roadmap* — planned for v0.3.0. |
 | **Blossom** | `Yog.Matching` | Maximum matching in general graphs | ❌ **Missing** | *WIP/Roadmap* — planned for v0.3.0. |
 
@@ -146,7 +146,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | :--- | :--- | :--- | :--- | :--- |
 | **Transpose** | `Yog.Transform` | Reverse edge directions | ❌ **Missing** | *Deliberately Omitted* — transpose logic is handled at graph build time. |
 | **Subgraph** | `Yog.Transform` | Induced subgraph by node IDs | ✅ **Implemented** | `Zog.Transform.subgraph/2` and `Zog.ResourceGraph.subgraph/3` (native Zig). |
-| **Ego Graph** | `Yog.Transform` | k-hop neighborhood subgraph | ❌ **Missing** | *Deferred* — low priority. |
+| **Ego Graph** | `Yog.Transform` | k-hop neighborhood subgraph | ✅ **Implemented** | `Zog.Transform.ego_graph/3` and `Zog.ResourceGraph.ego_graph/3`. |
 | **Transitive Closure** | `Yog.Transform` | Reachability matrix | ❌ **Missing** | *Deferred* — high memory footprint, low priority. |
 | **Transitive Reduction** | `Yog.Transform` | Minimal equivalent DAG | ❌ **Missing** | *Deferred* — low priority. |
 | **Quotient Graph** | `Yog.Transform` | Partition-based contraction | ❌ **Missing** | *Won't Have* — low priority. |
@@ -160,9 +160,9 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 
 | Algorithm | YogEx Module | Purpose | Zog Status | Notes / Details |
 | :--- | :--- | :--- | :--- | :--- |
-| **Bipartite Check** | `Yog.Property.Bipartite` | 2-colorability test | ❌ **Missing** | *WIP/Roadmap* — planned for v0.3.0. |
-| **Bipartite Partition** | `Yog.Property.Bipartite` | Two-color assignment | ❌ **Missing** | *WIP/Roadmap* — planned for v0.3.0. |
-| **Max Bipartite Matching** | `Yog.Property.Bipartite` | Maximum matching | ❌ **Missing** | *WIP/Roadmap* — planned for v0.3.0. |
+| **Bipartite Check** | `Yog.Property.Bipartite` | 2-colorability test | ✅ **Implemented** | Native Zig via `Zog.Connectivity.bipartite_check/1` and `Zog.ResourceGraph.bipartite_check/2`. |
+| **Bipartite Partition** | `Yog.Property.Bipartite` | Two-color assignment | ✅ **Implemented** | Native Zig via `Zog.Connectivity.bipartite_partition/1` and `Zog.ResourceGraph.bipartite_partition/2`. |
+| **Max Bipartite Matching** | `Yog.Property.Bipartite` | Maximum matching | ✅ **Implemented** | Native Zig via `Zog.Connectivity.maximum_bipartite_matching/1` and `Zog.ResourceGraph.maximum_bipartite_matching/2` (Hopcroft-Karp). |
 | **Stable Marriage** | `Yog.Property.Bipartite` | Gale-Shapley stable matching | ❌ **Missing** | *Won't Have* — outside core graph project scope. |
 | **Acyclicity Test** | `Yog.Property.Cyclicity` | Cycle detection | ❌ **Missing** | *WIP/Roadmap* — planned for a future DAG release. |
 | **Eulerian Circuit** | `Yog.Property.Eulerian` | Eulerian cycle existence | ❌ **Missing** | *Deferred* — low priority. |
