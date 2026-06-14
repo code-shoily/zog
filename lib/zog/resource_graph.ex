@@ -2435,6 +2435,45 @@ defmodule Zog.ResourceGraph do
         builder: sub_builder
       }
     end
+
+    @doc """
+    Computes the transitive closure of a `ResourceGraph`.
+
+    Returns a new directed `ResourceGraph` with an edge `(u, v)` for every node
+    `v` reachable from `u` in the original graph, including self-loops.
+
+    Raises `ArgumentError` if the input graph is undirected.
+    """
+    @spec transitive_closure(t(), keyword()) :: t()
+    def transitive_closure(%{builder: builder} = _res_graph, _opts \\ []) do
+      new_builder = Zog.Transform.transitive_closure(builder)
+      Zog.ResourceGraph.new(new_builder)
+    end
+
+    @doc """
+    Computes the transitive reduction of a `ResourceGraph`.
+
+    Returns a new directed `ResourceGraph` containing the minimal set of edges
+    that preserves the same reachability as the original DAG.
+
+    Raises `ArgumentError` if the graph is undirected or contains cycles.
+    """
+    @spec transitive_reduction(t(), keyword()) :: t()
+    def transitive_reduction(%{builder: builder} = _res_graph, _opts \\ []) do
+      new_builder = Zog.Transform.transitive_reduction(builder)
+      Zog.ResourceGraph.new(new_builder)
+    end
+
+    @doc """
+    Contracts two nodes in a `ResourceGraph` into a single node.
+
+    See `Zog.Transform.contract/4` for options.
+    """
+    @spec contract(t(), SoA.label(), SoA.label(), keyword()) :: t()
+    def contract(%{builder: builder} = _res_graph, label1, label2, opts \\ []) do
+      new_builder = Zog.Transform.contract(builder, label1, label2, opts)
+      Zog.ResourceGraph.new(new_builder)
+    end
   else
     @moduledoc """
     Native graph resource backed by Zog (Zig) via Zigler.
@@ -2508,6 +2547,18 @@ defmodule Zog.ResourceGraph do
     end
 
     def ego_graph(_graph, _center, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def transitive_closure(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def transitive_reduction(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def contract(_graph, _label1, _label2, _opts \\ []) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 

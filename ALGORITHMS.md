@@ -147,10 +147,10 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Transpose** | `Yog.Transform` | Reverse edge directions | ❌ **Missing** | *Deliberately Omitted* — transpose logic is handled at graph build time. |
 | **Subgraph** | `Yog.Transform` | Induced subgraph by node IDs | ✅ **Implemented** | `Zog.Transform.subgraph/2` and `Zog.ResourceGraph.subgraph/3` (native Zig). |
 | **Ego Graph** | `Yog.Transform` | k-hop neighborhood subgraph | ✅ **Implemented** | `Zog.Transform.ego_graph/3` and `Zog.ResourceGraph.ego_graph/3`. |
-| **Transitive Closure** | `Yog.Transform` | Reachability matrix | ❌ **Missing** | *Deferred* — high memory footprint, low priority. |
-| **Transitive Reduction** | `Yog.Transform` | Minimal equivalent DAG | ❌ **Missing** | *Deferred* — low priority. |
+| **Transitive Closure** | `Yog.Transform` | Reachability graph | ✅ **Implemented** | `Zog.Transform.transitive_closure/1` and `Zog.ResourceGraph.transitive_closure/2`. |
+| **Transitive Reduction** | `Yog.Transform` | Minimal equivalent DAG | ✅ **Implemented** | `Zog.Transform.transitive_reduction/1` and `Zog.ResourceGraph.transitive_reduction/2`. |
 | **Quotient Graph** | `Yog.Transform` | Partition-based contraction | ❌ **Missing** | *Won't Have* — low priority. |
-| **Contract** | `Yog.Transform` | Merge two nodes | ❌ **Missing** | *Deferred* — low priority. |
+| **Contract** | `Yog.Transform` | Merge two nodes | ✅ **Implemented** | `Zog.Transform.contract/3` and `Zog.ResourceGraph.contract/4`. |
 | **Filter Nodes** | `Yog.Transform` | Predicate-based subgraph | ❌ **Missing** | *Deferred* — low priority. |
 | **Filter Edges** | `Yog.Transform` | Predicate-based edge removal | ❌ **Missing** | *Deferred* — low priority. |
 

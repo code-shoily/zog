@@ -10,7 +10,7 @@ Zog v0.3.0 implements high-performance native implementations of core graph algo
 ## Release Milestones
 
 ### 📅 v0.3.0: Bipartite Properties, Ego Graphs & Graph Manipulation
-Focuses on bipartite property detection, ego-graph extraction, and subgraph manipulation.
+Focuses on bipartite property detection, ego-graph extraction, and graph transformations.
 
 - **Bipartite**
   - [x] Bipartite Check (2-colorability verification)
@@ -19,6 +19,8 @@ Focuses on bipartite property detection, ego-graph extraction, and subgraph mani
 - **Transformations & Operations**
   - [x] Subgraph extraction (Induced subgraphs by node IDs)
   - [x] Ego Graph (Neighborhood-induced subgraph around a node)
+  - [x] Transitive Closure / Reduction (Reachability graph and minimal equivalent DAG)
+  - [x] Contract (Merge two nodes into one)
 
 ---
 
@@ -61,6 +63,6 @@ These features are not scheduled for immediate releases and will be implemented 
 - **Connectivity**: Reachability Exact. (Weakly Connected Components and Bipartite Check/Partition have been implemented in v0.3.0)
 - **Centrality & Metrics**: HITS (Hubs and Authorities), Transitivity.
 - **Community Detection**: Walktrap, Infomap, Clique Percolation, Fluid Communities, Local Community.
-- **Transformations & Operations**: Node/Edge filter predicates, Transitive Closure/Reduction, Contract.
+- **Transformations & Operations**: Node/Edge filter predicates.
 - **Graph Properties**: Complete Graph detection, Tree/Forest/Branching checks, Isomorphism, Graph Hash.
 - **Generators**: GNM random generator, Stochastic Block Models (SBM, DCSBM, HSBM), Random Regular, Geometric/Waxman generators.

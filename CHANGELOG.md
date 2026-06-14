@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `maximum_bipartite_matching/1` to `Zog.Connectivity` and `maximum_bipartite_matching/2` to `Zog.ResourceGraph`, implementing Hopcroft-Karp for maximum cardinality bipartite matching.
 - Added `ego_graph/3` to `Zog.Transform` (delegated via `Zog.ego_graph/3`) for extracting neighbourhood-induced ego graphs from `SoA` builders.
 - Added `ego_graph/3` to `Zog.ResourceGraph` for extracting ego graphs with native resource backing.
+- Added `transitive_closure/1`, `transitive_reduction/1`, and `contract/3` to `Zog.Transform` (delegated via `Zog.transitive_closure/1`, etc.) for reachability graphs, minimal equivalent DAGs, and node contraction.
+- Added `transitive_closure/2`, `transitive_reduction/2`, and `contract/4` to `Zog.ResourceGraph` for the same transformations with native resource backing.
 - Added `subgraph/2` to `Zog.Transform` (delegated via `Zog.subgraph/2`) and `subgraph/3` to `Zog.ResourceGraph` (with native Zig NIF backing) for induced subgraph extraction.
   - Accepts both list and `MapSet` inputs for node labels.
   - Both `SoA` builder and `ResourceGraph` paths are covered with unit tests.

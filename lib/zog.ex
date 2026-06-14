@@ -22,6 +22,9 @@ defmodule Zog do
   defdelegate to_edge_arrays(builder), to: Zog.SoA
   defdelegate subgraph(builder, node_labels), to: Zog.Transform
   defdelegate ego_graph(builder, center, radius \\ 1), to: Zog.Transform
+  defdelegate transitive_closure(builder), to: Zog.Transform
+  defdelegate transitive_reduction(builder), to: Zog.Transform
+  defdelegate contract(builder, label1, label2, opts \\ []), to: Zog.Transform
 
   # Conditional delegation for Yog conversions
   if Code.ensure_loaded?(Yog) do

@@ -323,4 +323,143 @@ defmodule Zog.TransformTest do
       ResourceGraph.destroy(ego_res)
     end
   end
+
+  describe "transitive_closure/1 (SoA builder)" do
+    test "adds reachability edges for a directed path" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+
+      closure = Transform.transitive_closure(builder)
+
+      assert Zog.node_count(closure) == 3
+      # Self-loops + A->B, A->C, B->C = 6 edges
+      assert Zog.edge_count(closure) == 6
+    end
+
+    test "raises for undirected graphs" do
+      builder = Zog.undirected() |> Zog.add_edge("A", "B", 1.0)
+
+      assert_raise ArgumentError, ~r/transitive closure is only defined/, fn ->
+        Transform.transitive_closure(builder)
+      end
+    end
+  end
+
+  describe "transitive_reduction/1 (SoA builder)" do
+    test "removes redundant edge in a DAG" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+        |> Zog.add_edge("A", "C", 1.0)
+
+      reduction = Transform.transitive_reduction(builder)
+
+      assert Zog.node_count(reduction) == 3
+      assert Zog.edge_count(reduction) == 2
+    end
+
+    test "raises for cyclic graphs" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+        |> Zog.add_edge("C", "A", 1.0)
+
+      assert_raise ArgumentError, ~r/transitive reduction requires/, fn ->
+        Transform.transitive_reduction(builder)
+      end
+    end
+  end
+
+  describe "contract/3 (SoA builder)" do
+    test "merges two nodes in a directed graph" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 2.0)
+
+      contracted = Transform.contract(builder, "A", "B")
+
+      assert Zog.node_count(contracted) == 2
+      assert "A" in Zog.all_labels(contracted)
+      refute "B" in Zog.all_labels(contracted)
+      # A->B self-loop removed; B->C becomes A->C
+      assert Zog.edge_count(contracted) == 1
+    end
+
+    test "merges two nodes in an undirected graph and removes duplicates" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 2.0)
+
+      contracted = Transform.contract(builder, "A", "B")
+
+      assert Zog.node_count(contracted) == 2
+      assert Zog.edge_count(contracted) == 2
+    end
+
+    test "supports :as option to keep the second label" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 2.0)
+
+      contracted = Transform.contract(builder, "A", "B", as: "B")
+
+      assert "B" in Zog.all_labels(contracted)
+      refute "A" in Zog.all_labels(contracted)
+    end
+  end
+
+  describe "transitive operations (ResourceGraph)" do
+    test "transitive_closure on ResourceGraph" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+
+      res_graph = ResourceGraph.new(builder)
+      closure_res = ResourceGraph.transitive_closure(res_graph)
+
+      assert ResourceGraph.reachable?(closure_res, "A", "C")
+
+      ResourceGraph.destroy(res_graph)
+      ResourceGraph.destroy(closure_res)
+    end
+
+    test "transitive_reduction on ResourceGraph" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+        |> Zog.add_edge("A", "C", 1.0)
+
+      res_graph = ResourceGraph.new(builder)
+      reduction_res = ResourceGraph.transitive_reduction(res_graph)
+
+      assert Zog.edge_count(reduction_res.builder) == 2
+
+      ResourceGraph.destroy(res_graph)
+      ResourceGraph.destroy(reduction_res)
+    end
+
+    test "contract on ResourceGraph" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 2.0)
+
+      res_graph = ResourceGraph.new(builder)
+      contracted_res = ResourceGraph.contract(res_graph, "A", "B")
+
+      assert ResourceGraph.reachable?(contracted_res, "A", "C")
+
+      ResourceGraph.destroy(res_graph)
+      ResourceGraph.destroy(contracted_res)
+    end
+  end
 end
