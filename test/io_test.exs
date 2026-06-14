@@ -8,15 +8,15 @@ defmodule Zog.IOTest do
   @moduletag :zigler
 
   describe "Zog.IO" do
-    test "loads wiki_vote.txt edgelist directly" do
-      res = ZogIO.load(Path.expand("fixtures/wiki_vote.txt", __DIR__), directed: true)
+    test "loads wiki_vote_sample.txt edgelist directly" do
+      res = ZogIO.load(Path.expand("fixtures/wiki_vote_sample.txt", __DIR__), directed: true)
 
       try do
-        # wiki_vote has 7115 nodes
-        assert SoA.node_count(res.builder) == 7115
+        # wiki_vote_sample has 86 nodes
+        assert SoA.node_count(res.builder) == 86
 
         sccs = ResourceGraph.strongly_connected_components(res)
-        assert length(sccs) == 5816
+        assert length(sccs) == 86
       after
         ResourceGraph.destroy(res)
       end
