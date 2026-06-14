@@ -8,16 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] - Unreleased
 
 ### Added
-- Committed SNAP Wiki-Vote graph as a local test fixture (`test/fixtures/wiki_vote.txt`) to replace hard-coded machine paths.
+
+- Included small sample of Wiki-Vote graph as a local test fixture (`test/fixtures/wiki_vote.txt`) to replace hard-coded machine paths.
 - Proper docs groupings configuration for all entry points, generators, and algorithm helper modules in `mix.exs`.
 
 ### Changed
+
 - Promoted `zigler` to a required dependency in `mix.exs`.
 - Bulk-updated stale `zigler` recommended versions in NIF error fallback messages from `~> 0.15.2` to `~> 0.16.0`.
 - Renamed all public `is_reachable/3-4` functions to follow Elixir idiomatic naming conventions: `reachable?/3-4`.
 - Replaced non-portable libc `clock_gettime` with Zig 0.16.0's cross-platform `std.Io.Clock` API.
 
 ### Fixed
+
 - Fixed Zig native test suite compilation errors and invalid stack array frees in Tarjan connectivity tests.
 - Resolved Dialyzer type-spec failures caused by referencing non-existent `Model.t()` type instead of `SoA.t()`.
 - Fixed memory leaks in `UnionFind` initialization on allocation failures in Kruskal's algorithm.
