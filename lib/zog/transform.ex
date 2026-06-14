@@ -78,4 +78,76 @@ defmodule Zog.Transform do
       integer_labels: builder.integer_labels
     }
   end
+
+  @doc """
+  Extracts the ego graph around `center` from a `Zog.SoA` builder.
+
+  The ego graph contains the `center` node, all nodes within `radius` hops,
+  and all edges that exist between those nodes in the original graph. Edges
+  are treated as undirected when expanding the neighbourhood, so both incoming
+  and outgoing neighbours are included for directed graphs.
+
+  `center` must be a label present in the original graph.
+
+  ## Examples
+
+      iex> builder = Zog.directed()
+      ...> |> Zog.add_edge("A", "B", 1.0)
+      ...> |> Zog.add_edge("B", "C", 2.0)
+      iex> ego = Zog.Transform.ego_graph(builder, "B")
+      iex> Zog.node_count(ego)
+      3
+      iex> Zog.all_labels(ego) |> Enum.sort()
+      ["A", "B", "C"]
+  """
+  @spec ego_graph(SoA.t(), SoA.label(), non_neg_integer()) :: SoA.t()
+  def ego_graph(%SoA{} = builder, center, radius \\ 1) do
+    case SoA.label_to_id(builder, center) do
+      nil ->
+        raise ArgumentError, "center node #{inspect(center)} not found in graph"
+
+      center_id ->
+        node_ids = nodes_within_radius(builder, center_id, radius)
+        labels = Enum.map(node_ids, &SoA.id_to_label(builder, &1))
+        subgraph(builder, labels)
+    end
+  end
+
+  defp nodes_within_radius(builder, center_id, radius) do
+    adjacency =
+      Enum.reduce(builder.edges, %{}, fn {src, dst, _weight}, acc ->
+        acc
+        |> Map.update(src, MapSet.new([dst]), &MapSet.put(&1, dst))
+        |> Map.update(dst, MapSet.new([src]), &MapSet.put(&1, src))
+      end)
+
+    do_bfs(MapSet.new([center_id]), MapSet.new([center_id]), adjacency, radius, 0)
+  end
+
+  defp do_bfs(_frontier, visited, _adjacency, radius, current_radius)
+       when current_radius >= radius do
+    visited
+  end
+
+  defp do_bfs(frontier, visited, adjacency, radius, current_radius) do
+    new_frontier =
+      frontier
+      |> Enum.reduce(MapSet.new(), fn node_id, acc ->
+        neighbors = Map.get(adjacency, node_id, MapSet.new())
+        MapSet.union(acc, neighbors)
+      end)
+      |> MapSet.difference(visited)
+
+    if MapSet.size(new_frontier) == 0 do
+      visited
+    else
+      do_bfs(
+        new_frontier,
+        MapSet.union(visited, new_frontier),
+        adjacency,
+        radius,
+        current_radius + 1
+      )
+    end
+  end
 end

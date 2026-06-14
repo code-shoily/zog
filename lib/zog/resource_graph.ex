@@ -82,7 +82,8 @@ defmodule Zog.ResourceGraph do
         nif_read_edgelist: [concurrency: :dirty_io],
         nif_read_adjlist: [concurrency: :dirty_io],
         nif_read_tgf: [concurrency: :dirty_io],
-        nif_subgraph: [concurrency: :dirty_cpu]
+        nif_subgraph: [concurrency: :dirty_cpu],
+        nif_is_bipartite: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -585,6 +586,23 @@ defmodule Zog.ResourceGraph do
             .soa => |g| try zog.connectivity.weaklyConnectedComponents(allocator, g),
             .hash_graph => |g| try zog.connectivity.weaklyConnectedComponents(allocator, g),
         };
+    }
+
+    pub fn nif_is_bipartite(res: GraphRes) !beam.term {
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.connectivity.isBipartite(allocator, g),
+            .hash_graph => |g| try zog.connectivity.isBipartite(allocator, g),
+        };
+        switch (result) {
+            .bipartite => |colors| {
+                errdefer allocator.free(colors);
+                const term = beam.make(.{ .bipartite, colors }, .{});
+                allocator.free(colors);
+                return term;
+            },
+            .not_bipartite => return beam.make(.not_bipartite, .{}),
+        }
     }
 
     pub fn nif_kruskal(res: GraphRes) !beam.term {
@@ -2059,6 +2077,48 @@ defmodule Zog.ResourceGraph do
       end
     end
 
+    @doc """
+    Checks whether a `ResourceGraph` is bipartite (2-colourable) natively.
+
+    Returns `true` when the graph is bipartite, `false` otherwise.
+    """
+    @spec bipartite_check(t(), keyword()) :: boolean()
+    def bipartite_check(%{resource: res}, _opts \\ []) do
+      case nif_is_bipartite(res) do
+        :not_bipartite -> false
+        {:bipartite, _colors} -> true
+      end
+    end
+
+    @doc """
+    Returns the bipartite partition of a `ResourceGraph` as two `MapSet`s of
+    node labels, or `{:error, :not_bipartite}` if the graph is not 2-colourable.
+
+    Returns `{:ok, set_a, set_b}`.
+    """
+    @spec bipartite_partition(t(), keyword()) ::
+            {:ok, MapSet.t(SoA.label()), MapSet.t(SoA.label())} | {:error, :not_bipartite}
+    def bipartite_partition(%{resource: res, builder: builder}, _opts \\ []) do
+      case nif_is_bipartite(res) do
+        :not_bipartite ->
+          {:error, :not_bipartite}
+
+        {:bipartite, colors} ->
+          labels = SoA.all_labels(builder)
+          labels_tuple = List.to_tuple(labels)
+
+          {set_a, set_b} =
+            :binary.bin_to_list(colors)
+            |> Enum.with_index()
+            |> Enum.reduce({MapSet.new(), MapSet.new()}, fn {color, idx}, {a, b} ->
+              label = elem(labels_tuple, idx)
+              if color == 0, do: {MapSet.put(a, label), b}, else: {a, MapSet.put(b, label)}
+            end)
+
+          {:ok, set_a, set_b}
+      end
+    end
+
     @spec kruskal(t(), keyword()) :: {:ok, [Yog.MST.edge()]}
     def kruskal(graph, opts \\ [])
 
@@ -2303,6 +2363,36 @@ defmodule Zog.ResourceGraph do
         builder: sub_builder
       }
     end
+
+    @doc """
+    Returns the ego graph of `center` from a `ResourceGraph`.
+
+    The returned `ResourceGraph` contains the `center` node, all nodes within
+    `:radius` hops (default 1), and all edges between those nodes. Edges are
+    treated as undirected when expanding the neighbourhood.
+
+    ## Options
+
+      * `:radius` - number of hops to include (default 1)
+
+    """
+    @spec ego_graph(t(), SoA.label(), keyword()) :: t()
+    def ego_graph(%{resource: res, builder: builder} = _res_graph, center, opts \\ []) do
+      radius = Keyword.get(opts, :radius, 1)
+      sub_builder = Zog.Transform.ego_graph(builder, center, radius)
+
+      kept_ids =
+        sub_builder
+        |> SoA.all_labels()
+        |> Enum.map(&SoA.label_to_id(builder, &1))
+
+      sub_resource = nif_subgraph(res, kept_ids)
+
+      %{
+        resource: sub_resource,
+        builder: sub_builder
+      }
+    end
   else
     @moduledoc """
     Native graph resource backed by Zog (Zig) via Zigler.
@@ -2372,6 +2462,18 @@ defmodule Zog.ResourceGraph do
     end
 
     def subgraph(_graph, _node_labels, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def ego_graph(_graph, _center, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def bipartite_check(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def bipartite_partition(_graph, _opts \\ []) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 

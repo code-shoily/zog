@@ -17,7 +17,7 @@ Focuses on bipartite property detection, ego-graph extraction, and subgraph mani
   - [x] Bipartite Partition (Color assignment)
 - **Transformations & Operations**
   - [x] Subgraph extraction (Induced subgraphs by node IDs)
-  - [ ] Ego Graph (Neighborhood-induced subgraph around a node)
+  - [x] Ego Graph (Neighborhood-induced subgraph around a node)
   - [ ] Node/Edge filter predicates (Graph filtering by predicate functions)
 
 ---

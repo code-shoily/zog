@@ -181,4 +181,146 @@ defmodule Zog.TransformTest do
       ResourceGraph.destroy(sub_res)
     end
   end
+
+  describe "ego_graph/3 (SoA builder)" do
+    test "extracts radius-1 ego graph for directed graph" do
+      # A -> B -> C -> D, plus B -> E
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 2.0)
+        |> Zog.add_edge("C", "D", 3.0)
+        |> Zog.add_edge("B", "E", 4.0)
+
+      ego = Transform.ego_graph(builder, "B")
+
+      assert Zog.node_count(ego) == 4
+      assert Zog.all_labels(ego) |> Enum.sort() == ["A", "B", "C", "E"]
+      # Edges among {A, B, C, E}: A->B, B->C, B->E
+      assert Zog.edge_count(ego) == 3
+    end
+
+    test "extracts radius-1 ego graph for undirected graph" do
+      # A - B - C - D
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 2.0)
+        |> Zog.add_edge("C", "D", 3.0)
+
+      ego = Transform.ego_graph(builder, "B")
+
+      assert Zog.node_count(ego) == 3
+      assert Zog.all_labels(ego) |> Enum.sort() == ["A", "B", "C"]
+      # Undirected edges among {A, B, C}: A-B and B-C, each stored bidirectionally
+      assert Zog.edge_count(ego) == 4
+    end
+
+    test "radius 0 returns only the center node" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 2.0)
+
+      ego = Transform.ego_graph(builder, "B", 0)
+
+      assert Zog.node_count(ego) == 1
+      assert Zog.all_labels(ego) == ["B"]
+      assert Zog.edge_count(ego) == 0
+    end
+
+    test "radius 2 follows two-hop outgoing paths" do
+      # A -> B -> C -> D
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 2.0)
+        |> Zog.add_edge("C", "D", 3.0)
+
+      ego = Transform.ego_graph(builder, "B", 2)
+
+      assert Zog.node_count(ego) == 4
+      assert Zog.all_labels(ego) |> Enum.sort() == ["A", "B", "C", "D"]
+    end
+
+    test "raises when center node is not in the graph" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+
+      assert_raise ArgumentError, ~r/center node.*not found/, fn ->
+        Transform.ego_graph(builder, "Z")
+      end
+    end
+
+    test "isolated center returns single-node ego graph" do
+      builder =
+        Zog.directed()
+        |> Zog.add_node("A")
+        |> Zog.add_edge("B", "C", 1.0)
+
+      ego = Transform.ego_graph(builder, "A")
+
+      assert Zog.node_count(ego) == 1
+      assert Zog.all_labels(ego) == ["A"]
+      assert Zog.edge_count(ego) == 0
+    end
+
+    test "works with integer-labelled builders" do
+      builder = %Zog.SoA{
+        kind: :directed,
+        integer_labels: true,
+        label_to_id: %{},
+        id_to_label: %{},
+        nodes: [],
+        edges: [{0, 1, 1.0}, {1, 2, 2.0}, {2, 3, 3.0}],
+        edge_count: 3,
+        next_id: 4
+      }
+
+      ego = Transform.ego_graph(builder, 1)
+
+      assert Zog.node_count(ego) == 3
+      assert Zog.all_labels(ego) |> Enum.sort() == [0, 1, 2]
+      assert ego.integer_labels == true
+    end
+  end
+
+  describe "ego_graph/3 (ResourceGraph)" do
+    test "extracts ego graph natively on ResourceGraph" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 2.0)
+        |> Zog.add_edge("C", "D", 3.0)
+        |> Zog.add_edge("B", "E", 4.0)
+
+      res_graph = ResourceGraph.new(builder)
+      ego_res = ResourceGraph.ego_graph(res_graph, "B")
+
+      assert ResourceGraph.reachable?(ego_res, "B", "C")
+      assert ResourceGraph.reachable?(ego_res, "B", "E")
+      # D is two hops away, should not be in radius-1 ego graph
+      refute ResourceGraph.reachable?(ego_res, "B", "D")
+
+      ResourceGraph.destroy(res_graph)
+      ResourceGraph.destroy(ego_res)
+    end
+
+    test "respects radius option" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 2.0)
+        |> Zog.add_edge("C", "D", 3.0)
+
+      res_graph = ResourceGraph.new(builder)
+      ego_res = ResourceGraph.ego_graph(res_graph, "B", radius: 2)
+
+      assert ResourceGraph.reachable?(ego_res, "B", "D")
+
+      ResourceGraph.destroy(res_graph)
+      ResourceGraph.destroy(ego_res)
+    end
+  end
 end
