@@ -505,6 +505,168 @@ pub fn weaklyConnectedComponents(allocator: std.mem.Allocator, graph: anytype) !
     return components;
 }
 
+/// Result returned by `isBipartite`.
+pub const BipartiteResult = union(enum) {
+    /// The graph is bipartite.  `colors` is an allocated slice of length V
+    /// where colors[i] == 0 or 1 indicates the partition each node belongs to.
+    bipartite: []u8,
+    /// The graph contains an odd cycle and is therefore not bipartite.
+    /// The caller must NOT free anything in this case.
+    not_bipartite: void,
+};
+
+/// Checks whether `graph` is bipartite using BFS 2-colouring.
+///
+/// Edges are treated as undirected: for each node u we walk both successors
+/// and predecessors (via the reverse iterator if available, or a second
+/// forward pass on all nodes).  This makes the result correct for directed
+/// graphs that represent undirected topology with paired edges.
+///
+/// Returns:
+///   `.bipartite`     — with an allocated `[]u8` colour slice (caller frees).
+///   `.not_bipartite` — graph contains an odd cycle.
+pub fn isBipartite(allocator: std.mem.Allocator, graph: anytype) !BipartiteResult {
+    const V = graph.nodeCount();
+    if (V == 0) {
+        const colors = try allocator.alloc(u8, 0);
+        return .{ .bipartite = colors };
+    }
+
+    // 255 = uncoloured sentinel
+    const colors = try allocator.alloc(u8, V);
+    errdefer allocator.free(colors);
+    @memset(colors, 255);
+
+    // BFS queue (unmanaged, Zig 0.16 style)
+    var queue = std.ArrayList(u32).empty;
+    defer queue.deinit(allocator);
+
+    // Build a symmetric adjacency list so the check works on directed graphs
+    // that encode undirected topology as paired edges (u->v and v->u).
+    var adj = try allocator.alloc(std.ArrayList(u32), V);
+    defer allocator.free(adj);
+    for (0..V) |i| adj[i] = std.ArrayList(u32).empty;
+    defer for (0..V) |i| adj[i].deinit(allocator);
+
+    var node_it = graph.nodeIds();
+    while (node_it.next()) |u| {
+        var succ_it = graph.successors(u);
+        while (succ_it.next()) |edge| {
+            const v = edge.to;
+            // Add both directions; duplicates are harmless for BFS correctness.
+            try adj[u].append(allocator, v);
+            try adj[v].append(allocator, u);
+        }
+    }
+
+    // BFS 2-colouring over every component
+    for (0..V) |start| {
+        if (colors[start] != 255) continue;
+
+        colors[start] = 0;
+        try queue.append(allocator, @intCast(start));
+
+        while (queue.items.len > 0) {
+            const u = queue.orderedRemove(0);
+            const u_color = colors[u];
+
+            for (adj[u].items) |v| {
+                if (colors[v] == 255) {
+                    colors[v] = 1 - u_color;
+                    try queue.append(allocator, v);
+                } else if (colors[v] == u_color) {
+                    // Odd cycle detected — free color array before returning
+                    allocator.free(colors);
+                    return .not_bipartite;
+                }
+            }
+        }
+    }
+
+    return .{ .bipartite = colors };
+}
+
+test "isBipartite: complete bipartite K_{2,3}" {
+    const allocator = std.testing.allocator;
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+
+    // K_{2,3}: nodes 0,1 on left; 2,3,4 on right — all left<->right edges
+    var g = AG(void, void).init(allocator);
+    defer g.deinit();
+
+    for (0..5) |_| _ = try g.addNode({});
+
+    // Undirected represented as paired directed edges
+    inline for (.{ .{ 0, 2 }, .{ 0, 3 }, .{ 0, 4 }, .{ 1, 2 }, .{ 1, 3 }, .{ 1, 4 } }) |e| {
+        _ = try g.addEdge(e[0], e[1], {});
+        _ = try g.addEdge(e[1], e[0], {});
+    }
+
+    const result = try isBipartite(allocator, g);
+    switch (result) {
+        .bipartite => |colors| {
+            defer allocator.free(colors);
+            // Nodes in the same partition must share a color
+            try std.testing.expectEqual(colors[0], colors[1]);
+            try std.testing.expectEqual(colors[2], colors[3]);
+            try std.testing.expectEqual(colors[3], colors[4]);
+            // The two partitions must have different colors
+            try std.testing.expect(colors[0] != colors[2]);
+        },
+        .not_bipartite => try std.testing.expect(false),
+    }
+}
+
+test "isBipartite: triangle (odd cycle) → not bipartite" {
+    const allocator = std.testing.allocator;
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+
+    var g = AG(void, void).init(allocator);
+    defer g.deinit();
+
+    for (0..3) |_| _ = try g.addNode({});
+    _ = try g.addEdge(0, 1, {}); _ = try g.addEdge(1, 0, {});
+    _ = try g.addEdge(1, 2, {}); _ = try g.addEdge(2, 1, {});
+    _ = try g.addEdge(2, 0, {}); _ = try g.addEdge(0, 2, {});
+
+    const result = try isBipartite(allocator, g);
+    try std.testing.expectEqual(BipartiteResult.not_bipartite, result);
+}
+
+test "isBipartite: empty graph → bipartite" {
+    const allocator = std.testing.allocator;
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+
+    var g = AG(void, void).init(allocator);
+    defer g.deinit();
+
+    const result = try isBipartite(allocator, g);
+    switch (result) {
+        .bipartite => |colors| { defer allocator.free(colors); try std.testing.expectEqual(@as(usize, 0), colors.len); },
+        .not_bipartite => try std.testing.expect(false),
+    }
+}
+
+test "isBipartite: disconnected — one bipartite + one odd cycle" {
+    const allocator = std.testing.allocator;
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+
+    // Component A: path 0-1-2 (bipartite)
+    // Component B: triangle 3-4-5 (not bipartite)
+    var g = AG(void, void).init(allocator);
+    defer g.deinit();
+
+    for (0..6) |_| _ = try g.addNode({});
+    _ = try g.addEdge(0, 1, {}); _ = try g.addEdge(1, 0, {});
+    _ = try g.addEdge(1, 2, {}); _ = try g.addEdge(2, 1, {});
+    _ = try g.addEdge(3, 4, {}); _ = try g.addEdge(4, 3, {});
+    _ = try g.addEdge(4, 5, {}); _ = try g.addEdge(5, 4, {});
+    _ = try g.addEdge(5, 3, {}); _ = try g.addEdge(3, 5, {});
+
+    const result = try isBipartite(allocator, g);
+    try std.testing.expectEqual(BipartiteResult.not_bipartite, result);
+}
+
 test "stronglyConnectedComponents: simple cycle and tail" {
     const allocator = std.testing.allocator;
     const AG = @import("models/array_graph.zig").ArrayGraph;

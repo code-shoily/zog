@@ -12,7 +12,8 @@ defmodule Zog.Connectivity do
         nif_core_numbers: [concurrency: :dirty_cpu],
         nif_analyze_connectivity: [concurrency: :dirty_cpu],
         nif_strongly_connected_components: [concurrency: :dirty_cpu],
-        nif_weakly_connected_components: [concurrency: :dirty_cpu]
+        nif_weakly_connected_components: [concurrency: :dirty_cpu],
+        nif_is_bipartite: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -60,6 +61,22 @@ defmodule Zog.Connectivity do
         defer g.deinit();
 
         return try zog.connectivity.weaklyConnectedComponents(beam.allocator, g);
+    }
+
+    pub fn nif_is_bipartite(node_count: usize, from: []u32, to: []u32, weight: []f64) !beam.term {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        const result = try zog.connectivity.isBipartite(beam.allocator, g);
+        switch (result) {
+            .bipartite => |colors| {
+                errdefer beam.allocator.free(colors);
+                const term = beam.make(.{ .bipartite, colors }, .{});
+                beam.allocator.free(colors);
+                return term;
+            },
+            .not_bipartite => return beam.make(.not_bipartite, .{}),
+        }
     }
 
     pub fn nif_analyze_connectivity(node_count: usize, from: []u32, to: []u32, weight: []f64) !beam.term {
@@ -226,6 +243,79 @@ defmodule Zog.Connectivity do
 
     defp make_sorted_edge(u, v) when u < v, do: {u, v}
     defp make_sorted_edge(u, v), do: {v, u}
+
+    @doc """
+    Checks whether a graph is bipartite (2-colourable) natively.
+
+    Treats all edges as undirected; works correctly for graphs that store
+    undirected edges as symmetric directed pairs.
+
+    Returns `true` when the graph is bipartite, `false` otherwise.
+
+    ## Examples
+
+        iex> builder = Zog.undirected() |> Zog.add_edge(:a, :b, 1.0) |> Zog.add_edge(:b, :c, 1.0)
+        iex> Zog.Connectivity.bipartite_check(builder)
+        true
+
+        iex> builder = Zog.undirected() |> Zog.add_edge(:a, :b, 1.0) |> Zog.add_edge(:b, :c, 1.0) |> Zog.add_edge(:c, :a, 1.0)
+        iex> Zog.Connectivity.bipartite_check(builder)
+        false
+    """
+    @spec bipartite_check(SoA.t()) :: boolean()
+    def bipartite_check(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
+
+      case nif_is_bipartite(node_count, from, to, weights) do
+        :not_bipartite -> false
+        {:bipartite, _colors} -> true
+      end
+    end
+
+    @doc """
+    Returns the bipartite partition of a graph as two sets of node labels, or
+    `{:error, :not_bipartite}` if the graph is not 2-colourable.
+
+    The partition is returned as `{:ok, set_a, set_b}` where `set_a` and
+    `set_b` are `MapSet`s of node labels.  The assignment is deterministic
+    (BFS from the lowest-ID uncoloured node) but arbitrary in terms of which
+    partition is "A" vs "B".
+
+    ## Examples
+
+        iex> builder = Zog.undirected() |> Zog.add_edge(:a, :b, 1.0) |> Zog.add_edge(:b, :c, 1.0)
+        iex> {:ok, set_a, set_b} = Zog.Connectivity.bipartite_partition(builder)
+        iex> MapSet.member?(set_a, :a) or MapSet.member?(set_b, :a)
+        true
+        iex> MapSet.disjoint?(set_a, set_b)
+        true
+    """
+    @spec bipartite_partition(SoA.t()) ::
+            {:ok, MapSet.t(SoA.label()), MapSet.t(SoA.label())} | {:error, :not_bipartite}
+    def bipartite_partition(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
+
+      case nif_is_bipartite(node_count, from, to, weights) do
+        :not_bipartite ->
+          {:error, :not_bipartite}
+
+        {:bipartite, colors} ->
+          labels = SoA.all_labels(builder)
+          labels_tuple = List.to_tuple(labels)
+
+          {set_a, set_b} =
+            :binary.bin_to_list(colors)
+            |> Enum.with_index()
+            |> Enum.reduce({MapSet.new(), MapSet.new()}, fn {color, idx}, {a, b} ->
+              label = elem(labels_tuple, idx)
+              if color == 0, do: {MapSet.put(a, label), b}, else: {a, MapSet.put(b, label)}
+            end)
+
+          {:ok, set_a, set_b}
+      end
+    end
   else
     @moduledoc """
     Native graph connectivity algorithms backed by Zog (Zig) via Zigler.
@@ -250,6 +340,14 @@ defmodule Zog.Connectivity do
     end
 
     def analyze(_builder) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def bipartite_check(_builder) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def bipartite_partition(_builder) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
   end
