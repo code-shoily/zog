@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unified repository licenses by copying root Apache-2.0 to `priv/zog/LICENSE`.
 - Fixed missing paths reference to `README.md` in `priv/zog/build.zig.zon`.
 
+### Removed
+
+- Removed the deprecated `add_simple_edge/3` function (use `add_unweighted_edge/3` instead).
+
 ## [0.1.0] - 2026-06-11
 
 ### Added

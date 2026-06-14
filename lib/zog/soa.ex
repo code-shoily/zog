@@ -135,15 +135,6 @@ defmodule Zog.SoA do
     add_edge(builder, from, to, 1.0)
   end
 
-  @doc """
-  Adds a simple edge with weight `1` between two labeled nodes.
-  """
-  @deprecated "Use add_unweighted_edge/3 instead"
-  @spec add_simple_edge(t(), label(), label()) :: t()
-  def add_simple_edge(builder, from, to) do
-    add_unweighted_edge(builder, from, to)
-  end
-
   # ============= Batch Construction =============
 
   @doc """
