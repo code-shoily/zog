@@ -170,11 +170,11 @@ restored_yog_graph = Zog.to_graph(zog_soa)
 
 ## Native Performance
 
-For large networks, native computation avoids overhead and runs at bare-metal speed:
-* **Floyd-Warshall / Johnson's Pathfinding**: **12x - 17x faster** than pure Elixir on dense graphs.
-* **Leiden / Louvain Community Detection**: **2x - 6x faster**.
-* **Stoer-Wagner Min Cut**: **5x - 9x faster**.
-* **Exact Graph Coloring (Bron-Kerbosch)**: **3x+ faster**.
+For large networks, native computation avoids overhead and runs at bare-metal speed (measured with `MIX_ENV=prod` to enable release optimizations):
+* **Floyd-Warshall / Johnson's Pathfinding**: **7x - 54x+ faster** than pure Elixir (e.g. Floyd-Warshall is **54x+ faster** on dense graphs).
+* **Leiden / Louvain Community Detection**: **10x - 21x+ faster**.
+* **Stoer-Wagner Min Cut / Max Flow**: **4x - 7x+ faster**.
+* **Exact Graph Coloring (Bron-Kerbosch / DSatur)**: **7x - 27x+ faster**.
 
 To run the full benchmark suite on your local machine:
 
