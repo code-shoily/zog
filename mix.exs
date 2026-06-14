@@ -45,13 +45,13 @@ defmodule Zog.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ex_doc, "~> 0.39", runtime: false},
+      {:ex_doc, "~> 0.40", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:stream_data, "~> 1.1", only: [:dev, :test]},
       {:benchee, "~> 1.3", only: :dev},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
-      {:jump_credo_checks, "~> 0.1", only: [:dev], runtime: false},
+      {:jump_credo_checks, "~> 0.4", only: [:dev], runtime: false},
       {:zigler, "~> 0.16.0", runtime: false},
       {:yog_ex, "~> 0.98"},
       {:libgraph, "~> 0.16", optional: true}
