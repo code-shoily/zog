@@ -94,5 +94,42 @@ defmodule Zog.IOTest do
         File.rm!(tmp_pajek)
       end
     end
+
+    test "loads undirected graph without over-symmetrization" do
+      # 1. Test two-line symmetric fixture with directed: false
+      tmp_symmetric = Path.join(System.tmp_dir!(), "symmetric_#{:rand.uniform(100_000_000)}.txt")
+      File.write!(tmp_symmetric, "0 1\n1 0\n")
+
+      res_undirected = ZogIO.load(tmp_symmetric, format: :edgelist, directed: false)
+
+      try do
+        assert ResourceGraph.edge_count(res_undirected) == 2
+      after
+        ResourceGraph.destroy(res_undirected)
+      end
+
+      # 2. Test same fixture with directed: true
+      res_directed = ZogIO.load(tmp_symmetric, format: :edgelist, directed: true)
+
+      try do
+        assert ResourceGraph.edge_count(res_directed) == 2
+      after
+        ResourceGraph.destroy(res_directed)
+        File.rm!(tmp_symmetric)
+      end
+
+      # 3. Test self-loop fixture with directed: false
+      tmp_self_loop = Path.join(System.tmp_dir!(), "self_loop_#{:rand.uniform(100_000_000)}.txt")
+      File.write!(tmp_self_loop, "5 5\n")
+
+      res_self_loop = ZogIO.load(tmp_self_loop, format: :edgelist, directed: false)
+
+      try do
+        assert ResourceGraph.edge_count(res_self_loop) == 1
+      after
+        ResourceGraph.destroy(res_self_loop)
+        File.rm!(tmp_self_loop)
+      end
+    end
   end
 end

@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `Zog.Transform.subgraph/2` calling `MapSet.new/1` even when the caller already passed a `MapSet`, producing a redundant allocation.
 - Fixed `ResourceGraph.subgraph/3` performing duplicate label-filtering work: the `kept_ids` list for the NIF is now derived directly from the already-computed `sub_builder`, eliminating a second full label traversal and guaranteeing the Elixir and native representations stay in sync.
 - Fixed `ResourceGraph.subgraph/3` and `ResourceGraph.ego_graph/3` failing to resolve `kept_ids` correctly when `integer_labels` was enabled, which had caused it to pass contiguous placeholder indices (`0..next_id-1`) to the NIF instead of the original node IDs.
+- Fixed `directed: false` loading over-symmetrizing files that already specify symmetric/bidirectional directed lines explicitly (e.g. SNAP undirected files). Dedupes edges by canonical `(min, max)` pair on loading, avoiding duplicate and redundant edge/self-loop allocations.
 
 ### Removed
 

@@ -881,6 +881,35 @@ defmodule Zog.ResourceGraph do
         weight: f64,
     };
 
+    fn addParsedEdges(graph: anytype, edges: []const ParsedEdge, is_directed: bool, arena: std.mem.Allocator) !void {
+        if (is_directed) {
+            for (edges) |edge| {
+                _ = try graph.addEdge(edge.from, edge.to, edge.weight);
+            }
+            return;
+        }
+
+        const PairKey = struct {
+            u: u32,
+            v: u32,
+        };
+        var seen = std.AutoHashMap(PairKey, void).init(arena);
+        defer seen.deinit();
+        try seen.ensureTotalCapacity(@intCast(edges.len));
+
+        for (edges) |edge| {
+            const lo = @min(edge.from, edge.to);
+            const hi = @max(edge.from, edge.to);
+            const gop = try seen.getOrPut(.{ .u = lo, .v = hi });
+            if (gop.found_existing) continue;
+
+            _ = try graph.addEdge(edge.from, edge.to, edge.weight);
+            if (edge.from != edge.to) {
+                _ = try graph.addEdge(edge.to, edge.from, edge.weight);
+            }
+        }
+    }
+
     pub fn nif_read_edgelist(file_path: []const u8, is_directed: bool, backend: beam.term, integer_labels: bool) !beam.term {
         const b = try beam.get(BackendType, backend, .{});
         const io = beam.io.get(beam.allocator);
@@ -949,12 +978,7 @@ defmodule Zog.ResourceGraph do
                 errdefer g.deinit();
                 try g.nodes.ensureTotalCapacity(beam.allocator, next_id);
                 for (0..next_id) |_| { _ = try g.addNode({}); }
-                for (edges.items) |edge| {
-                    _ = try g.addEdge(edge.from, edge.to, edge.weight);
-                    if (!is_directed) {
-                        _ = try g.addEdge(edge.to, edge.from, edge.weight);
-                    }
-                }
+                try addParsedEdges(&g, edges.items, is_directed, arena_allocator);
                 const resource = try GraphRes.create(.{ .soa = g }, .{ .released = false });
                 if (integer_labels) {
                     return beam.make(.{.ok, resource, next_id}, .{});
@@ -970,12 +994,7 @@ defmodule Zog.ResourceGraph do
                 for (0..next_id) |i| {
                     try g.addNode(@intCast(i), {});
                 }
-                for (edges.items) |edge| {
-                    try g.addEdge(edge.from, edge.to, edge.weight);
-                    if (!is_directed) {
-                        try g.addEdge(edge.to, edge.from, edge.weight);
-                    }
-                }
+                try addParsedEdges(&g, edges.items, is_directed, arena_allocator);
                 const resource = try GraphRes.create(.{ .hash_graph = g }, .{ .released = false });
                 if (integer_labels) {
                     return beam.make(.{.ok, resource, next_id}, .{});
@@ -1060,12 +1079,7 @@ defmodule Zog.ResourceGraph do
                 errdefer g.deinit();
                 try g.nodes.ensureTotalCapacity(beam.allocator, next_id);
                 for (0..next_id) |_| { _ = try g.addNode({}); }
-                for (edges.items) |edge| {
-                    _ = try g.addEdge(edge.from, edge.to, edge.weight);
-                    if (!is_directed) {
-                        _ = try g.addEdge(edge.to, edge.from, edge.weight);
-                    }
-                }
+                try addParsedEdges(&g, edges.items, is_directed, arena_allocator);
                 const resource = try GraphRes.create(.{ .soa = g }, .{ .released = false });
                 if (integer_labels) {
                     return beam.make(.{.ok, resource, next_id}, .{});
@@ -1081,12 +1095,7 @@ defmodule Zog.ResourceGraph do
                 for (0..next_id) |i| {
                     try g.addNode(@intCast(i), {});
                 }
-                for (edges.items) |edge| {
-                    try g.addEdge(edge.from, edge.to, edge.weight);
-                    if (!is_directed) {
-                        try g.addEdge(edge.to, edge.from, edge.weight);
-                    }
-                }
+                try addParsedEdges(&g, edges.items, is_directed, arena_allocator);
                 const resource = try GraphRes.create(.{ .hash_graph = g }, .{ .released = false });
                 if (integer_labels) {
                     return beam.make(.{.ok, resource, next_id}, .{});
@@ -1179,12 +1188,7 @@ defmodule Zog.ResourceGraph do
                 errdefer g.deinit();
                 try g.nodes.ensureTotalCapacity(beam.allocator, next_id);
                 for (0..next_id) |_| { _ = try g.addNode({}); }
-                for (edges.items) |edge| {
-                    _ = try g.addEdge(edge.from, edge.to, edge.weight);
-                    if (!is_directed) {
-                        _ = try g.addEdge(edge.to, edge.from, edge.weight);
-                    }
-                }
+                try addParsedEdges(&g, edges.items, is_directed, arena_allocator);
                 const resource = try GraphRes.create(.{ .soa = g }, .{ .released = false });
                 if (integer_labels) {
                     return beam.make(.{.ok, resource, next_id}, .{});
@@ -1200,12 +1204,7 @@ defmodule Zog.ResourceGraph do
                 for (0..next_id) |i| {
                     try g.addNode(@intCast(i), {});
                 }
-                for (edges.items) |edge| {
-                    try g.addEdge(edge.from, edge.to, edge.weight);
-                    if (!is_directed) {
-                        try g.addEdge(edge.to, edge.from, edge.weight);
-                    }
-                }
+                try addParsedEdges(&g, edges.items, is_directed, arena_allocator);
                 const resource = try GraphRes.create(.{ .hash_graph = g }, .{ .released = false });
                 if (integer_labels) {
                     return beam.make(.{.ok, resource, next_id}, .{});
@@ -1382,7 +1381,7 @@ defmodule Zog.ResourceGraph do
 
       * `:directed` - Boolean flag representing if the graph is directed (defaults to `true`).
       * `:backend` - Choose the native graph backend, either `:soa` or `:hash_graph` (defaults to `:soa`).
-      * `:integer_labels` - If true, parses labels as integers directly in Zig, bypassing string hash-map lookups (defaults to `false`).
+      * `:integer_labels` - If true, parses labels as integers directly in Zig, bypassing string hash-map lookups (defaults to `false`). Note that sparse ID spaces will result in placeholder nodes being created up to `max_id`, meaning `node_count` will return `max_id + 1` rather than the count of unique active nodes.
     """
     @spec read_edgelist(Path.t(), keyword()) :: t()
     def read_edgelist(path, opts \\ []) do
@@ -1404,7 +1403,7 @@ defmodule Zog.ResourceGraph do
 
       * `:directed` - Boolean flag representing if the graph is directed (defaults to `true`).
       * `:backend` - Choose the native graph backend, either `:soa` or `:hash_graph` (defaults to `:soa`).
-      * `:integer_labels` - If true, parses labels as integers directly in Zig, bypassing string hash-map lookups (defaults to `false`).
+      * `:integer_labels` - If true, parses labels as integers directly in Zig, bypassing string hash-map lookups (defaults to `false`). Note that sparse ID spaces will result in placeholder nodes being created up to `max_id`, meaning `node_count` will return `max_id + 1` rather than the count of unique active nodes.
     """
     @spec read_adjlist(Path.t(), keyword()) :: t()
     def read_adjlist(path, opts \\ []) do
@@ -1426,7 +1425,7 @@ defmodule Zog.ResourceGraph do
 
       * `:directed` - Boolean flag representing if the graph is directed (defaults to `true`).
       * `:backend` - Choose the native graph backend, either `:soa` or `:hash_graph` (defaults to `:soa`).
-      * `:integer_labels` - If true, parses labels as integers directly in Zig, bypassing string hash-map lookups (defaults to `false`).
+      * `:integer_labels` - If true, parses labels as integers directly in Zig, bypassing string hash-map lookups (defaults to `false`). Note that sparse ID spaces will result in placeholder nodes being created up to `max_id`, meaning `node_count` will return `max_id + 1` rather than the count of unique active nodes.
     """
     @spec read_tgf(Path.t(), keyword()) :: t()
     def read_tgf(path, opts \\ []) do
