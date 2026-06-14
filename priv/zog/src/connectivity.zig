@@ -667,6 +667,200 @@ test "isBipartite: disconnected — one bipartite + one odd cycle" {
     try std.testing.expectEqual(BipartiteResult.not_bipartite, result);
 }
 
+/// A single matched edge in a bipartite matching, represented as `{u, v}`
+/// where `u` is from the left partition and `v` is from the right partition.
+pub const MatchedEdge = struct { u32, u32 };
+
+/// Result returned by `maximumBipartiteMatching`.
+pub const BipartiteMatchingResult = union(enum) {
+    /// The graph is bipartite. `pairs` is an allocated slice of matched edges
+    /// (caller frees).
+    matching: []MatchedEdge,
+    /// The graph contains an odd cycle and is therefore not bipartite.
+    not_bipartite: void,
+};
+
+/// Computes a maximum cardinality matching in a bipartite graph using the
+/// Hopcroft-Karp algorithm.
+///
+/// The graph is first 2-coloured; if it is not bipartite, `.not_bipartite` is
+/// returned. Otherwise all edges are oriented from the left colour (0) to the
+/// right colour (1) and Hopcroft-Karp BFS/DFS layering is applied.
+///
+/// Returns an allocated slice of `{u, v}` pairs where `u` and `v` are node IDs
+/// in the original graph. The caller owns the returned memory.
+pub fn maximumBipartiteMatching(allocator: std.mem.Allocator, graph: anytype) !BipartiteMatchingResult {
+    const V = graph.nodeCount();
+
+    // Reuse the bipartite check to obtain a 2-colouring.
+    const bipartite_result = try isBipartite(allocator, graph);
+    const colors = switch (bipartite_result) {
+        .not_bipartite => return .not_bipartite,
+        .bipartite => |c| c,
+    };
+    defer allocator.free(colors);
+
+    if (V == 0) {
+        const pairs = try allocator.alloc(MatchedEdge, 0);
+        return .{ .matching = pairs };
+    }
+
+    // Build left-to-right adjacency. For undirected graphs stored as paired
+    // directed edges we only keep one direction; for directed graphs we keep
+    // edges that go from colour 0 to colour 1.
+    const adj = try allocator.alloc(std.ArrayList(u32), V);
+    defer allocator.free(adj);
+    for (0..V) |i| adj[i] = std.ArrayList(u32).empty;
+    defer for (0..V) |i| adj[i].deinit(allocator);
+
+    var node_it = graph.nodeIds();
+    while (node_it.next()) |u| {
+        var succ_it = graph.successors(u);
+        while (succ_it.next()) |edge| {
+            const v = edge.to;
+            if (colors[u] == 0 and colors[v] == 1) {
+                try adj[u].append(allocator, v);
+            } else if (colors[u] == 1 and colors[v] == 0) {
+                try adj[v].append(allocator, u);
+            }
+        }
+    }
+
+    // Hopcroft-Karp state. NIL is V, which is outside the normal node ID
+    // range and is used as a sentinel in pairU/pairV.
+    const NIL: u32 = @intCast(V);
+    const NIL_IDX = V; // index used in the distance array (size V + 1)
+    const INF: u32 = std.math.maxInt(u32);
+
+    const pairU = try allocator.alloc(u32, V);
+    defer allocator.free(pairU);
+    @memset(pairU, NIL);
+
+    const pairV = try allocator.alloc(u32, V);
+    defer allocator.free(pairV);
+    @memset(pairV, NIL);
+
+    const dist = try allocator.alloc(u32, V + 1);
+    defer allocator.free(dist);
+
+    var queue = std.ArrayList(u32).empty;
+    defer queue.deinit(allocator);
+
+    while (true) {
+        @memset(dist, INF);
+        dist[NIL_IDX] = INF;
+
+        for (0..V) |u| {
+            if (colors[u] == 0 and pairU[u] == NIL) {
+                dist[u] = 0;
+                try queue.append(allocator, @intCast(u));
+            }
+        }
+
+        while (queue.items.len > 0) {
+            const u = queue.orderedRemove(0);
+            if (dist[u] < dist[NIL_IDX]) {
+                for (adj[u].items) |v| {
+                    if (dist[pairV[v]] == INF) {
+                        dist[pairV[v]] = dist[u] + 1;
+                        try queue.append(allocator, pairV[v]);
+                    }
+                }
+            }
+        }
+
+        if (dist[NIL_IDX] == INF) break;
+
+        for (0..V) |u| {
+            if (colors[u] == 0 and pairU[u] == NIL) {
+                _ = try dfsHopcroftKarp(@intCast(u), adj, pairU, pairV, dist, NIL_IDX, INF);
+            }
+        }
+    }
+
+    // Collect matched pairs (only from the left partition to avoid duplicates).
+    var match_count: usize = 0;
+    for (0..V) |u| {
+        if (colors[u] == 0 and pairU[u] != NIL) match_count += 1;
+    }
+
+    const pairs = try allocator.alloc(MatchedEdge, match_count);
+    errdefer allocator.free(pairs);
+    var idx: usize = 0;
+    for (0..V) |u| {
+        if (colors[u] == 0 and pairU[u] != NIL) {
+            pairs[idx] = .{ @intCast(u), pairU[u] };
+            idx += 1;
+        }
+    }
+
+    return .{ .matching = pairs };
+}
+
+fn dfsHopcroftKarp(
+    u: u32,
+    adj: []std.ArrayList(u32),
+    pairU: []u32,
+    pairV: []u32,
+    dist: []u32,
+    nil_idx: usize,
+    inf: u32,
+) !bool {
+    if (u == pairU.len) return true; // NIL sentinel
+
+    for (adj[u].items) |v| {
+        if (dist[pairV[v]] == dist[u] + 1 and try dfsHopcroftKarp(pairV[v], adj, pairU, pairV, dist, nil_idx, inf)) {
+            pairU[u] = v;
+            pairV[v] = u;
+            return true;
+        }
+    }
+
+    dist[u] = inf;
+    return false;
+}
+
+test "maximumBipartiteMatching: K_{2,3}" {
+    const allocator = std.testing.allocator;
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+
+    var g = AG(void, void).init(allocator);
+    defer g.deinit();
+
+    for (0..5) |_| _ = try g.addNode({});
+
+    // Left partition: 0, 1 — Right partition: 2, 3, 4
+    inline for (.{ .{ 0, 2 }, .{ 0, 3 }, .{ 0, 4 }, .{ 1, 2 }, .{ 1, 3 }, .{ 1, 4 } }) |e| {
+        _ = try g.addEdge(e[0], e[1], {});
+        _ = try g.addEdge(e[1], e[0], {});
+    }
+
+    const result = try maximumBipartiteMatching(allocator, g);
+    switch (result) {
+        .matching => |pairs| {
+            defer allocator.free(pairs);
+            try std.testing.expectEqual(@as(usize, 2), pairs.len);
+        },
+        .not_bipartite => try std.testing.expect(false),
+    }
+}
+
+test "maximumBipartiteMatching: triangle → not bipartite" {
+    const allocator = std.testing.allocator;
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+
+    var g = AG(void, void).init(allocator);
+    defer g.deinit();
+
+    for (0..3) |_| _ = try g.addNode({});
+    _ = try g.addEdge(0, 1, {}); _ = try g.addEdge(1, 0, {});
+    _ = try g.addEdge(1, 2, {}); _ = try g.addEdge(2, 1, {});
+    _ = try g.addEdge(2, 0, {}); _ = try g.addEdge(0, 2, {});
+
+    const result = try maximumBipartiteMatching(allocator, g);
+    try std.testing.expectEqual(BipartiteMatchingResult.not_bipartite, result);
+}
+
 test "stronglyConnectedComponents: simple cycle and tail" {
     const allocator = std.testing.allocator;
     const AG = @import("models/array_graph.zig").ArrayGraph;

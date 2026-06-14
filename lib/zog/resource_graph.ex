@@ -83,7 +83,8 @@ defmodule Zog.ResourceGraph do
         nif_read_adjlist: [concurrency: :dirty_io],
         nif_read_tgf: [concurrency: :dirty_io],
         nif_subgraph: [concurrency: :dirty_cpu],
-        nif_is_bipartite: [concurrency: :dirty_cpu]
+        nif_is_bipartite: [concurrency: :dirty_cpu],
+        nif_maximum_bipartite_matching: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -599,6 +600,23 @@ defmodule Zog.ResourceGraph do
                 errdefer allocator.free(colors);
                 const term = beam.make(.{ .bipartite, colors }, .{});
                 allocator.free(colors);
+                return term;
+            },
+            .not_bipartite => return beam.make(.not_bipartite, .{}),
+        }
+    }
+
+    pub fn nif_maximum_bipartite_matching(res: GraphRes) !beam.term {
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.connectivity.maximumBipartiteMatching(allocator, g),
+            .hash_graph => |g| try zog.connectivity.maximumBipartiteMatching(allocator, g),
+        };
+        switch (result) {
+            .matching => |pairs| {
+                errdefer allocator.free(pairs);
+                const term = beam.make(pairs, .{});
+                allocator.free(pairs);
                 return term;
             },
             .not_bipartite => return beam.make(.not_bipartite, .{}),
@@ -2119,6 +2137,30 @@ defmodule Zog.ResourceGraph do
       end
     end
 
+    @doc """
+    Computes a maximum bipartite matching on a `ResourceGraph` using the
+    Hopcroft-Karp algorithm.
+
+    Returns `{:ok, pairs}` where `pairs` is a list of `{left_label, right_label}`
+    tuples. Returns `{:error, :not_bipartite}` if the graph is not bipartite.
+    """
+    @spec maximum_bipartite_matching(t(), keyword()) ::
+            {:ok, [{SoA.label(), SoA.label()}]} | {:error, :not_bipartite}
+    def maximum_bipartite_matching(%{resource: res, builder: builder}, _opts \\ []) do
+      case nif_maximum_bipartite_matching(res) do
+        :not_bipartite ->
+          {:error, :not_bipartite}
+
+        pairs ->
+          matched =
+            Enum.map(pairs, fn {u_id, v_id} ->
+              {SoA.id_to_label(builder, u_id), SoA.id_to_label(builder, v_id)}
+            end)
+
+          {:ok, matched}
+      end
+    end
+
     @spec kruskal(t(), keyword()) :: {:ok, [Yog.MST.edge()]}
     def kruskal(graph, opts \\ [])
 
@@ -2474,6 +2516,10 @@ defmodule Zog.ResourceGraph do
     end
 
     def bipartite_partition(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def maximum_bipartite_matching(_graph, _opts \\ []) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 

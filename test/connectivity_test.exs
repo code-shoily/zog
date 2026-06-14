@@ -298,4 +298,80 @@ defmodule Zog.ConnectivityTest do
       ResourceGraph.destroy(res_graph)
     end
   end
+
+  describe "maximum_bipartite_matching/1 (SoA builder)" do
+    test "path graph of length 3 → 2 matches" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge(:a, :b, 1.0)
+        |> Zog.add_edge(:b, :c, 1.0)
+        |> Zog.add_edge(:c, :d, 1.0)
+
+      assert {:ok, pairs} = Connectivity.maximum_bipartite_matching(builder)
+      assert length(pairs) == 2
+      # Each pair connects a distinct left node to a distinct right node.
+      left_labels = Enum.map(pairs, &elem(&1, 0))
+      right_labels = Enum.map(pairs, &elem(&1, 1))
+      assert length(Enum.uniq(left_labels)) == 2
+      assert length(Enum.uniq(right_labels)) == 2
+    end
+
+    test "complete bipartite K_{2,3} → 2 matches" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge(:p, :x, 1.0)
+        |> Zog.add_edge(:p, :y, 1.0)
+        |> Zog.add_edge(:p, :z, 1.0)
+        |> Zog.add_edge(:q, :x, 1.0)
+        |> Zog.add_edge(:q, :y, 1.0)
+        |> Zog.add_edge(:q, :z, 1.0)
+
+      assert {:ok, pairs} = Connectivity.maximum_bipartite_matching(builder)
+      assert length(pairs) == 2
+    end
+
+    test "triangle → not bipartite" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+        |> Zog.add_edge("C", "A", 1.0)
+
+      assert Connectivity.maximum_bipartite_matching(builder) == {:error, :not_bipartite}
+    end
+
+    test "empty graph → empty matching" do
+      assert Connectivity.maximum_bipartite_matching(Zog.undirected()) == {:ok, []}
+    end
+  end
+
+  describe "maximum_bipartite_matching/2 (ResourceGraph)" do
+    test "K_{2,3} ResourceGraph → 2 matches" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge(:p, :x, 1.0)
+        |> Zog.add_edge(:p, :y, 1.0)
+        |> Zog.add_edge(:p, :z, 1.0)
+        |> Zog.add_edge(:q, :x, 1.0)
+        |> Zog.add_edge(:q, :y, 1.0)
+        |> Zog.add_edge(:q, :z, 1.0)
+
+      res_graph = ResourceGraph.new(builder)
+      assert {:ok, pairs} = ResourceGraph.maximum_bipartite_matching(res_graph)
+      assert length(pairs) == 2
+      ResourceGraph.destroy(res_graph)
+    end
+
+    test "triangle ResourceGraph → not bipartite" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+        |> Zog.add_edge("C", "A", 1.0)
+
+      res_graph = ResourceGraph.new(builder)
+      assert ResourceGraph.maximum_bipartite_matching(res_graph) == {:error, :not_bipartite}
+      ResourceGraph.destroy(res_graph)
+    end
+  end
 end

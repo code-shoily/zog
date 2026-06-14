@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `kino` as an optional dependency to support future integration.
 - Added `bipartite_check/1` and `bipartite_partition/1` to `Zog.Connectivity` for native 2-colorability testing and bipartite partition extraction.
 - Added `bipartite_check/2` and `bipartite_partition/2` to `Zog.ResourceGraph` for the same operations on native resource-backed graphs.
+- Added `maximum_bipartite_matching/1` to `Zog.Connectivity` and `maximum_bipartite_matching/2` to `Zog.ResourceGraph`, implementing Hopcroft-Karp for maximum cardinality bipartite matching.
 - Added `ego_graph/3` to `Zog.Transform` (delegated via `Zog.ego_graph/3`) for extracting neighbourhood-induced ego graphs from `SoA` builders.
 - Added `ego_graph/3` to `Zog.ResourceGraph` for extracting ego graphs with native resource backing.
 - Added `subgraph/2` to `Zog.Transform` (delegated via `Zog.subgraph/2`) and `subgraph/3` to `Zog.ResourceGraph` (with native Zig NIF backing) for induced subgraph extraction.

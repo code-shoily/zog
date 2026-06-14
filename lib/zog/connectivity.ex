@@ -13,7 +13,8 @@ defmodule Zog.Connectivity do
         nif_analyze_connectivity: [concurrency: :dirty_cpu],
         nif_strongly_connected_components: [concurrency: :dirty_cpu],
         nif_weakly_connected_components: [concurrency: :dirty_cpu],
-        nif_is_bipartite: [concurrency: :dirty_cpu]
+        nif_is_bipartite: [concurrency: :dirty_cpu],
+        nif_maximum_bipartite_matching: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -73,6 +74,22 @@ defmodule Zog.Connectivity do
                 errdefer beam.allocator.free(colors);
                 const term = beam.make(.{ .bipartite, colors }, .{});
                 beam.allocator.free(colors);
+                return term;
+            },
+            .not_bipartite => return beam.make(.not_bipartite, .{}),
+        }
+    }
+
+    pub fn nif_maximum_bipartite_matching(node_count: usize, from: []u32, to: []u32, weight: []f64) !beam.term {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        const result = try zog.connectivity.maximumBipartiteMatching(beam.allocator, g);
+        switch (result) {
+            .matching => |pairs| {
+                errdefer beam.allocator.free(pairs);
+                const term = beam.make(pairs, .{});
+                beam.allocator.free(pairs);
                 return term;
             },
             .not_bipartite => return beam.make(.not_bipartite, .{}),
@@ -316,6 +333,47 @@ defmodule Zog.Connectivity do
           {:ok, set_a, set_b}
       end
     end
+
+    @doc """
+    Computes a maximum bipartite matching natively using the Hopcroft-Karp
+    algorithm.
+
+    Returns `{:ok, pairs}` where `pairs` is a list of `{left_label, right_label}`
+    tuples representing matched edges. Returns `{:error, :not_bipartite}` if the
+    graph is not bipartite.
+
+    ## Examples
+
+        iex> builder = Zog.undirected()
+        ...> |> Zog.add_edge(:a, :b, 1.0)
+        ...> |> Zog.add_edge(:b, :c, 1.0)
+        ...> |> Zog.add_edge(:c, :d, 1.0)
+        iex> {:ok, pairs} = Zog.Connectivity.maximum_bipartite_matching(builder)
+        iex> length(pairs)
+        2
+    """
+    @spec maximum_bipartite_matching(SoA.t()) ::
+            {:ok, [{SoA.label(), SoA.label()}]} | {:error, :not_bipartite}
+    def maximum_bipartite_matching(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
+
+      case nif_maximum_bipartite_matching(node_count, from, to, weights) do
+        :not_bipartite ->
+          {:error, :not_bipartite}
+
+        pairs ->
+          labels = SoA.all_labels(builder)
+          labels_tuple = List.to_tuple(labels)
+
+          matched =
+            Enum.map(pairs, fn {u_id, v_id} ->
+              {elem(labels_tuple, u_id), elem(labels_tuple, v_id)}
+            end)
+
+          {:ok, matched}
+      end
+    end
   else
     @moduledoc """
     Native graph connectivity algorithms backed by Zog (Zig) via Zigler.
@@ -348,6 +406,10 @@ defmodule Zog.Connectivity do
     end
 
     def bipartite_partition(_builder) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def maximum_bipartite_matching(_builder) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
   end

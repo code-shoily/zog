@@ -15,10 +15,10 @@ Focuses on bipartite property detection, ego-graph extraction, and subgraph mani
 - **Bipartite**
   - [x] Bipartite Check (2-colorability verification)
   - [x] Bipartite Partition (Color assignment)
+  - [ ] Hopcroft-Karp (Maximum Bipartite Matching)
 - **Transformations & Operations**
   - [x] Subgraph extraction (Induced subgraphs by node IDs)
   - [x] Ego Graph (Neighborhood-induced subgraph around a node)
-  - [ ] Node/Edge filter predicates (Graph filtering by predicate functions)
 
 ---
 
@@ -56,11 +56,11 @@ These features are not scheduled for immediate releases and will be implemented 
 
 - **Pathfinding**: Bidirectional Dijkstra, Bidirectional BFS, Yen's K-Shortest, Widest Path, All-Pairs Unweighted.
 - **Network Flow**: Successive Shortest Path (Min-cost max-flow).
-- **Matching**: Hopcroft-Karp (Maximum Bipartite Matching), Hungarian Algorithm (Weighted Bipartite Matching), Blossom Algorithm (Maximum Matching in General Graphs).
+- **Matching**: Hungarian Algorithm (Weighted Bipartite Matching), Blossom Algorithm (Maximum Matching in General Graphs).
 - **Spanning Tree**: Minimum Spanning Arborescence (Edmonds' Directed MST).
 - **Connectivity**: Reachability Exact. (Weakly Connected Components and Bipartite Check/Partition have been implemented in v0.3.0)
 - **Centrality & Metrics**: HITS (Hubs and Authorities), Transitivity.
 - **Community Detection**: Walktrap, Infomap, Clique Percolation, Fluid Communities, Local Community.
-- **Transformations & Operations**: Transitive Closure/Reduction, Contract.
+- **Transformations & Operations**: Node/Edge filter predicates, Transitive Closure/Reduction, Contract.
 - **Graph Properties**: Complete Graph detection, Tree/Forest/Branching checks, Isomorphism, Graph Hash.
 - **Generators**: GNM random generator, Stochastic Block Models (SBM, DCSBM, HSBM), Random Regular, Geometric/Waxman generators.
