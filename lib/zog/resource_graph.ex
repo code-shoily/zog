@@ -1293,16 +1293,19 @@ defmodule Zog.ResourceGraph do
 
     defp build_from_labels(resource, labels, directed) do
       kind = if directed, do: :directed, else: :undirected
-      label_to_id = labels |> Enum.with_index() |> Map.new()
-      id_to_label = labels |> Enum.with_index() |> Map.new(fn {l, i} -> {i, l} end)
+
+      {label_to_id, id_to_label, nodes_rev, n} =
+        Enum.reduce(labels, {%{}, %{}, [], 0}, fn label, {l2i, i2l, nodes, i} ->
+          {Map.put(l2i, label, i), Map.put(i2l, i, label), [label | nodes], i + 1}
+        end)
 
       builder = %SoA{
         kind: kind,
         label_to_id: label_to_id,
         id_to_label: id_to_label,
-        nodes: Enum.reverse(labels),
+        nodes: nodes_rev,
         edges: [],
-        next_id: length(labels),
+        next_id: n,
         integer_labels: false
       }
 
@@ -1766,7 +1769,7 @@ defmodule Zog.ResourceGraph do
       if is_nil(start_id) or is_nil(goal_id) do
         {:error, :no_path}
       else
-        {x_list, y_list} = build_coordinate_lists(builder, x_coords, y_coords, raw)
+        {x_list, y_list} = SoA.build_coordinate_lists(builder, x_coords, y_coords, raw)
 
         case nif_astar(res, start_id, goal_id, x_list, y_list, heuristic) do
           {:ok, {path_ids, weight}} ->
@@ -1803,71 +1806,7 @@ defmodule Zog.ResourceGraph do
       end
     end
 
-    defp build_coordinate_lists(builder, x_coords, y_coords, raw) do
-      node_count = SoA.node_count(builder)
 
-      x_list =
-        if is_map(x_coords) or Keyword.keyword?(x_coords) do
-          Enum.map(0..(node_count - 1), fn id ->
-            key = if raw, do: id, else: SoA.id_to_label(builder, id)
-
-            val =
-              if is_map(x_coords) do
-                Map.get(x_coords, key)
-              else
-                Keyword.get(x_coords, key)
-              end
-
-            case val do
-              nil -> raise(ArgumentError, "Missing X coordinate for node #{inspect(key)}")
-              val -> to_float(val)
-            end
-          end)
-        else
-          if length(x_coords) != node_count do
-            raise(
-              ArgumentError,
-              "Expected X coordinate list to have length #{node_count}, got #{length(x_coords)}"
-            )
-          end
-
-          Enum.map(x_coords, &to_float/1)
-        end
-
-      y_list =
-        if is_map(y_coords) or Keyword.keyword?(y_coords) do
-          Enum.map(0..(node_count - 1), fn id ->
-            key = if raw, do: id, else: SoA.id_to_label(builder, id)
-
-            val =
-              if is_map(y_coords) do
-                Map.get(y_coords, key)
-              else
-                Keyword.get(y_coords, key)
-              end
-
-            case val do
-              nil -> raise(ArgumentError, "Missing Y coordinate for node #{inspect(key)}")
-              val -> to_float(val)
-            end
-          end)
-        else
-          if length(y_coords) != node_count do
-            raise(
-              ArgumentError,
-              "Expected Y coordinate list to have length #{node_count}, got #{length(y_coords)}"
-            )
-          end
-
-          Enum.map(y_coords, &to_float/1)
-        end
-
-      {x_list, y_list}
-    end
-
-    defp to_float(x) when is_integer(x), do: :erlang.float(x)
-    defp to_float(x) when is_float(x), do: x
-    defp to_float(other), do: raise(ArgumentError, "invalid coordinate: #{inspect(other)}")
 
     @doc """
     Graph density.
@@ -2095,20 +2034,7 @@ defmodule Zog.ResourceGraph do
           Enum.map(result.sink_side, &SoA.id_to_label(builder, &1))
         end
 
-      residual_graph =
-        Enum.zip([result.residual_from, result.residual_to, result.residual_cap])
-        |> Enum.reduce(
-          if(raw, do: %SoA{kind: :directed, integer_labels: true}, else: SoA.directed()),
-          fn {f_idx, t_idx, cap}, g ->
-            if raw do
-              SoA.add_edge(g, f_idx, t_idx, cap)
-            else
-              f_lbl = SoA.id_to_label(builder, f_idx)
-              t_lbl = SoA.id_to_label(builder, t_idx)
-              SoA.add_edge(g, f_lbl, t_lbl, cap)
-            end
-          end
-        )
+      residual_graph = SoA.build_residual(builder, result.residual_from, result.residual_to, result.residual_cap, raw)
 
       %{
         max_flow: result.max_flow,
@@ -2155,17 +2081,27 @@ defmodule Zog.ResourceGraph do
     # Private Helpers
     # ============================================================================
 
-    defp map_scores(builder, scores) do
-      builder
-      |> SoA.all_labels()
-      |> Enum.zip(scores)
+    defp map_scores(%SoA{integer_labels: true}, scores) do
+      scores
+      |> Enum.with_index()
+      |> Map.new(fn {s, i} -> {i, s} end)
+    end
+
+    defp map_scores(%SoA{nodes: nodes_rev}, scores) do
+      nodes_rev
+      |> Enum.zip(Enum.reverse(scores))
       |> Map.new()
     end
 
-    defp map_assignments(builder, assignments) do
-      builder
-      |> SoA.all_labels()
-      |> Enum.zip(assignments)
+    defp map_assignments(%SoA{integer_labels: true}, assignments) do
+      assignments
+      |> Enum.with_index()
+      |> Map.new(fn {a, i} -> {i, a} end)
+    end
+
+    defp map_assignments(%SoA{nodes: nodes_rev}, assignments) do
+      nodes_rev
+      |> Enum.zip(Enum.reverse(assignments))
       |> Map.new()
     end
 

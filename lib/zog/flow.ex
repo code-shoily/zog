@@ -209,13 +209,7 @@ defmodule Zog.Flow do
       source_side = Enum.map(result.source_side, &SoA.id_to_label(builder, &1))
       sink_side = Enum.map(result.sink_side, &SoA.id_to_label(builder, &1))
 
-      residual_graph =
-        Enum.zip([result.residual_from, result.residual_to, result.residual_cap])
-        |> Enum.reduce(SoA.directed(), fn {f_idx, t_idx, cap}, g ->
-          f_lbl = SoA.id_to_label(builder, f_idx)
-          t_lbl = SoA.id_to_label(builder, t_idx)
-          SoA.add_edge(g, f_lbl, t_lbl, cap)
-        end)
+      residual_graph = SoA.build_residual(builder, result.residual_from, result.residual_to, result.residual_cap)
 
       %{
         max_flow: result.max_flow,

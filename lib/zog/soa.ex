@@ -4,6 +4,10 @@ defmodule Zog.SoA do
 
   This module accumulates data into flat arrays that are ready to pass to
   Zigler NIFs.
+
+  ## Invariants
+  - The `:nodes` field is stored in **reverse-insertion-order** for O(1) prepends.
+    Access nodes in insertion order via `all_labels/1`.
   """
 
   @enforce_keys [:kind]
@@ -13,6 +17,7 @@ defmodule Zog.SoA do
     id_to_label: %{},
     nodes: [],
     edges: [],
+    edge_count: 0,
     next_id: 0,
     integer_labels: false
   ]
@@ -27,6 +32,7 @@ defmodule Zog.SoA do
           id_to_label: %{id() => label()},
           nodes: [label()],
           edges: [{id(), id(), float()}],
+          edge_count: non_neg_integer(),
           next_id: non_neg_integer(),
           integer_labels: boolean()
         }
@@ -110,15 +116,15 @@ defmodule Zog.SoA do
 
     directed_edge = {src_id, dst_id, w}
 
-    new_edges =
+    {new_edges, delta} =
       if builder_with_both.kind == :undirected do
         reverse_edge = {dst_id, src_id, w}
-        [reverse_edge, directed_edge | builder_with_both.edges]
+        {[reverse_edge, directed_edge | builder_with_both.edges], 2}
       else
-        [directed_edge | builder_with_both.edges]
+        {[directed_edge | builder_with_both.edges], 1}
       end
 
-    %{builder_with_both | edges: new_edges}
+    %{builder_with_both | edges: new_edges, edge_count: builder_with_both.edge_count + delta}
   end
 
   @doc """
@@ -132,6 +138,7 @@ defmodule Zog.SoA do
   @doc """
   Adds a simple edge with weight `1` between two labeled nodes.
   """
+  @deprecated "Use add_unweighted_edge/3 instead"
   @spec add_simple_edge(t(), label(), label()) :: t()
   def add_simple_edge(builder, from, to) do
     add_unweighted_edge(builder, from, to)
@@ -172,6 +179,7 @@ defmodule Zog.SoA do
       id_to_label: invert_map(label_to_id),
       nodes: Enum.reverse(vertices),
       edges: Enum.reverse(flat_edges),
+      edge_count: length(flat_edges),
       next_id: length(vertices)
     }
   end
@@ -208,6 +216,7 @@ defmodule Zog.SoA do
       id_to_label: invert_map(label_to_id),
       nodes: Enum.reverse(vertices),
       edges: Enum.reverse(flat_edges),
+      edge_count: length(flat_edges),
       next_id: length(vertices)
     }
   end
@@ -224,7 +233,7 @@ defmodule Zog.SoA do
   Returns the number of directed edges stored.
   """
   @spec edge_count(t()) :: non_neg_integer()
-  def edge_count(%__MODULE__{edges: edges}), do: length(edges)
+  def edge_count(%__MODULE__{edge_count: edge_count}), do: edge_count
 
   @doc """
   Returns the label for a given internal id.
@@ -289,10 +298,107 @@ defmodule Zog.SoA do
     Map.new(map, fn {k, v} -> {v, k} end)
   end
 
-  defp labels_in_order(nodes, next_id) do
-    0..(next_id - 1)
-    |> Enum.map(&Map.get(nodes, &1))
+  @doc false
+  def build_coordinate_lists(builder, x_coords, y_coords, raw \\ false) do
+    node_count = node_count(builder)
+
+    x_list =
+      if is_map(x_coords) or Keyword.keyword?(x_coords) do
+        Enum.map(0..(node_count - 1), fn id ->
+          key = if raw, do: id, else: id_to_label(builder, id)
+
+          val =
+            if is_map(x_coords) do
+              Map.get(x_coords, key)
+            else
+              Keyword.get(x_coords, key)
+            end
+
+          case val do
+            nil -> raise(ArgumentError, "Missing X coordinate for node #{inspect(key)}")
+            val -> to_float_coord(val)
+          end
+        end)
+      else
+        if length(x_coords) != node_count do
+          raise(
+            ArgumentError,
+            "Expected X coordinate list to have length #{node_count}, got #{length(x_coords)}"
+          )
+        end
+
+        Enum.map(x_coords, &to_float_coord/1)
+      end
+
+    y_list =
+      if is_map(y_coords) or Keyword.keyword?(y_coords) do
+        Enum.map(0..(node_count - 1), fn id ->
+          key = if raw, do: id, else: id_to_label(builder, id)
+
+          val =
+            if is_map(y_coords) do
+              Map.get(y_coords, key)
+            else
+              Keyword.get(y_coords, key)
+            end
+
+          case val do
+            nil -> raise(ArgumentError, "Missing Y coordinate for node #{inspect(key)}")
+            val -> to_float_coord(val)
+          end
+        end)
+      else
+        if length(y_coords) != node_count do
+          raise(
+            ArgumentError,
+            "Expected Y coordinate list to have length #{node_count}, got #{length(y_coords)}"
+          )
+        end
+
+        Enum.map(y_coords, &to_float_coord/1)
+      end
+
+    {x_list, y_list}
   end
+
+  defp to_float_coord(x) when is_integer(x), do: :erlang.float(x)
+  defp to_float_coord(x) when is_float(x), do: x
+  defp to_float_coord(other), do: raise(ArgumentError, "invalid coordinate: #{inspect(other)}")
+
+  @doc false
+  def build_residual(builder, from_ids, to_ids, capacities, raw \\ false) do
+    edges = reduce_edges_in(from_ids, to_ids, capacities, [])
+
+    if raw do
+      %__MODULE__{
+        kind: :directed,
+        integer_labels: true,
+        label_to_id: %{},
+        id_to_label: %{},
+        nodes: [],
+        edges: edges,
+        edge_count: length(edges),
+        next_id: builder.next_id
+      }
+    else
+      %__MODULE__{
+        kind: :directed,
+        integer_labels: false,
+        label_to_id: builder.label_to_id,
+        id_to_label: builder.id_to_label,
+        nodes: builder.nodes,
+        edges: edges,
+        edge_count: length(edges),
+        next_id: builder.next_id
+      }
+    end
+  end
+
+  defp reduce_edges_in([], [], [], acc), do: acc
+  defp reduce_edges_in([f | fs], [t | ts], [c | cs], acc) do
+    reduce_edges_in(fs, ts, cs, [{f, t, to_float(c)} | acc])
+  end
+
 
   # ============= Yog Conversions (Optional) =============
   if Code.ensure_loaded?(Yog) do
@@ -320,6 +426,7 @@ defmodule Zog.SoA do
         id_to_label: invert_map(label_to_id),
         nodes: Enum.reverse(node_ids),
         edges: Enum.reverse(edges),
+        edge_count: length(edges),
         next_id: length(node_ids)
       }
     end
@@ -342,12 +449,18 @@ defmodule Zog.SoA do
             [{src, dst, to_float(weight)} | acc]
         end
 
+      nodes_rev =
+        Enum.reduce(0..(next_id - 1), [], fn id, acc ->
+          [Map.get(graph.nodes, id) | acc]
+        end)
+
       %__MODULE__{
         kind: kind,
         label_to_id: label_to_id,
         id_to_label: invert_map(label_to_id),
-        nodes: Enum.reverse(labels_in_order(graph.nodes, next_id)),
+        nodes: nodes_rev,
         edges: Enum.reverse(edges),
+        edge_count: length(edges),
         next_id: next_id
       }
     end
@@ -404,6 +517,7 @@ defmodule Zog.SoA do
         id_to_label: invert_map(label_to_id),
         nodes: Enum.reverse(vertices),
         edges: Enum.reverse(edges),
+        edge_count: length(edges),
         next_id: length(vertices)
       }
     end

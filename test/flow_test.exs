@@ -3,6 +3,7 @@ defmodule Zog.FlowTest do
 
   alias Zog.Flow
   alias Zog.ResourceGraph
+  alias Zog.SoA
 
   @moduletag :zigler
 
@@ -85,6 +86,38 @@ defmodule Zog.FlowTest do
     assert zog_res.max_flow == 5.0
     assert "A" in zog_res.source_side
     assert "B" in zog_res.sink_side
+  end
+
+  test "max_flow residual graph construction" do
+    builder =
+      Zog.directed()
+      |> Zog.add_edge("s", "v1", 10.0)
+      |> Zog.add_edge("s", "v2", 10.0)
+      |> Zog.add_edge("v1", "t", 5.0)
+      |> Zog.add_edge("v2", "t", 15.0)
+
+    # raw: false
+    res_graph = ResourceGraph.new(builder)
+    res_res = ResourceGraph.max_flow(res_graph, "s", "t", raw: false)
+    residual = res_res.residual_graph
+
+    assert residual.integer_labels == false
+    assert SoA.label_to_id(residual, "s") == SoA.label_to_id(builder, "s")
+    assert SoA.label_to_id(residual, "t") == SoA.label_to_id(builder, "t")
+
+    edges = SoA.all_edges(residual)
+    assert length(edges) > 0
+
+    # raw: true
+    s_id = SoA.label_to_id(builder, "s")
+    t_id = SoA.label_to_id(builder, "t")
+    res_res_raw = ResourceGraph.max_flow(res_graph, s_id, t_id, raw: true)
+    residual_raw = res_res_raw.residual_graph
+
+    assert residual_raw.integer_labels == true
+    assert length(SoA.all_edges(residual_raw)) == length(edges)
+
+    ResourceGraph.destroy(res_graph)
   end
 
   test "global_min_cut/1 Stoer-Wagner parity with pure Elixir" do

@@ -53,6 +53,24 @@ defmodule Zog.SoATest do
       assert to == [1, 2]
       assert weights == [1.0, 2.0]
     end
+
+    test "edge_count consistency" do
+      b1 = SoA.from_list(:directed, [{"A", "B", 1.0}, {"B", "C", 2.0}])
+      assert SoA.edge_count(b1) == length(b1.edges)
+      assert SoA.edge_count(b1) == 2
+
+      b2 = SoA.from_list(:undirected, [{"A", "B", 1.0}, {"B", "C", 2.0}])
+      assert SoA.edge_count(b2) == length(b2.edges)
+      assert SoA.edge_count(b2) == 4
+
+      b3 = SoA.from_unweighted_list(:directed, [{"A", "B"}, {"B", "C"}])
+      assert SoA.edge_count(b3) == length(b3.edges)
+      assert SoA.edge_count(b3) == 2
+
+      b4 = SoA.directed() |> SoA.add_edge("A", "B", 1) |> SoA.add_edge("B", "C", 2)
+      assert SoA.edge_count(b4) == length(b4.edges)
+      assert SoA.edge_count(b4) == 2
+    end
   end
 
   if Code.ensure_loaded?(Yog) do

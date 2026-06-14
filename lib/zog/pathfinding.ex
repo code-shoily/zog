@@ -339,7 +339,7 @@ defmodule Zog.Pathfinding do
       else
         node_count = SoA.node_count(builder)
         {from, to, weights} = SoA.to_edge_arrays(builder)
-        {x_list, y_list} = build_coordinate_lists(builder, x_coords, y_coords)
+        {x_list, y_list} = SoA.build_coordinate_lists(builder, x_coords, y_coords)
 
         case nif_astar(
                node_count,
@@ -382,72 +382,6 @@ defmodule Zog.Pathfinding do
         end
       end
     end
-
-    defp build_coordinate_lists(builder, x_coords, y_coords) do
-      node_count = SoA.node_count(builder)
-
-      x_list =
-        if is_map(x_coords) or Keyword.keyword?(x_coords) do
-          Enum.map(0..(node_count - 1), fn id ->
-            label = SoA.id_to_label(builder, id)
-
-            val =
-              if is_map(x_coords) do
-                Map.get(x_coords, label)
-              else
-                Keyword.get(x_coords, label)
-              end
-
-            case val do
-              nil -> raise(ArgumentError, "Missing X coordinate for node #{inspect(label)}")
-              val -> to_float(val)
-            end
-          end)
-        else
-          if length(x_coords) != node_count do
-            raise(
-              ArgumentError,
-              "Expected X coordinate list to have length #{node_count}, got #{length(x_coords)}"
-            )
-          end
-
-          Enum.map(x_coords, &to_float/1)
-        end
-
-      y_list =
-        if is_map(y_coords) or Keyword.keyword?(y_coords) do
-          Enum.map(0..(node_count - 1), fn id ->
-            label = SoA.id_to_label(builder, id)
-
-            val =
-              if is_map(y_coords) do
-                Map.get(y_coords, label)
-              else
-                Keyword.get(y_coords, label)
-              end
-
-            case val do
-              nil -> raise(ArgumentError, "Missing Y coordinate for node #{inspect(label)}")
-              val -> to_float(val)
-            end
-          end)
-        else
-          if length(y_coords) != node_count do
-            raise(
-              ArgumentError,
-              "Expected Y coordinate list to have length #{node_count}, got #{length(y_coords)}"
-            )
-          end
-
-          Enum.map(y_coords, &to_float/1)
-        end
-
-      {x_list, y_list}
-    end
-
-    defp to_float(x) when is_integer(x), do: :erlang.float(x)
-    defp to_float(x) when is_float(x), do: x
-    defp to_float(other), do: raise(ArgumentError, "invalid coordinate: #{inspect(other)}")
   else
     @moduledoc """
     Native pathfinding algorithms backed by Zog (Zig) via Zigler.
