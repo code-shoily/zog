@@ -395,10 +395,10 @@ defmodule Zog.SoA do
   end
 
   defp reduce_edges_in([], [], [], acc), do: acc
+
   defp reduce_edges_in([f | fs], [t | ts], [c | cs], acc) do
     reduce_edges_in(fs, ts, cs, [{f, t, to_float(c)} | acc])
   end
-
 
   # ============= Yog Conversions (Optional) =============
   if Code.ensure_loaded?(Yog) do

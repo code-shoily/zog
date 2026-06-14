@@ -1806,8 +1806,6 @@ defmodule Zog.ResourceGraph do
       end
     end
 
-
-
     @doc """
     Graph density.
     """
@@ -2034,7 +2032,14 @@ defmodule Zog.ResourceGraph do
           Enum.map(result.sink_side, &SoA.id_to_label(builder, &1))
         end
 
-      residual_graph = SoA.build_residual(builder, result.residual_from, result.residual_to, result.residual_cap, raw)
+      residual_graph =
+        SoA.build_residual(
+          builder,
+          result.residual_from,
+          result.residual_to,
+          result.residual_cap,
+          raw
+        )
 
       %{
         max_flow: result.max_flow,
