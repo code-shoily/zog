@@ -175,13 +175,13 @@ pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
             degree_slice[@as(usize, node)] = deg;
         }
 
-        var workspace = MetricWorkspace(NodeId).init(allocator);
-        defer workspace.deinit();
+        const in_neighbors = try allocator.alloc(bool, @as(usize, max_id) + 1);
+        defer allocator.free(in_neighbors);
+        @memset(in_neighbors, false);
 
         var count: usize = 0;
         for (nodes.items) |u| {
             const du = degree_slice[@as(usize, u)];
-            workspace.clear();
 
             // Build forward neighbor set.
             var sit = graph.successors(u);
@@ -189,7 +189,7 @@ pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
                 const v = edge.to;
                 const dv = degree_slice[@as(usize, v)];
                 if (du < dv or (du == dv and u < v)) {
-                    workspace.neighbor_set.put(v, {}) catch continue;
+                    in_neighbors[@as(usize, v)] = true;
                 }
             }
 
@@ -206,10 +206,17 @@ pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
                     const dw = degree_slice[@as(usize, w)];
                     if (!(dv < dw or (dv == dw and v < w))) continue;
 
-                    if (workspace.neighbor_set.contains(w)) {
+                    if (in_neighbors[@as(usize, w)]) {
                         count += 1;
                     }
                 }
+            }
+
+            // Reset neighbors for next node.
+            var reset_sit = graph.successors(u);
+            while (reset_sit.next()) |edge| {
+                const v = edge.to;
+                in_neighbors[@as(usize, v)] = false;
             }
         }
 
@@ -340,12 +347,83 @@ pub fn countTrianglesWithWorkspace(graph: anytype, workspace: anytype) usize {
 /// C(u) = 2 × T(u) / (k_u × (k_u - 1))
 /// where T(u) is the number of triangles through u and k_u is its degree.
 /// Returns 0.0 for nodes with degree < 2.
+pub fn clusteringCoefficientWithWorkspaceOptimized(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    node: anytype,
+    in_neighbors: []bool,
+    neighbors_list: anytype,
+) f64 {
+    neighbors_list.clearRetainingCapacity();
+
+    var k: usize = 0;
+    var sit = graph.successors(node);
+    while (sit.next()) |edge| {
+        const v = edge.to;
+        in_neighbors[@as(usize, v)] = true;
+        neighbors_list.append(allocator, v) catch continue;
+        k += 1;
+    }
+
+    if (k < 2) {
+        for (neighbors_list.items) |v| {
+            in_neighbors[@as(usize, v)] = false;
+        }
+        return 0.0;
+    }
+
+    var triangles: usize = 0;
+    for (neighbors_list.items) |v| {
+        var v_sit = graph.successors(v);
+        while (v_sit.next()) |edge| {
+            if (in_neighbors[@as(usize, edge.to)]) {
+                triangles += 1;
+            }
+        }
+    }
+
+    for (neighbors_list.items) |v| {
+        in_neighbors[@as(usize, v)] = false;
+    }
+
+    const t = @as(f64, @floatFromInt(triangles / 2));
+    const kf = @as(f64, @floatFromInt(k));
+    return 2.0 * t / (kf * (kf - 1.0));
+}
+
+/// Calculates the local clustering coefficient for a node.
+///
+/// C(u) = 2 × T(u) / (k_u × (k_u - 1))
+/// where T(u) is the number of triangles through u and k_u is its degree.
+/// Returns 0.0 for nodes with degree < 2.
 pub fn clusteringCoefficient(
     allocator: std.mem.Allocator,
     graph: anytype,
     node: utils.NodeId(@TypeOf(graph)),
 ) !f64 {
     const NodeId = utils.NodeId(@TypeOf(graph));
+    const node_id_is_unsigned = switch (@typeInfo(NodeId)) {
+        .int => |info| info.signedness == .unsigned,
+        else => false,
+    };
+
+    if (node_id_is_unsigned) {
+        var max_id: NodeId = 0;
+        var node_it = graph.nodeIds();
+        while (node_it.next()) |n| {
+            if (n > max_id) max_id = n;
+        }
+
+        const in_neighbors = try allocator.alloc(bool, @as(usize, max_id) + 1);
+        defer allocator.free(in_neighbors);
+        @memset(in_neighbors, false);
+
+        var neighbors_list = try std.ArrayList(NodeId).initCapacity(allocator, graph.nodeCount());
+        defer neighbors_list.deinit(allocator);
+
+        return clusteringCoefficientWithWorkspaceOptimized(allocator, graph, node, in_neighbors, &neighbors_list);
+    }
+
     var workspace = MetricWorkspace(NodeId).init(allocator);
     defer workspace.deinit();
     return clusteringCoefficientWithWorkspace(graph, node, &workspace);
@@ -385,6 +463,37 @@ pub fn clusteringCoefficientWithWorkspace(graph: anytype, node: anytype, workspa
 /// Calculates the average clustering coefficient for the entire graph.
 pub fn averageClusteringCoefficient(allocator: std.mem.Allocator, graph: anytype) !f64 {
     const NodeId = utils.NodeId(@TypeOf(graph));
+    const node_id_is_unsigned = switch (@typeInfo(NodeId)) {
+        .int => |info| info.signedness == .unsigned,
+        else => false,
+    };
+
+    const V = graph.nodeCount();
+    if (V == 0) return 0.0;
+
+    if (node_id_is_unsigned) {
+        var max_id: NodeId = 0;
+        var node_it = graph.nodeIds();
+        while (node_it.next()) |node| {
+            if (node > max_id) max_id = node;
+        }
+
+        const in_neighbors = try allocator.alloc(bool, @as(usize, max_id) + 1);
+        defer allocator.free(in_neighbors);
+        @memset(in_neighbors, false);
+
+        var neighbors_list = try std.ArrayList(NodeId).initCapacity(allocator, V);
+        defer neighbors_list.deinit(allocator);
+
+        var sum: f64 = 0.0;
+        var node_it2 = graph.nodeIds();
+        while (node_it2.next()) |node| {
+            sum += clusteringCoefficientWithWorkspaceOptimized(allocator, graph, node, in_neighbors, &neighbors_list);
+        }
+
+        return sum / @as(f64, @floatFromInt(V));
+    }
+
     var workspace = MetricWorkspace(NodeId).init(allocator);
     defer workspace.deinit();
 
