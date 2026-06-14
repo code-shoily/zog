@@ -235,18 +235,18 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 
 ## 14. Multigraph
 
-*Note: Zog currently only supports simple directed or undirected graphs. Multigraphs are not in the core scope.*
+*Note: Zog currently only supports simple directed or undirected graphs. Multigraphs are planned for the v0.5.0 release.*
 
 | Algorithm | YogEx Module | Purpose | Zog Status | Notes / Details |
 | :--- | :--- | :--- | :--- | :--- |
-| **Eulerian Circuit** | `Yog.Multi.Eulerian` | Hierholzer with edge IDs | ❌ **Missing** | *Won't Have* — outside project scope. |
-| **Eulerian Path** | `Yog.Multi.Eulerian` | Open Eulerian walk | ❌ **Missing** | *Won't Have* — outside project scope. |
-| **BFS** | `Yog.Multi.Traversal` | Edge-ID aware BFS | ❌ **Missing** | *Won't Have* — outside project scope. |
-| **DFS** | `Yog.Multi.Traversal` | Edge-ID aware DFS | ❌ **Missing** | *Won't Have* — outside project scope. |
-| **Fold Walk** | `Yog.Multi.Traversal` | Stateful traversal | ❌ **Missing** | *Won't Have* — outside project scope. |
-| **Cycle Check** | `Yog.Multi` | Multigraph cycle detection | ❌ **Missing** | *Won't Have* — outside project scope. |
-| **Topological Sort** | `Yog.Multi` | Multigraph topological ordering | ❌ **Missing** | *Won't Have* — outside project scope. |
-| **To Simple Graph** | `Yog.Multi` | Collapse parallel edges | ❌ **Missing** | *Won't Have* — outside project scope. |
+| **Eulerian Circuit** | `Yog.Multi.Eulerian` | Hierholzer with edge IDs | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
+| **Eulerian Path** | `Yog.Multi.Eulerian` | Open Eulerian walk | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
+| **BFS** | `Yog.Multi.Traversal` | Edge-ID aware BFS | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
+| **DFS** | `Yog.Multi.Traversal` | Edge-ID aware DFS | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
+| **Fold Walk** | `Yog.Multi.Traversal` | Stateful traversal | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
+| **Cycle Check** | `Yog.Multi` | Multigraph cycle detection | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
+| **Topological Sort** | `Yog.Multi` | Multigraph topological ordering | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
+| **To Simple Graph** | `Yog.Multi` | Collapse parallel edges | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
 
 ---
 
