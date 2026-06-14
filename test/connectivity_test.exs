@@ -95,4 +95,33 @@ defmodule Zog.ConnectivityTest do
     assert sorted_rg_sccs == [["0", "1", "2"], ["3"]]
     ResourceGraph.destroy(res_graph)
   end
+
+  test "weakly_connected_components: multiple components" do
+    builder =
+      Zog.directed()
+      |> Zog.add_edge("0", "1", 1.0)
+      |> Zog.add_edge("2", "3", 1.0)
+
+    # 1. Zog builder WCC
+    wccs = Connectivity.weakly_connected_components(builder)
+    assert length(wccs) == 2
+    sorted_wccs = wccs |> Enum.map(&Enum.sort/1) |> Enum.sort()
+    assert sorted_wccs == [["0", "1"], ["2", "3"]]
+
+    # 2. ResourceGraph WCC
+    res_graph = ResourceGraph.new(builder)
+    rg_wccs = ResourceGraph.weakly_connected_components(res_graph)
+    assert length(rg_wccs) == 2
+    sorted_rg_wccs = rg_wccs |> Enum.map(&Enum.sort/1) |> Enum.sort()
+    assert sorted_rg_wccs == [["0", "1"], ["2", "3"]]
+
+    # 3. ResourceGraph WCC with raw: true
+    raw_wccs = ResourceGraph.weakly_connected_components(res_graph, raw: true)
+    assert length(raw_wccs) == 4
+    assert Enum.at(raw_wccs, 0) == Enum.at(raw_wccs, 1)
+    assert Enum.at(raw_wccs, 2) == Enum.at(raw_wccs, 3)
+    assert Enum.at(raw_wccs, 0) != Enum.at(raw_wccs, 2)
+
+    ResourceGraph.destroy(res_graph)
+  end
 end

@@ -465,6 +465,46 @@ pub fn stronglyConnectedComponents(allocator: std.mem.Allocator, graph: anytype)
     return components;
 }
 
+/// Computes weakly connected components (WCC) for the graph.
+/// Returns an allocated slice where components[node_id] is the component ID.
+pub fn weaklyConnectedComponents(allocator: std.mem.Allocator, graph: anytype) ![]u32 {
+    const V = graph.nodeCount();
+    const components = try allocator.alloc(u32, V);
+    errdefer allocator.free(components);
+    @memset(components, 0);
+
+    if (V == 0) return components;
+
+    const UnionFind = @import("mst.zig").UnionFind;
+    var uf = try UnionFind.init(allocator, V);
+    defer uf.deinit(allocator);
+
+    var node_it = graph.nodeIds();
+    while (node_it.next()) |u| {
+        var succ_it = graph.successors(u);
+        while (succ_it.next()) |edge| {
+            const v = edge.to;
+            _ = uf.unionSets(u, v);
+        }
+    }
+
+    var root_map = std.AutoHashMap(u32, u32).init(allocator);
+    defer root_map.deinit();
+
+    var next_comp_id: u32 = 0;
+    for (0..V) |i| {
+        const root = uf.find(@intCast(i));
+        const gop = try root_map.getOrPut(root);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = next_comp_id;
+            next_comp_id += 1;
+        }
+        components[i] = gop.value_ptr.*;
+    }
+
+    return components;
+}
+
 test "stronglyConnectedComponents: simple cycle and tail" {
     const allocator = std.testing.allocator;
     const AG = @import("models/array_graph.zig").ArrayGraph;
@@ -488,4 +528,27 @@ test "stronglyConnectedComponents: simple cycle and tail" {
     try std.testing.expectEqual(sccs[0], sccs[1]);
     try std.testing.expectEqual(sccs[0], sccs[2]);
     try std.testing.expect(sccs[0] != sccs[3]);
+}
+
+test "weaklyConnectedComponents: multiple components" {
+    const allocator = std.testing.allocator;
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+
+    var g = AG(void, void).init(allocator);
+    defer g.deinit();
+
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+
+    _ = try g.addEdge(0, 1, {});
+    _ = try g.addEdge(2, 3, {});
+
+    const wccs = try weaklyConnectedComponents(allocator, g);
+    defer allocator.free(wccs);
+
+    try std.testing.expectEqual(wccs[0], wccs[1]);
+    try std.testing.expectEqual(wccs[2], wccs[3]);
+    try std.testing.expect(wccs[0] != wccs[2]);
 }

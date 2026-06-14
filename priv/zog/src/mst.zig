@@ -11,11 +11,11 @@ fn compareEdges(context: void, a: Edge, b: Edge) bool {
     return a.weight < b.weight;
 }
 
-const UnionFind = struct {
+pub const UnionFind = struct {
     parent: []u32,
     rank: []u32,
 
-    fn init(allocator: std.mem.Allocator, size: usize) !UnionFind {
+    pub fn init(allocator: std.mem.Allocator, size: usize) !UnionFind {
         const parent = try allocator.alloc(u32, size);
         errdefer allocator.free(parent);
         const rank = try allocator.alloc(u32, size);
@@ -26,12 +26,12 @@ const UnionFind = struct {
         return .{ .parent = parent, .rank = rank };
     }
 
-    fn deinit(self: *UnionFind, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *UnionFind, allocator: std.mem.Allocator) void {
         allocator.free(self.parent);
         allocator.free(self.rank);
     }
 
-    fn find(self: *UnionFind, i: u32) u32 {
+    pub fn find(self: *UnionFind, i: u32) u32 {
         var root = i;
         while (root != self.parent[root]) {
             root = self.parent[root];
@@ -45,7 +45,7 @@ const UnionFind = struct {
         return root;
     }
 
-    fn unionSets(self: *UnionFind, i: u32, j: u32) bool {
+    pub fn unionSets(self: *UnionFind, i: u32, j: u32) bool {
         const root_i = self.find(i);
         const root_j = self.find(j);
         if (root_i == root_j) return false;

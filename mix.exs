@@ -54,7 +54,8 @@ defmodule Zog.MixProject do
       {:jump_credo_checks, "~> 0.4", only: [:dev], runtime: false},
       {:zigler, "~> 0.16.0", runtime: false},
       {:yog_ex, "~> 0.98"},
-      {:libgraph, "~> 0.16", optional: true}
+      {:libgraph, "~> 0.16", optional: true},
+      {:kino, "~> 0.12", optional: true}
     ]
   end
 

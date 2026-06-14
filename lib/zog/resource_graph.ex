@@ -70,6 +70,7 @@ defmodule Zog.ResourceGraph do
         nif_core_numbers: [concurrency: :dirty_cpu],
         nif_analyze_connectivity: [concurrency: :dirty_cpu],
         nif_strongly_connected_components: [concurrency: :dirty_cpu],
+        nif_weakly_connected_components: [concurrency: :dirty_cpu],
         nif_kruskal: [concurrency: :dirty_cpu],
         nif_bellman_ford: [concurrency: :dirty_cpu],
         nif_astar: [concurrency: :dirty_cpu],
@@ -560,6 +561,14 @@ defmodule Zog.ResourceGraph do
         return switch (res.unpack()) {
             .soa => |g| try zog.connectivity.stronglyConnectedComponents(allocator, g),
             .hash_graph => |g| try zog.connectivity.stronglyConnectedComponents(allocator, g),
+        };
+    }
+
+    pub fn nif_weakly_connected_components(res: GraphRes) ![]u32 {
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.connectivity.weaklyConnectedComponents(allocator, g),
+            .hash_graph => |g| try zog.connectivity.weaklyConnectedComponents(allocator, g),
         };
     }
 
@@ -1893,11 +1902,35 @@ defmodule Zog.ResourceGraph do
 
       * `:raw` - If true, returns a list of component IDs directly corresponding to internal `u32` node IDs instead of grouping and mapping to Elixir labels.
     """
-    @spec strongly_connected_components(t(), keyword()) :: [[SoA.label()]] | [non_neg_integer()]
     def strongly_connected_components(%{resource: res, builder: builder}, opts \\ []) do
       raw = Keyword.get(opts, :raw, false)
 
       case nif_strongly_connected_components(res) do
+        [] ->
+          []
+
+        assignments ->
+          if raw do
+            assignments
+          else
+            group_sccs(builder, assignments)
+          end
+      end
+    end
+
+    @doc """
+    Finds weakly connected components in the ResourceGraph natively.
+    Returns a list of lists of node labels.
+
+    ## Options
+
+      * `:raw` - If true, returns a list of component IDs directly corresponding to internal `u32` node IDs instead of grouping and mapping to Elixir labels.
+    """
+    @spec weakly_connected_components(t(), keyword()) :: [[SoA.label()]] | [non_neg_integer()]
+    def weakly_connected_components(%{resource: res, builder: builder}, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
+
+      case nif_weakly_connected_components(res) do
         [] ->
           []
 
@@ -2176,6 +2209,7 @@ defmodule Zog.ResourceGraph do
           :assortativity,
           :core_numbers,
           :strongly_connected_components,
+          :weakly_connected_components,
           :analyze,
           :kruskal
         ] do
