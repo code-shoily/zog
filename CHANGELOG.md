@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - Unreleased
+
+### Added
+
+- Added `weakly_connected_components/1` to `Zog.Connectivity` and `weakly_connected_components/2` to `Zog.ResourceGraph`.
+- Added `anf/2` (Approximate Neighborhood Function) to `Zog.Metrics` and `Zog.ResourceGraph` to compute neighborhood sizes and estimate the 90-percentile effective diameter.
+- Added `kino` as an optional dependency to support future integration.
+
+### Removed
+
+- Removed the deprecated `add_simple_edge/3` function (use `add_unweighted_edge/3` instead).
+
 ## [0.2.0] - 2026-06-14
 
 ### Added
@@ -33,10 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fully resolved all `credo` style, alias ordering, and variable rebinding warnings.
 - Unified repository licenses by copying root Apache-2.0 to `priv/zog/LICENSE`.
 - Fixed missing paths reference to `README.md` in `priv/zog/build.zig.zon`.
-
-### Removed
-
-- Removed the deprecated `add_simple_edge/3` function (use `add_unweighted_edge/3` instead).
 
 ## [0.1.0] - 2026-06-11
 
