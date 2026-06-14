@@ -84,7 +84,10 @@ defmodule Zog.ResourceGraph do
         nif_read_tgf: [concurrency: :dirty_io],
         nif_subgraph: [concurrency: :dirty_cpu],
         nif_is_bipartite: [concurrency: :dirty_cpu],
-        nif_maximum_bipartite_matching: [concurrency: :dirty_cpu]
+        nif_maximum_bipartite_matching: [concurrency: :dirty_cpu],
+        nif_node_degrees: [concurrency: :dirty_cpu],
+        nif_node_count: [],
+        nif_edge_count: []
       ]
 
     ~Z"""
@@ -501,6 +504,14 @@ defmodule Zog.ResourceGraph do
         return beam.make(reachable, .{});
     }
 
+    pub fn nif_node_count(res: GraphRes) !usize {
+        return nodeCount(res);
+    }
+
+    pub fn nif_edge_count(res: GraphRes) !usize {
+        return edgeCount(res);
+    }
+
     pub fn nif_density(res: GraphRes) !f64 {
         const n = nodeCount(res);
         if (n <= 1) return 0.0;
@@ -542,6 +553,32 @@ defmodule Zog.ResourceGraph do
             },
         }
         return scores;
+    }
+
+    pub fn nif_node_degrees(res: GraphRes) ![]u32 {
+        const allocator = beam.allocator;
+        const node_count = nodeCapacity(res);
+        var degrees = try allocator.alloc(u32, node_count);
+        errdefer allocator.free(degrees);
+        switch (res.unpack()) {
+            .soa => |g| {
+                for (0..node_count) |i| {
+                    var count: u32 = 0;
+                    var sit = g.successors(@intCast(i));
+                    while (sit.next()) |_| count += 1;
+                    degrees[i] = count;
+                }
+            },
+            .hash_graph => |g| {
+                for (0..node_count) |i| {
+                    var count: u32 = 0;
+                    var sit = g.successors(@intCast(i));
+                    while (sit.next()) |_| count += 1;
+                    degrees[i] = count;
+                }
+            },
+        }
+        return degrees;
     }
 
     pub fn nif_assortativity(res: GraphRes) !f64 {
@@ -1942,6 +1979,17 @@ defmodule Zog.ResourceGraph do
     Graph density.
     """
     @spec density(t()) :: float()
+    @spec node_count(t()) :: non_neg_integer()
+    def node_count(%{resource: res}) do
+      nif_node_count(res)
+    end
+
+    @spec edge_count(t()) :: non_neg_integer()
+    def edge_count(%{resource: res}) do
+      nif_edge_count(res)
+    end
+
+    @spec density(t()) :: float()
     def density(%{resource: res}) do
       nif_density(res)
     end
@@ -1987,6 +2035,14 @@ defmodule Zog.ResourceGraph do
     @spec assortativity(t()) :: float()
     def assortativity(%{resource: res}) do
       nif_assortativity(res)
+    end
+
+    @doc """
+    Returns a list of node degrees directly corresponding to internal `u32` node IDs.
+    """
+    @spec node_degrees(t()) :: [integer()]
+    def node_degrees(%{resource: res}) do
+      nif_node_degrees(res)
     end
 
     @doc """
@@ -2400,9 +2456,10 @@ defmodule Zog.ResourceGraph do
       sub_builder = Zog.Transform.subgraph(builder, node_labels)
 
       kept_ids =
-        sub_builder
-        |> SoA.all_labels()
-        |> Enum.map(&SoA.label_to_id(builder, &1))
+        for i <- 0..(sub_builder.next_id - 1) do
+          label = Map.fetch!(sub_builder.id_to_label, i)
+          SoA.label_to_id(builder, label)
+        end
 
       sub_resource = nif_subgraph(res, kept_ids)
 
@@ -2430,9 +2487,10 @@ defmodule Zog.ResourceGraph do
       sub_builder = Zog.Transform.ego_graph(builder, center, radius)
 
       kept_ids =
-        sub_builder
-        |> SoA.all_labels()
-        |> Enum.map(&SoA.label_to_id(builder, &1))
+        for i <- 0..(sub_builder.next_id - 1) do
+          label = Map.fetch!(sub_builder.id_to_label, i)
+          SoA.label_to_id(builder, label)
+        end
 
       sub_resource = nif_subgraph(res, kept_ids)
 
@@ -2533,7 +2591,10 @@ defmodule Zog.ResourceGraph do
           :strongly_connected_components,
           :weakly_connected_components,
           :analyze,
-          :kruskal
+          :kruskal,
+          :node_degrees,
+          :node_count,
+          :edge_count
         ] do
       def unquote(fun)(_graph, _opts \\ []) do
         raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."

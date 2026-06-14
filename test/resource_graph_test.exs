@@ -589,5 +589,37 @@ defmodule Zog.ResourceGraphTest do
       ResourceGraph.destroy(g_tgf)
       File.rm!(temp_tgf)
     end
+
+    test "subgraph and ego_graph with integer_labels: true preserves and maps correctly" do
+      temp_edge_list =
+        Path.join(
+          System.tmp_dir!(),
+          "edge_list_int_sub_#{System.unique_integer([:positive])}.txt"
+        )
+
+      File.write!(temp_edge_list, "0 1\n1 2\n2 3\n")
+
+      graph = ResourceGraph.read_edgelist(temp_edge_list, integer_labels: true)
+
+      # Extract subgraph of nodes 1, 2, 3 (ignoring 0)
+      sub = ResourceGraph.subgraph(graph, [1, 2, 3])
+
+      assert sub.builder.integer_labels == true
+      assert ResourceGraph.node_count(sub) == 3
+      assert ResourceGraph.edge_count(sub) == 2
+
+      # The nodes in sub should have original labels 1, 2, 3 corresponding to subgraph nodes 0, 1, 2.
+      # Let's check that the edges are correctly mapped:
+      # Node 1 (new index 0) connects to 2 (new index 1).
+      # Node 2 (new index 1) connects to 3 (new index 2).
+      degrees = ResourceGraph.node_degrees(sub)
+      assert Enum.at(degrees, 0) == 1
+      assert Enum.at(degrees, 1) == 1
+      assert Enum.at(degrees, 2) == 0
+
+      ResourceGraph.destroy(sub)
+      ResourceGraph.destroy(graph)
+      File.rm!(temp_edge_list)
+    end
   end
 end
