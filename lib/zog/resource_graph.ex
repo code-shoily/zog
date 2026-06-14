@@ -81,7 +81,8 @@ defmodule Zog.ResourceGraph do
         nif_global_min_cut: [concurrency: :dirty_cpu],
         nif_read_edgelist: [concurrency: :dirty_io],
         nif_read_adjlist: [concurrency: :dirty_io],
-        nif_read_tgf: [concurrency: :dirty_io]
+        nif_read_tgf: [concurrency: :dirty_io],
+        nif_subgraph: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -1139,6 +1140,78 @@ defmodule Zog.ResourceGraph do
                     const labels_slice = try labels_list.toOwnedSlice(arena_allocator);
                     return beam.make(.{.ok, resource, labels_slice}, .{});
                 }
+            }
+        }
+    }
+
+    pub fn nif_subgraph(res: GraphRes, kept_nodes: []u32) !GraphRes {
+        const allocator = beam.allocator;
+        const V = nodeCount(res);
+        
+        const sentinel = std.math.maxInt(u32);
+        
+        var old_to_new = try allocator.alloc(u32, V);
+        defer allocator.free(old_to_new);
+        @memset(old_to_new, sentinel);
+        
+        var new_index: u32 = 0;
+        for (kept_nodes) |u| {
+            if (u < V and old_to_new[u] == sentinel) {
+                old_to_new[u] = new_index;
+                new_index += 1;
+            }
+        }
+        
+        const new_V = new_index;
+        
+        switch (res.unpack()) {
+            .soa => |g| {
+                var sub_g = ArrayGraph(void, f64).init(allocator);
+                errdefer sub_g.deinit();
+                
+                try sub_g.nodes.ensureTotalCapacity(allocator, new_V);
+                for (0..new_V) |_| {
+                    _ = try sub_g.addNode({});
+                }
+                
+                for (kept_nodes) |u| {
+                    if (u >= V) continue;
+                    const new_u = old_to_new[u];
+                    var succ_it = g.successors(u);
+                    while (succ_it.next()) |edge| {
+                        const v = edge.to;
+                        const new_v = old_to_new[v];
+                        if (new_v != sentinel) {
+                            _ = try sub_g.addEdge(new_u, new_v, edge.data);
+                        }
+                    }
+                }
+                
+                return GraphRes.create(.{ .soa = sub_g }, .{ .released = false });
+            },
+            .hash_graph => |g| {
+                var sub_g = zog.models.GraphMap(u32, void, f64, .directed, .dual).init(allocator);
+                errdefer sub_g.deinit();
+                
+                try sub_g.nodes.ensureTotalCapacity(@intCast(new_V));
+                for (0..new_V) |i| {
+                    try sub_g.addNode(@intCast(i), {});
+                }
+                
+                for (kept_nodes) |u| {
+                    if (u >= V) continue;
+                    const new_u = old_to_new[u];
+                    var succ_it = g.successors(u);
+                    while (succ_it.next()) |edge| {
+                        const v = edge.to;
+                        const new_v = old_to_new[v];
+                        if (new_v != sentinel) {
+                            try sub_g.addEdge(new_u, new_v, edge.data);
+                        }
+                    }
+                }
+                
+                return GraphRes.create(.{ .hash_graph = sub_g }, .{ .released = false });
             }
         }
     }
@@ -2202,6 +2275,34 @@ defmodule Zog.ResourceGraph do
       |> Enum.group_by(fn {_lbl, comp} -> comp end, fn {lbl, _comp} -> lbl end)
       |> Map.values()
     end
+
+    @doc """
+    Extracts an induced subgraph from a `ResourceGraph` containing only the
+    specified node labels and the edges between them.
+
+    Returns a new `ResourceGraph` holding both the native Zig resource and the
+    corresponding Elixir `SoA` metadata.  Call `ResourceGraph.destroy/1` on the
+    returned graph when it is no longer needed to release native memory.
+    """
+    @spec subgraph(t(), [SoA.label()] | MapSet.t(SoA.label()), keyword()) :: t()
+    def subgraph(%{resource: res, builder: builder} = _res_graph, node_labels, _opts \\ []) do
+      # Build the Elixir-side sub-builder first; reuse its derived label order
+      # to produce the kept_ids list for the NIF — avoids a second full label
+      # traversal and guarantees the two representations stay in sync.
+      sub_builder = Zog.Transform.subgraph(builder, node_labels)
+
+      kept_ids =
+        sub_builder
+        |> SoA.all_labels()
+        |> Enum.map(&SoA.label_to_id(builder, &1))
+
+      sub_resource = nif_subgraph(res, kept_ids)
+
+      %{
+        resource: sub_resource,
+        builder: sub_builder
+      }
+    end
   else
     @moduledoc """
     Native graph resource backed by Zog (Zig) via Zigler.
@@ -2267,6 +2368,10 @@ defmodule Zog.ResourceGraph do
     end
 
     def global_min_cut(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def subgraph(_graph, _node_labels, _opts \\ []) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 

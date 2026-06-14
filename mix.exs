@@ -91,7 +91,8 @@ defmodule Zog.MixProject do
       groups_for_modules: [
         "Core & Entrypoints": [
           Zog,
-          Zog.SoA
+          Zog.SoA,
+          Zog.Transform
         ],
         "Native Resource": [
           Zog.ResourceGraph

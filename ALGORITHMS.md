@@ -145,7 +145,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | Algorithm | YogEx Module | Purpose | Zog Status | Notes / Details |
 | :--- | :--- | :--- | :--- | :--- |
 | **Transpose** | `Yog.Transform` | Reverse edge directions | ❌ **Missing** | *Deliberately Omitted* — transpose logic is handled at graph build time. |
-| **Subgraph** | `Yog.Transform` | Induced subgraph by node IDs | ❌ **Missing** | *WIP/Roadmap* — planned for v0.3.0. |
+| **Subgraph** | `Yog.Transform` | Induced subgraph by node IDs | ✅ **Implemented** | `Zog.Transform.subgraph/2` and `Zog.ResourceGraph.subgraph/3` (native Zig). |
 | **Ego Graph** | `Yog.Transform` | k-hop neighborhood subgraph | ❌ **Missing** | *Deferred* — low priority. |
 | **Transitive Closure** | `Yog.Transform` | Reachability matrix | ❌ **Missing** | *Deferred* — high memory footprint, low priority. |
 | **Transitive Reduction** | `Yog.Transform` | Minimal equivalent DAG | ❌ **Missing** | *Deferred* — low priority. |
@@ -220,7 +220,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Line Graph** | `Yog.Operation` | Edge-to-vertex dual | ❌ **Missing** | *Deferred* — low priority. |
 | **Transpose** | `Yog.Operation` | Reverse all edges | ❌ **Missing** | *Deliberately Omitted* — easily done in Elixir/SoA. |
 | **Isomorphism** | `Yog.Operation` | Graph equality | ❌ **Missing** | *Deferred* — low priority. |
-| **Subgraph** | `Yog.Operation` | Induced subgraph | ❌ **Missing** | *WIP/Roadmap* — planned for v0.3.0. |
+| **Subgraph** | `Yog.Operation` | Induced subgraph | ✅ **Implemented** | Same as `Zog.Transform.subgraph/2`. |
 | **Subgraph Check** | `Yog.Operation` | Subgraph relationship | ❌ **Missing** | *Deferred* — low priority. |
 | **Graph Composition** | `Yog.Operation` | Relational graph composition | ❌ **Missing** | *Won't Have* — outside project scope. |
 | **Graph Complement** | `Yog.Operation` | Inverse edge set | ❌ **Missing** | *Deferred* — low priority. |

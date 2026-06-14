@@ -2,26 +2,26 @@
 
 Roadmap and release planning for Zog's native Elixir/Zig graph algorithms.
 
-## Current Status (v0.3.0-dev)
-Zog v0.3.0 implements high-performance native implementations of core graph algorithms including Pathfinding (Dijkstra, A*, Bellman-Ford, Floyd-Warshall, Johnson's), Flow (Edmonds-Karp, Push-Relabel, Stoer-Wagner), MST (Kruskal's), Connectivity (Tarjan's SCC, Bridges, Articulation, K-core, Weakly Connected Components), Centrality (PageRank, Betweenness, Closeness, Harmonic, Eigenvector, Katz, Alpha), and Community Detection (Louvain, Leiden, Label Propagation), and general Metrics (Density, Triangles, Assortativity, Clustering Coefficient, Approximate Neighborhood Function / Effective Diameter).
+## Current Status (v0.3.0)
+Zog v0.3.0 implements high-performance native implementations of core graph algorithms including Pathfinding (Dijkstra, A*, Bellman-Ford, Floyd-Warshall, Johnson's), Flow (Edmonds-Karp, Push-Relabel, Stoer-Wagner), MST (Kruskal's), Connectivity (Tarjan's SCC, Bridges, Articulation, K-core, Weakly Connected Components), Centrality (PageRank, Betweenness, Closeness, Harmonic, Eigenvector, Katz, Alpha), Community Detection (Louvain, Leiden, Label Propagation), general Metrics (Density, Triangles, Assortativity, Clustering Coefficient, Approximate Neighborhood Function / Effective Diameter), and **Graph Transformations (Subgraph Extraction)**.
 
 ---
 
 ## Release Milestones
 
-### 📅 v0.3.0: Matching & Graph Manipulation
+### ✅ v0.3.0: Matching & Graph Manipulation *(released 2026-06-14)*
 Focuses on bipartite/general matchings and subgraph extraction.
 
-- **Matching Algorithms**
+- **Matching Algorithms** *(deferred to next cycle)*
   - [ ] Hopcroft-Karp (Maximum Bipartite Matching)
   - [ ] Hungarian Algorithm (Weighted Bipartite Matching)
   - [ ] Blossom Algorithm (Maximum Matching in General Graphs)
-- **Graph Properties**
+- **Graph Properties** *(deferred to next cycle)*
   - [ ] Bipartite Check (2-colorability verification)
   - [ ] Bipartite Partition (Color assignment)
   - [ ] Maximum Bipartite Matching
 - **Transformations**
-  - [ ] Subgraph extraction (Induced subgraphs by node IDs)
+  - [x] Subgraph extraction (Induced subgraphs by node IDs)
 
 ---
 

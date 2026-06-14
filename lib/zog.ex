@@ -20,6 +20,7 @@ defmodule Zog do
   defdelegate all_labels(builder), to: Zog.SoA
   defdelegate all_edges(builder), to: Zog.SoA
   defdelegate to_edge_arrays(builder), to: Zog.SoA
+  defdelegate subgraph(builder, node_labels), to: Zog.Transform
 
   # Conditional delegation for Yog conversions
   if Code.ensure_loaded?(Yog) do

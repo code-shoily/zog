@@ -5,13 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - Unreleased
+## [0.3.0] - 2026-06-14
 
 ### Added
 
 - Added `weakly_connected_components/1` to `Zog.Connectivity` and `weakly_connected_components/2` to `Zog.ResourceGraph`.
 - Added `anf/2` (Approximate Neighborhood Function) to `Zog.Metrics` and `Zog.ResourceGraph` to compute neighborhood sizes and estimate the 90-percentile effective diameter.
 - Added `kino` as an optional dependency to support future integration.
+- Added `subgraph/2` to `Zog.Transform` (delegated via `Zog.subgraph/2`) and `subgraph/3` to `Zog.ResourceGraph` (with native Zig NIF backing) for induced subgraph extraction.
+  - Accepts both list and `MapSet` inputs for node labels.
+  - Both `SoA` builder and `ResourceGraph` paths are covered with unit tests.
+
+### Fixed
+
+- Fixed `Zog.Transform.subgraph/2` incorrectly hard-coding `integer_labels: false` on the output `SoA`, which caused `SoA.all_labels/1` and `SoA.label_to_id/2` to use the wrong code path for integer-labelled graphs (e.g. those loaded via `read_edgelist` with numeric node IDs).
+- Fixed `Zog.Transform.subgraph/2` calling `MapSet.new/1` even when the caller already passed a `MapSet`, producing a redundant allocation.
+- Fixed `ResourceGraph.subgraph/3` performing duplicate label-filtering work: the `kept_ids` list for the NIF is now derived directly from the already-computed `sub_builder`, eliminating a second full label traversal and guaranteeing the Elixir and native representations stay in sync.
 
 ### Removed
 
