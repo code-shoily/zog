@@ -2,8 +2,8 @@
 
 Roadmap and release planning for Zog's native Elixir/Zig graph algorithms.
 
-## Current Status (v0.2.0-dev)
-Zog v0.2.0 implements high-performance native implementations of core graph algorithms including Pathfinding (Dijkstra, A*, Bellman-Ford, Floyd-Warshall, Johnson's), Flow (Edmonds-Karp, Push-Relabel, Stoer-Wagner), MST (Kruskal's), Connectivity (Tarjan's SCC, Bridges, Articulation, K-core, Weakly Connected Components), Centrality (PageRank, Betweenness, Closeness, Harmonic, Eigenvector, Katz, Alpha), and Community Detection (Louvain, Leiden, Label Propagation), and general Metrics (Density, Triangles, Assortativity, Clustering Coefficient, Approximate Neighborhood Function / Effective Diameter).
+## Current Status (v0.3.0-dev)
+Zog v0.3.0 implements high-performance native implementations of core graph algorithms including Pathfinding (Dijkstra, A*, Bellman-Ford, Floyd-Warshall, Johnson's), Flow (Edmonds-Karp, Push-Relabel, Stoer-Wagner), MST (Kruskal's), Connectivity (Tarjan's SCC, Bridges, Articulation, K-core, Weakly Connected Components), Centrality (PageRank, Betweenness, Closeness, Harmonic, Eigenvector, Katz, Alpha), and Community Detection (Louvain, Leiden, Label Propagation), and general Metrics (Density, Triangles, Assortativity, Clustering Coefficient, Approximate Neighborhood Function / Effective Diameter).
 
 ---
 
@@ -60,7 +60,7 @@ These features are not scheduled for immediate releases and will be implemented 
 - **Pathfinding**: Bidirectional Dijkstra, Bidirectional BFS, Yen's K-Shortest, Widest Path, All-Pairs Unweighted.
 - **Network Flow**: Successive Shortest Path (Min-cost max-flow).
 - **Spanning Tree**: Minimum Spanning Arborescence (Edmonds' Directed MST).
-- **Connectivity**: Reachability Exact. (Weakly Connected Components has been implemented in v0.2.0)
+- **Connectivity**: Reachability Exact. (Weakly Connected Components has been implemented in v0.3.0)
 - **Centrality & Metrics**: HITS (Hubs and Authorities), Transitivity.
 - **Community Detection**: Walktrap, Infomap, Clique Percolation, Fluid Communities, Local Community.
 - **Transformations & Operations**: Ego Graph, Transitive Closure/Reduction, Contract, node/edge filter predicates.
