@@ -1,7 +1,7 @@
 defmodule Zog.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
   @source_url "https://github.com/code-shoily/zog"
 
   def project do
@@ -66,7 +66,7 @@ defmodule Zog.MixProject do
     [
       name: "zog",
       files:
-        ~w(lib priv/zog/src priv/zog/build.zig priv/zog/build.zig.zon .formatter.exs mix.exs README.md LICENSE CHANGELOG.md),
+        ~w(lib priv/zog/src priv/zog/build.zig priv/zog/build.zig.zon .formatter.exs mix.exs README.md LICENSE CHANGELOG.md ALGORITHMS.md ROADMAP.md),
       licenses: ["Apache-2.0"],
       links: %{
         "GitHub" => @source_url,
@@ -83,7 +83,9 @@ defmodule Zog.MixProject do
       main: "readme",
       extras: [
         "README.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "ALGORITHMS.md",
+        "ROADMAP.md"
       ],
       groups_for_modules: [
         "Core & Entrypoints": [
