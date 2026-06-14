@@ -153,10 +153,7 @@ defmodule Zog.Connectivity do
           []
 
         assignments ->
-          labels
-          |> Enum.zip(assignments)
-          |> Enum.group_by(fn {_lbl, comp} -> comp end, fn {lbl, _comp} -> lbl end)
-          |> Map.values()
+          group_by_components(labels, assignments)
       end
     end
 
@@ -176,10 +173,7 @@ defmodule Zog.Connectivity do
           []
 
         assignments ->
-          labels
-          |> Enum.zip(assignments)
-          |> Enum.group_by(fn {_lbl, comp} -> comp end, fn {lbl, _comp} -> lbl end)
-          |> Map.values()
+          group_by_components(labels, assignments)
       end
     end
 
@@ -374,6 +368,18 @@ defmodule Zog.Connectivity do
           {:ok, matched}
       end
     end
+
+    defp group_by_components(labels, assignments) do
+      group_by_components_rec(labels, assignments, %{})
+      |> Map.values()
+    end
+
+    defp group_by_components_rec([lbl | lbl_tail], [comp | comp_tail], acc) do
+      acc = Map.update(acc, comp, [lbl], &[lbl | &1])
+      group_by_components_rec(lbl_tail, comp_tail, acc)
+    end
+
+    defp group_by_components_rec([], [], acc), do: acc
   else
     @moduledoc """
     Native graph connectivity algorithms backed by Zog (Zig) via Zigler.

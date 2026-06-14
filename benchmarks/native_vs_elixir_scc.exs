@@ -16,10 +16,9 @@ defmodule NativeVsElixirSccBenchmark do
     IO.puts("Each test runs #{@iterations} iterations.\n")
 
     for {name, n, m} <- [
-          {"Directed Graph 100n, 300e", 100, 300},
-          {"Directed Graph 500n, 1500e", 500, 1500},
           {"Directed Graph 1000n, 3000e", 1000, 3000},
-          {"Directed Graph 2000n, 6000e", 2000, 6000}
+          {"Directed Graph 10000n, 30000e", 10000, 30000},
+          {"Directed Graph 50000n, 150000e", 50000, 150000}
         ] do
       builder = build_zog_directed_graph(n, m)
 

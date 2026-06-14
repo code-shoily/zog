@@ -2371,12 +2371,18 @@ defmodule Zog.ResourceGraph do
     defp make_sorted_edge(u, v), do: {v, u}
 
     defp group_sccs(builder, assignments) do
-      builder
-      |> SoA.all_labels()
-      |> Enum.zip(assignments)
-      |> Enum.group_by(fn {_lbl, comp} -> comp end, fn {lbl, _comp} -> lbl end)
+      labels = SoA.all_labels(builder)
+
+      group_sccs_rec(labels, assignments, %{})
       |> Map.values()
     end
+
+    defp group_sccs_rec([lbl | lbl_tail], [comp | comp_tail], acc) do
+      acc = Map.update(acc, comp, [lbl], &[lbl | &1])
+      group_sccs_rec(lbl_tail, comp_tail, acc)
+    end
+
+    defp group_sccs_rec([], [], acc), do: acc
 
     @doc """
     Extracts an induced subgraph from a `ResourceGraph` containing only the

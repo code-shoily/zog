@@ -356,107 +356,93 @@ pub fn stronglyConnectedComponents(allocator: std.mem.Allocator, graph: anytype)
 
     if (V == 0) return components;
 
-    // Build forward and reverse adjacency lists.
-    var adj = try allocator.alloc(std.ArrayList(u32), V);
-    errdefer allocator.free(adj);
-    for (0..V) |i| adj[i] = std.ArrayList(u32).empty;
-    errdefer for (0..V) |i| adj[i].deinit(allocator);
+    const unvisited = std.math.maxInt(u32);
+    var dfn = try allocator.alloc(u32, V);
+    defer allocator.free(dfn);
+    @memset(dfn, unvisited);
 
-    var radj = try allocator.alloc(std.ArrayList(u32), V);
-    errdefer allocator.free(radj);
-    for (0..V) |i| radj[i] = std.ArrayList(u32).empty;
-    errdefer for (0..V) |i| radj[i].deinit(allocator);
+    var low = try allocator.alloc(u32, V);
+    defer allocator.free(low);
+    @memset(low, 0);
 
-    var node_it = graph.nodeIds();
-    while (node_it.next()) |u| {
-        var succ_it = graph.successors(u);
-        while (succ_it.next()) |edge| {
-            const v = edge.to;
-            try adj[u].append(allocator, v);
-            try radj[v].append(allocator, u);
-        }
-    }
+    var on_stack = try allocator.alloc(bool, V);
+    defer allocator.free(on_stack);
+    @memset(on_stack, false);
 
-    // First pass: iterative DFS over the original graph to record finishing
-    // order (post-order).
-    var visited = try allocator.alloc(bool, V);
-    defer allocator.free(visited);
-    @memset(visited, false);
+    var active_stack = try std.ArrayList(u32).initCapacity(allocator, V);
+    defer active_stack.deinit(allocator);
 
-    var order = try std.ArrayList(u32).initCapacity(allocator, V);
-    defer order.deinit(allocator);
+    const SuccessorIterator = @TypeOf(graph.successors(0));
+    const Frame = struct {
+        u: u32,
+        succ_it: SuccessorIterator,
+    };
 
-    for (0..V) |start| {
-        if (visited[start]) continue;
+    var dfs_stack = try std.ArrayList(Frame).initCapacity(allocator, V);
+    defer dfs_stack.deinit(allocator);
 
-        var stack = try std.ArrayList(struct { u32, bool }).initCapacity(allocator, V);
-        defer stack.deinit(allocator);
-        try stack.append(allocator, .{ @intCast(start), false });
-
-        while (stack.items.len > 0) {
-            const frame = stack.pop().?;
-            const u = frame[0];
-            const processed = frame[1];
-
-            if (processed) {
-                try order.append(allocator, u);
-                continue;
-            }
-
-            if (visited[u]) continue;
-            visited[u] = true;
-
-            try stack.append(allocator, .{ u, true });
-
-            // Push neighbors in reverse order so they are processed in order.
-            var idx: usize = adj[u].items.len;
-            while (idx > 0) {
-                idx -= 1;
-                const v = adj[u].items[idx];
-                if (!visited[v]) {
-                    try stack.append(allocator, .{ v, false });
-                }
-            }
-        }
-    }
-
-    // Second pass: process nodes in reverse finishing order on the transposed
-    // graph to assign component IDs.
-    @memset(visited, false);
+    var next_dfn: u32 = 0;
     var comp_id: u32 = 0;
 
-    var idx: usize = order.items.len;
-    while (idx > 0) {
-        idx -= 1;
-        const u = order.items[idx];
-        if (visited[u]) continue;
+    for (0..V) |start| {
+        if (dfn[start] != unvisited) continue;
 
-        var stack = try std.ArrayList(u32).initCapacity(allocator, V);
-        defer stack.deinit(allocator);
-        try stack.append(allocator, u);
-        visited[u] = true;
-        components[u] = comp_id;
+        // Start DFS from 'start'
+        dfn[start] = next_dfn;
+        low[start] = next_dfn;
+        next_dfn += 1;
+        try active_stack.append(allocator, @intCast(start));
+        on_stack[start] = true;
 
-        while (stack.items.len > 0) {
-            const v = stack.pop().?;
-            for (radj[v].items) |w| {
-                if (!visited[w]) {
-                    visited[w] = true;
-                    components[w] = comp_id;
-                    try stack.append(allocator, w);
+        dfs_stack.clearRetainingCapacity();
+        try dfs_stack.append(allocator, .{
+            .u = @intCast(start),
+            .succ_it = graph.successors(@intCast(start)),
+        });
+
+        while (dfs_stack.items.len > 0) {
+            const top_idx = dfs_stack.items.len - 1;
+            const u = dfs_stack.items[top_idx].u;
+            var succ_it = dfs_stack.items[top_idx].succ_it;
+
+            if (succ_it.next()) |edge| {
+                dfs_stack.items[top_idx].succ_it = succ_it;
+                const v = edge.to;
+                if (dfn[v] == unvisited) {
+                    dfn[v] = next_dfn;
+                    low[v] = next_dfn;
+                    next_dfn += 1;
+                    try active_stack.append(allocator, v);
+                    on_stack[v] = true;
+
+                    try dfs_stack.append(allocator, .{
+                        .u = v,
+                        .succ_it = graph.successors(v),
+                    });
+                } else if (on_stack[v]) {
+                    low[u] = @min(low[u], dfn[v]);
+                }
+            } else {
+                // Done visiting u
+                _ = dfs_stack.pop();
+                
+                if (dfs_stack.items.len > 0) {
+                    const p = dfs_stack.items[dfs_stack.items.len - 1].u;
+                    low[p] = @min(low[p], low[u]);
+                }
+
+                if (low[u] == dfn[u]) {
+                    while (true) {
+                        const node = active_stack.pop().?;
+                        on_stack[node] = false;
+                        components[node] = comp_id;
+                        if (node == u) break;
+                    }
+                    comp_id += 1;
                 }
             }
         }
-
-        comp_id += 1;
     }
-
-    for (0..V) |i| {
-        adj[i].deinit(allocator);
-        radj[i].deinit(allocator);
-    }
-    allocator.free(adj);
-    allocator.free(radj);
 
     return components;
 }
