@@ -11,7 +11,10 @@ defmodule Zog do
   defdelegate add_edge(builder, from, to, weight), to: Zog.SoA
   defdelegate add_unweighted_edge(builder, from, to), to: Zog.SoA
   @deprecated "Use add_unweighted_edge/3 instead"
-  defdelegate add_simple_edge(builder, from, to), to: Zog.SoA
+  def add_simple_edge(builder, from, to) do
+    Zog.SoA.add_unweighted_edge(builder, from, to)
+  end
+
   defdelegate from_list(type, edges), to: Zog.SoA
   defdelegate from_unweighted_list(type, edges), to: Zog.SoA
   defdelegate node_count(builder), to: Zog.SoA
