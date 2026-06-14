@@ -15,7 +15,7 @@ Focuses on bipartite property detection, ego-graph extraction, and subgraph mani
 - **Bipartite**
   - [x] Bipartite Check (2-colorability verification)
   - [x] Bipartite Partition (Color assignment)
-  - [ ] Hopcroft-Karp (Maximum Bipartite Matching)
+  - [x] Hopcroft-Karp (Maximum Bipartite Matching)
 - **Transformations & Operations**
   - [x] Subgraph extraction (Induced subgraphs by node IDs)
   - [x] Ego Graph (Neighborhood-induced subgraph around a node)
