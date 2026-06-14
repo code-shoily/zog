@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Accepts both list and `MapSet` inputs for node labels.
   - Both `SoA` builder and `ResourceGraph` paths are covered with unit tests.
 
+### Changed
+
+- Replaced the recursive Tarjan SCC implementation with an iterative Kosaraju implementation, eliminating stack-overflow risk on deep graphs while preserving the same public API and component groupings.
+
 ### Fixed
 
 - Fixed `Zog.Transform.subgraph/2` incorrectly hard-coding `integer_labels: false` on the output `SoA`, which caused `SoA.all_labels/1` and `SoA.label_to_id/2` to use the wrong code path for integer-labelled graphs (e.g. those loaded via `read_edgelist` with numeric node IDs).

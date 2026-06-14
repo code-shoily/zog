@@ -343,60 +343,11 @@ test "analyzeConnectivity: cycle graph and tail" {
     try std.testing.expectEqual(@as(u32, 0), res.articulation_points[0]);
 }
 
-const SccContext = struct {
-    allocator: std.mem.Allocator,
-    disc: []u32,
-    low: []u32,
-    on_stack: []bool,
-    stack: *std.ArrayList(u32),
-    components: []u32,
-    time: u32,
-    comp_id: u32,
-    V: usize,
-    adj: []std.ArrayList(u32),
-    err: ?anyerror,
-
-    fn dfs(self: *SccContext, u: u32) !void {
-        self.disc[u] = self.time;
-        self.low[u] = self.time;
-        self.time += 1;
-        try self.stack.append(self.allocator, u);
-        self.on_stack[u] = true;
-
-        for (self.adj[u].items) |v| {
-            if (self.disc[v] == std.math.maxInt(u32)) {
-                try self.dfs(v);
-                self.low[u] = @min(self.low[u], self.low[v]);
-            } else if (self.on_stack[v]) {
-                self.low[u] = @min(self.low[u], self.disc[v]);
-            }
-        }
-
-        if (self.low[u] == self.disc[u]) {
-            while (true) {
-                const v = self.stack.pop().?;
-                self.on_stack[v] = false;
-                self.components[v] = self.comp_id;
-                if (u == v) break;
-            }
-            self.comp_id += 1;
-        }
-    }
-};
-
-fn runSccDfsOnThread(ctx: *SccContext) void {
-    for (0..ctx.V) |i| {
-        if (ctx.disc[i] == std.math.maxInt(u32)) {
-            ctx.dfs(@intCast(i)) catch |err| {
-                ctx.err = err;
-                return;
-            };
-        }
-    }
-}
-
-/// Computes strongly connected components (SCC) for the directed graph.
+/// Computes strongly connected components (SCC) for the directed graph using
+/// an iterative implementation of Kosaraju's algorithm.
+///
 /// Returns an allocated slice where components[node_id] is the component ID.
+/// Nodes in the same strongly connected component share the same ID.
 pub fn stronglyConnectedComponents(allocator: std.mem.Allocator, graph: anytype) ![]u32 {
     const V = graph.nodeCount();
     const components = try allocator.alloc(u32, V);
@@ -405,17 +356,16 @@ pub fn stronglyConnectedComponents(allocator: std.mem.Allocator, graph: anytype)
 
     if (V == 0) return components;
 
-    // Build adjacency list
+    // Build forward and reverse adjacency lists.
     var adj = try allocator.alloc(std.ArrayList(u32), V);
-    defer allocator.free(adj);
-    for (0..V) |i| {
-        adj[i] = std.ArrayList(u32).empty;
-    }
-    defer {
-        for (0..V) |i| {
-            adj[i].deinit(allocator);
-        }
-    }
+    errdefer allocator.free(adj);
+    for (0..V) |i| adj[i] = std.ArrayList(u32).empty;
+    errdefer for (0..V) |i| adj[i].deinit(allocator);
+
+    var radj = try allocator.alloc(std.ArrayList(u32), V);
+    errdefer allocator.free(radj);
+    for (0..V) |i| radj[i] = std.ArrayList(u32).empty;
+    errdefer for (0..V) |i| radj[i].deinit(allocator);
 
     var node_it = graph.nodeIds();
     while (node_it.next()) |u| {
@@ -423,44 +373,90 @@ pub fn stronglyConnectedComponents(allocator: std.mem.Allocator, graph: anytype)
         while (succ_it.next()) |edge| {
             const v = edge.to;
             try adj[u].append(allocator, v);
+            try radj[v].append(allocator, u);
         }
     }
 
-    const disc = try allocator.alloc(u32, V);
-    defer allocator.free(disc);
-    @memset(disc, std.math.maxInt(u32));
+    // First pass: iterative DFS over the original graph to record finishing
+    // order (post-order).
+    var visited = try allocator.alloc(bool, V);
+    defer allocator.free(visited);
+    @memset(visited, false);
 
-    const low = try allocator.alloc(u32, V);
-    defer allocator.free(low);
-    @memset(low, 0);
+    var order = try std.ArrayList(u32).initCapacity(allocator, V);
+    defer order.deinit(allocator);
 
-    const on_stack = try allocator.alloc(bool, V);
-    defer allocator.free(on_stack);
-    @memset(on_stack, false);
+    for (0..V) |start| {
+        if (visited[start]) continue;
 
-    var stack = std.ArrayList(u32).empty;
-    defer stack.deinit(allocator);
+        var stack = try std.ArrayList(struct { u32, bool }).initCapacity(allocator, V);
+        defer stack.deinit(allocator);
+        try stack.append(allocator, .{ @intCast(start), false });
 
-    var ctx = SccContext{
-        .allocator = allocator,
-        .disc = disc,
-        .low = low,
-        .on_stack = on_stack,
-        .stack = &stack,
-        .components = components,
-        .time = 0,
-        .comp_id = 0,
-        .V = V,
-        .adj = adj,
-        .err = null,
-    };
+        while (stack.items.len > 0) {
+            const frame = stack.pop().?;
+            const u = frame[0];
+            const processed = frame[1];
 
-    const thread = try std.Thread.spawn(.{ .stack_size = 4 * 1024 * 1024 }, runSccDfsOnThread, .{&ctx});
-    thread.join();
+            if (processed) {
+                try order.append(allocator, u);
+                continue;
+            }
 
-    if (ctx.err) |err| {
-        return err;
+            if (visited[u]) continue;
+            visited[u] = true;
+
+            try stack.append(allocator, .{ u, true });
+
+            // Push neighbors in reverse order so they are processed in order.
+            var idx: usize = adj[u].items.len;
+            while (idx > 0) {
+                idx -= 1;
+                const v = adj[u].items[idx];
+                if (!visited[v]) {
+                    try stack.append(allocator, .{ v, false });
+                }
+            }
+        }
     }
+
+    // Second pass: process nodes in reverse finishing order on the transposed
+    // graph to assign component IDs.
+    @memset(visited, false);
+    var comp_id: u32 = 0;
+
+    var idx: usize = order.items.len;
+    while (idx > 0) {
+        idx -= 1;
+        const u = order.items[idx];
+        if (visited[u]) continue;
+
+        var stack = try std.ArrayList(u32).initCapacity(allocator, V);
+        defer stack.deinit(allocator);
+        try stack.append(allocator, u);
+        visited[u] = true;
+        components[u] = comp_id;
+
+        while (stack.items.len > 0) {
+            const v = stack.pop().?;
+            for (radj[v].items) |w| {
+                if (!visited[w]) {
+                    visited[w] = true;
+                    components[w] = comp_id;
+                    try stack.append(allocator, w);
+                }
+            }
+        }
+
+        comp_id += 1;
+    }
+
+    for (0..V) |i| {
+        adj[i].deinit(allocator);
+        radj[i].deinit(allocator);
+    }
+    allocator.free(adj);
+    allocator.free(radj);
 
     return components;
 }
