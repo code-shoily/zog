@@ -1,8 +1,8 @@
 defmodule Zog.LibgraphTest do
   use ExUnit.Case, async: true
 
-  alias Zog.SoA
   alias Zog.ResourceGraph
+  alias Zog.SoA
 
   @moduletag :zigler
 

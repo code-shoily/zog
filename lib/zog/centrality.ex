@@ -186,7 +186,6 @@ defmodule Zog.Centrality do
     @doc """
     Calculates unweighted Betweenness Centrality for all nodes.
     """
-    @spec betweenness_unweighted(Model.t()) :: %{Model.label() => float()}
     @spec betweenness_unweighted(SoA.t()) :: %{SoA.label() => float()}
     def betweenness_unweighted(%SoA{} = builder) do
       node_count = SoA.node_count(builder)
@@ -346,7 +345,7 @@ defmodule Zog.Centrality do
           :alpha_centrality
         ] do
       def unquote(fun)(_builder, _opts \\ []) do
-        raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+        raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
       end
     end
   end

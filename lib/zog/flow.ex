@@ -251,11 +251,11 @@ defmodule Zog.Flow do
     """
 
     def max_flow(_builder, _source, _sink, _algorithm \\ :edmonds_karp) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
     def global_min_cut(_builder) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
   end
 end

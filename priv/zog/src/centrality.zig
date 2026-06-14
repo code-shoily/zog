@@ -224,6 +224,11 @@ pub fn closeness(
         @memset(scores_slice, 0.0);
 
         var spawn_count: usize = 0;
+        errdefer {
+            for (threads[0..spawn_count]) |t| {
+                t.join();
+            }
+        }
         var i: usize = 0;
         while (i < nodes.items.len) {
             const end = @min(i + chunk_size, nodes.items.len);
@@ -434,6 +439,11 @@ pub fn harmonicCentrality(
         @memset(scores_slice, 0.0);
 
         var spawn_count: usize = 0;
+        errdefer {
+            for (threads[0..spawn_count]) |t| {
+                t.join();
+            }
+        }
         var i: usize = 0;
         while (i < nodes.items.len) {
             const end = @min(i + chunk_size, nodes.items.len);

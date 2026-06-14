@@ -106,7 +106,7 @@ defmodule Zog.FlowTest do
     assert SoA.label_to_id(residual, "t") == SoA.label_to_id(builder, "t")
 
     edges = SoA.all_edges(residual)
-    assert length(edges) > 0
+    assert edges != []
 
     # raw: true
     s_id = SoA.label_to_id(builder, "s")

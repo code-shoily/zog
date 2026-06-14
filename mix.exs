@@ -52,7 +52,7 @@ defmodule Zog.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:jump_credo_checks, "~> 0.1", only: [:dev], runtime: false},
-      {:zigler, "~> 0.16.0", runtime: false, optional: true},
+      {:zigler, "~> 0.16.0", runtime: false},
       {:yog_ex, "~> 0.98"},
       {:libgraph, "~> 0.16", optional: true}
     ]
@@ -88,7 +88,7 @@ defmodule Zog.MixProject do
       groups_for_modules: [
         "Core & Entrypoints": [
           Zog,
-          Zog.Model
+          Zog.SoA
         ],
         "Native Resource": [
           Zog.ResourceGraph
@@ -96,8 +96,13 @@ defmodule Zog.MixProject do
         Algorithms: [
           Zog.Centrality,
           Zog.Community,
+          Zog.Community.Result,
+          Zog.Community.Dendrogram,
           Zog.Connectivity,
           Zog.Flow,
+          Zog.Generator,
+          Zog.IO,
+          Zog.MST,
           Zog.Metrics,
           Zog.Pathfinding,
           Zog.Property

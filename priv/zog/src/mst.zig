@@ -17,6 +17,7 @@ const UnionFind = struct {
 
     fn init(allocator: std.mem.Allocator, size: usize) !UnionFind {
         const parent = try allocator.alloc(u32, size);
+        errdefer allocator.free(parent);
         const rank = try allocator.alloc(u32, size);
         for (0..size) |i| {
             parent[i] = @intCast(i);

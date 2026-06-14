@@ -53,16 +53,16 @@ defmodule Zog.Generator do
   end
 
   defp generate_er_undirected(v, w, n, ln_p, builder) when v < n do
-    r = :rand.uniform()
-    r = if r == 1.0, do: 0.999999999, else: r
+    rand_val = :rand.uniform()
+    r = if rand_val == 1.0, do: 0.999999999, else: rand_val
     skip = trunc(:math.log(1.0 - r) / ln_p)
-    w = w + 1 + skip
+    next_w = w + 1 + skip
 
-    {v, w} = advance_er_undirected(v, w, n)
+    {next_v, next_w2} = advance_er_undirected(v, next_w, n)
 
-    if v < n do
-      builder = SoA.add_edge(builder, v, w, 1.0)
-      generate_er_undirected(v, w, n, ln_p, builder)
+    if next_v < n do
+      new_builder = SoA.add_edge(builder, next_v, next_w2, 1.0)
+      generate_er_undirected(next_v, next_w2, n, ln_p, new_builder)
     else
       builder
     end
@@ -103,17 +103,17 @@ defmodule Zog.Generator do
   end
 
   defp generate_er_directed(idx, max_idx, n, ln_p, builder) do
-    r = :rand.uniform()
-    r = if r == 1.0, do: 0.999999999, else: r
+    rand_val = :rand.uniform()
+    r = if rand_val == 1.0, do: 0.999999999, else: rand_val
     skip = trunc(:math.log(1.0 - r) / ln_p)
-    idx = idx + 1 + skip
+    next_idx = idx + 1 + skip
 
-    if idx < max_idx do
-      source = div(idx, n - 1)
-      rem = rem(idx, n - 1)
+    if next_idx < max_idx do
+      source = div(next_idx, n - 1)
+      rem = rem(next_idx, n - 1)
       target = if rem < source, do: rem, else: rem + 1
-      builder = SoA.add_edge(builder, source, target, 1.0)
-      generate_er_directed(idx, max_idx, n, ln_p, builder)
+      new_builder = SoA.add_edge(builder, source, target, 1.0)
+      generate_er_directed(next_idx, max_idx, n, ln_p, new_builder)
     else
       builder
     end
@@ -132,21 +132,18 @@ defmodule Zog.Generator do
   def barabasi_albert(n, m, opts \\ [])
       when is_integer(n) and is_integer(m) and n > m and m >= 1 do
     kind = Keyword.get(opts, :kind, :undirected)
-    builder = Zog.new(kind)
-
-    # 1. Add all nodes first
-    builder = Enum.reduce(0..(n - 1), builder, fn i, acc -> SoA.add_node(acc, i) end)
+    initial_builder = Enum.reduce(0..(n - 1), Zog.new(kind), fn i, acc -> SoA.add_node(acc, i) end)
 
     # 2. Build initial clique of size m
-    builder =
+    builder_clique =
       if m > 1 do
-        Enum.reduce(0..(m - 2), builder, fn u, acc ->
+        Enum.reduce(0..(m - 2), initial_builder, fn u, acc ->
           Enum.reduce((u + 1)..(m - 1), acc, fn v, acc2 ->
             SoA.add_edge(acc2, u, v, 1.0)
           end)
         end)
       else
-        builder
+        initial_builder
       end
 
     # Initialize deg_map containing copies of nodes proportional to their degree
@@ -160,7 +157,7 @@ defmodule Zog.Generator do
       end
 
     # 3. Add remaining nodes m .. n-1
-    generate_ba(m, n, m, deg_map, deg_size, builder)
+    generate_ba(m, n, m, deg_map, deg_size, builder_clique)
   end
 
   defp generate_ba(u, n, m, deg_map, deg_size, builder) when u < n do
@@ -215,8 +212,7 @@ defmodule Zog.Generator do
     end
 
     kind = Keyword.get(opts, :kind, :undirected)
-    builder = Zog.new(kind)
-    builder = Enum.reduce(0..(n - 1), builder, fn i, acc -> SoA.add_node(acc, i) end)
+    builder = Enum.reduce(0..(n - 1), Zog.new(kind), fn i, acc -> SoA.add_node(acc, i) end)
 
     # 1. Build initial ring lattice edges
     half_k = div(k, 2)
@@ -280,11 +276,9 @@ defmodule Zog.Generator do
   def grid_2d(rows, cols, opts \\ [])
       when is_integer(rows) and rows >= 1 and is_integer(cols) and cols >= 1 do
     kind = Keyword.get(opts, :kind, :undirected)
-    builder = Zog.new(kind)
-
     # Add all nodes first
     builder =
-      Enum.reduce(0..(rows - 1), builder, fn r, acc ->
+      Enum.reduce(0..(rows - 1), Zog.new(kind), fn r, acc ->
         Enum.reduce(0..(cols - 1), acc, fn c, acc2 ->
           SoA.add_node(acc2, {r, c})
         end)

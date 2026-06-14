@@ -440,7 +440,7 @@ defmodule Zog.ResourceGraphTest do
       end
     end
 
-    test "is_reachable" do
+    test "reachable?" do
       builder =
         Zog.directed()
         |> Zog.add_edge("A", "B", 1.0)
@@ -448,8 +448,8 @@ defmodule Zog.ResourceGraphTest do
 
       for backend <- [:soa, :hash_graph] do
         graph = ResourceGraph.new(builder, backend: backend)
-        assert ResourceGraph.is_reachable(graph, "A", "B") == true
-        assert ResourceGraph.is_reachable(graph, "A", "C") == false
+        assert ResourceGraph.reachable?(graph, "A", "B") == true
+        assert ResourceGraph.reachable?(graph, "A", "C") == false
         ResourceGraph.destroy(graph)
       end
     end

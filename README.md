@@ -18,7 +18,7 @@ It is designed to be fully standalone for lightweight native graph workloads, ye
 Traditional NIFs suffer from serialization overhead when translating complex Elixir data structures (like maps or structs) into memory representations readable by C/Zig/Rust, and vice-versa (known as the *Copy-In/Copy-Out* pattern). For small graphs, this overhead can make NIFs slower than pure Elixir.
 
 `Zog` solves this using the **`ResourceGraph`** pattern:
-1. **Load/Build Once**: Create a native memory representation of your graph via `Zog.ResourceGraph.new/1` (from a `Zog.Model`), or load it directly from disk into native memory using NIF-level file parsers (`read_edgelist/2`, `read_adjlist/2`, `read_tgf/2`).
+1. **Load/Build Once**: Create a native memory representation of your graph via `Zog.ResourceGraph.new/1` (from a `Zog.SoA`), or load it directly from disk into native memory using NIF-level file parsers (`read_edgelist/2`, `read_adjlist/2`, `read_tgf/2`).
 2. **Amortize Serialization**: The graph remains allocated inside native Zig memory as Erlang NIF resource references (`Zog.ResourceGraph.t()`).
 3. **Execute Repeatedly**: Run multiple heavy algorithms (Centrality, Leiden, Pathfinding, Min-Cut) directly on the reference.
 4. **Collect Outputs**: Only the final scalar metrics or integer arrays are returned back to Elixir.
@@ -101,7 +101,7 @@ end
 
 ### 1. Standalone Graph Building
 
-You can build graphs in Elixir using `Zog.Model`, then perform fast computations on them:
+You can build graphs in Elixir using `Zog.SoA`, then perform fast computations on them:
 
 ```elixir
 # Create a directed or undirected graph builder
@@ -146,7 +146,7 @@ Zog.ResourceGraph.destroy(large_graph)
 
 ## Bridging with Yog (`YogEx`)
 
-`Zog` is designed to play nice with `Yog`. If `Yog` is loaded in the VM, `Zog` automatically compiles conversion functions to map Elixir-based `Yog.Graph` instances to `Zog.Model` layouts and back.
+`Zog` is designed to play nice with `Yog`. If `Yog` is loaded in the VM, `Zog` automatically compiles conversion functions to map Elixir-based `Yog.Graph` instances to `Zog.SoA` layouts and back.
 
 ```elixir
 # 1. Start with an existing Yog.Graph
@@ -155,15 +155,15 @@ yog_graph =
   |> Yog.Graph.add_edge("A", "B", weight: 5.0)
 
 # 2. Bridge it to Zog
-zog_model = Zog.from_graph(yog_graph)
+zog_soa = Zog.from_graph(yog_graph)
 
 # 3. Transition to a native NIF Resource for fast execution
-res_graph = Zog.ResourceGraph.new(zog_model)
+res_graph = Zog.ResourceGraph.new(zog_soa)
 paths = Zog.ResourceGraph.floyd_warshall(res_graph)
 Zog.ResourceGraph.destroy(res_graph)
 
 # 4. Bridge back to Yog if necessary
-restored_yog_graph = Zog.to_graph(zog_model)
+restored_yog_graph = Zog.to_graph(zog_soa)
 ```
 
 ---

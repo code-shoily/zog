@@ -1789,8 +1789,8 @@ defmodule Zog.ResourceGraph do
     @doc """
     Checks if a target node is reachable from a start node using BFS traversal directly on the native graph resource.
     """
-    @spec is_reachable(t(), SoA.label(), SoA.label(), keyword()) :: boolean()
-    def is_reachable(%{resource: res, builder: builder}, start_label, goal_label, opts \\ []) do
+    @spec reachable?(t(), SoA.label(), SoA.label(), keyword()) :: boolean()
+    def reachable?(%{resource: res, builder: builder}, start_label, goal_label, opts \\ []) do
       raw = Keyword.get(opts, :raw, false)
       start_id = if raw, do: start_label, else: Map.get(builder.label_to_id, start_label)
       goal_id = if raw, do: goal_label, else: Map.get(builder.label_to_id, goal_label)
@@ -2134,23 +2134,23 @@ defmodule Zog.ResourceGraph do
     """
 
     def new(_builder) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
     def destroy(_graph) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
     def read_edgelist(_path, _opts \\ []) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
     def read_adjlist(_path, _opts \\ []) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
     def read_tgf(_path, _opts \\ []) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
     for fun <- [
@@ -2180,20 +2180,20 @@ defmodule Zog.ResourceGraph do
           :kruskal
         ] do
       def unquote(fun)(_graph, _opts \\ []) do
-        raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+        raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
       end
     end
 
     def max_flow(_graph, _source, _sink, _algorithm_or_opts \\ :edmonds_karp, _opts \\ []) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
     def global_min_cut(_graph, _opts \\ []) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
     def dijkstra(_graph, _start_label, _goal_label, _opts \\ []) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
     def astar(
@@ -2205,30 +2205,30 @@ defmodule Zog.ResourceGraph do
           _heuristic \\ :euclidean,
           _opts \\ []
         ) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
-    def is_reachable(_graph, _start_label, _goal_label, _opts \\ []) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+    def reachable?(_graph, _start_label, _goal_label, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
     if Code.ensure_loaded?(Yog) do
       def from_yog(_yog_graph) do
-        raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+        raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
       end
 
       def to_yog(_graph) do
-        raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+        raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
       end
     end
 
     if Code.ensure_loaded?(Graph) do
       def from_libgraph(_libgraph) do
-        raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+        raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
       end
 
       def to_libgraph(_graph) do
-        raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+        raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
       end
     end
   end

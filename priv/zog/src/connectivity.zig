@@ -205,7 +205,7 @@ pub fn analyzeConnectivity(allocator: std.mem.Allocator, graph: anytype) !Connec
         };
     }
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+    var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const temp_allocator = arena.allocator();
 
@@ -331,9 +331,6 @@ test "analyzeConnectivity: cycle graph and tail" {
 
     const res = try analyzeConnectivity(allocator, g);
     defer {
-        for (res.bridges) |b| {
-            allocator.free(b);
-        }
         allocator.free(res.bridges);
         allocator.free(res.articulation_points);
     }

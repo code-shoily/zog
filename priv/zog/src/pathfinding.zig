@@ -406,7 +406,7 @@ pub fn singleSourceShortestPathCounts(
                 var list = std.ArrayList(NodeId).empty;
                 try list.append(allocator, v);
                 try pred.put(w, list);
-                try pq.add(.{ .d = new_dist, .node = w });
+                try pq.push(allocator, .{ .d = new_dist, .node = w });
             }
         }
     }
@@ -879,7 +879,7 @@ pub fn floydWarshallGeneric(
             const chunk_size = (n + cpu_count - 1) / cpu_count;
             var spawned: usize = 0;
             errdefer {
-                for (0..spawned) |s| threads[s].detach();
+                for (0..spawned) |s| threads[s].join();
             }
 
             for (0..cpu_count - 1) |t| {
@@ -1156,7 +1156,7 @@ pub fn johnsonsGeneric(
 
         var spawned: usize = 0;
         errdefer {
-            for (0..spawned) |s| threads[s].detach();
+            for (0..spawned) |s| threads[s].join();
         }
         for (0..j_cpu_count - 1) |t| {
             threads[t] = try std.Thread.spawn(.{}, ParallelDijkstraCtx.run, .{contexts[t]});

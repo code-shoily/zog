@@ -233,7 +233,9 @@ pub fn ArrayGraph(comptime NodeData: type, comptime EdgeData: type) type {
             var count: usize = 0;
             var current = self.nodes.items(.first_edge)[id];
             while (current) |edge_idx| {
-                count += 1;
+                if (!self.edges.items(.is_deleted)[edge_idx]) {
+                    count += 1;
+                }
                 current = self.edges.items(.next_edge)[edge_idx];
             }
             return count;
@@ -249,6 +251,7 @@ pub fn ArrayGraph(comptime NodeData: type, comptime EdgeData: type) type {
                 _ = try new_graph.addNode(self.nodes.items(.data)[id]);
                 if (self.nodes.items(.is_deleted)[id]) {
                     new_graph.nodes.items(.is_deleted)[id] = true;
+                    new_graph.live_nodes -= 1;
                 }
             }
 

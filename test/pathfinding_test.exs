@@ -251,14 +251,14 @@ defmodule Zog.PathfindingTest do
     end
   end
 
-  describe "is_reachable/3" do
+  describe "reachable?/3" do
     test "reachable node" do
       builder =
         Zog.directed()
         |> Zog.add_edge("A", "B", 1.0)
         |> Zog.add_edge("B", "C", 1.0)
 
-      assert Pathfinding.is_reachable(builder, "A", "C") == true
+      assert Pathfinding.reachable?(builder, "A", "C") == true
     end
 
     test "unreachable node" do
@@ -267,17 +267,17 @@ defmodule Zog.PathfindingTest do
         |> Zog.add_edge("A", "B", 1.0)
         |> Zog.add_node("C")
 
-      assert Pathfinding.is_reachable(builder, "A", "C") == false
+      assert Pathfinding.reachable?(builder, "A", "C") == false
     end
 
     test "start equals goal" do
       builder = Zog.directed() |> Zog.add_node("A")
-      assert Pathfinding.is_reachable(builder, "A", "A") == true
+      assert Pathfinding.reachable?(builder, "A", "A") == true
     end
 
     test "non-existent node" do
       builder = Zog.directed() |> Zog.add_node("A")
-      assert Pathfinding.is_reachable(builder, "A", "B") == false
+      assert Pathfinding.reachable?(builder, "A", "B") == false
     end
   end
 end

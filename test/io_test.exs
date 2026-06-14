@@ -9,7 +9,7 @@ defmodule Zog.IOTest do
 
   describe "Zog.IO" do
     test "loads wiki_vote.txt edgelist directly" do
-      res = ZogIO.load("/home/mafinar/Downloads/graphs/wiki_vote.txt", directed: true)
+      res = ZogIO.load(Path.expand("fixtures/wiki_vote.txt", __DIR__), directed: true)
 
       try do
         # wiki_vote has 7115 nodes

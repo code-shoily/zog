@@ -360,20 +360,11 @@ pub fn dsatur(allocator: std.mem.Allocator, graph: anytype) ![]u32 {
 
     return colors;
 }
-const timespec = extern struct {
-    tv_sec: isize,
-    tv_nsec: isize,
-};
-extern fn clock_gettime(clk_id: c_int, tp: *timespec) c_int;
-
 fn milliTimestamp() i64 {
-    if (@import("builtin").os.tag == .windows) {
-        return 0;
-    } else {
-        var ts: timespec = .{ .tv_sec = 0, .tv_nsec = 0 };
-        _ = clock_gettime(1, &ts); // Use CLOCK_MONOTONIC (1)
-        return @as(i64, @intCast(ts.tv_sec)) * 1000 + @as(i64, @intCast(@divTrunc(ts.tv_nsec, 1_000_000)));
-    }
+    var threaded = std.Io.Threaded.init_single_threaded;
+    const io_ctx = threaded.io();
+    const ts = std.Io.Clock.real.now(io_ctx);
+    return ts.toMilliseconds();
 }
 
 const ExactColoringState = struct {

@@ -365,8 +365,8 @@ defmodule Zog.Pathfinding do
     @doc """
     Checks if a target node is reachable from a start node using BFS traversal.
     """
-    @spec is_reachable(SoA.t(), SoA.label(), SoA.label()) :: boolean()
-    def is_reachable(%SoA{} = builder, start_label, goal_label) do
+    @spec reachable?(SoA.t(), SoA.label(), SoA.label()) :: boolean()
+    def reachable?(%SoA{} = builder, start_label, goal_label) do
       start_id = Map.get(builder.label_to_id, start_label)
       goal_id = Map.get(builder.label_to_id, goal_label)
 
@@ -391,24 +391,24 @@ defmodule Zog.Pathfinding do
 
     for fun <- [:floyd_warshall, :johnsons] do
       def unquote(fun)(_builder) do
-        raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+        raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
       end
     end
 
     def dijkstra(_builder, _start_label, _goal_label) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
     def bellman_ford(_builder, _start_label, _goal_label) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
     def astar(_builder, _start_label, _goal_label, _x_coords, _y_coords, _heuristic \\ :euclidean) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
-    def is_reachable(_builder, _start_label, _goal_label) do
-      raise "zigler is not installed. Add {:zigler, \"~> 0.15.2\", runtime: false} to your deps and run mix deps.get."
+    def reachable?(_builder, _start_label, _goal_label) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
   end
 end
