@@ -438,3 +438,147 @@ test "averagePathLength on disconnected graph returns null" {
     const apl = try averagePathLengthF64(allocator, g);
     try std.testing.expect(apl == null);
 }
+
+pub const AnfResult = struct {
+    neighborhood_sizes: []f64,
+    effective_diameter: f64,
+};
+
+fn hash(node_id: u32, register_idx: usize) u32 {
+    var x = node_id ^ @as(u32, @intCast(register_idx));
+    x = (x ^ (x >> 16)) *% 0x45d9f3b;
+    x = (x ^ (x >> 16)) *% 0x45d9f3b;
+    x = x ^ (x >> 16);
+    if (x == 0) return 1;
+    return x;
+}
+
+pub fn anf(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    max_steps: usize,
+    m: usize,
+) !AnfResult {
+    const V = graph.nodeCount();
+    if (V == 0) {
+        return AnfResult{
+            .neighborhood_sizes = try allocator.alloc(f64, 0),
+            .effective_diameter = 0.0,
+        };
+    }
+
+    const current = try allocator.alloc(u32, V * m);
+    defer allocator.free(current);
+    const next = try allocator.alloc(u32, V * m);
+    defer allocator.free(next);
+
+    // Initialize registers
+    for (0..V) |u| {
+        for (0..m) |i| {
+            const h_val = hash(@intCast(u), i);
+            const r = @min(@ctz(h_val), 31);
+            current[u * m + i] = @as(u32, 1) << @intCast(r);
+        }
+    }
+
+    var neighborhood_sizes = std.ArrayList(f64).empty;
+    defer neighborhood_sizes.deinit(allocator);
+
+    // Initial step 0 total
+    var init_total: f64 = 0.0;
+    for (0..V) |u| {
+        var sum_b: f64 = 0;
+        for (0..m) |i| {
+            sum_b += @as(f64, @floatFromInt(@ctz(~current[u * m + i])));
+        }
+        init_total += @exp2(sum_b / @as(f64, @floatFromInt(m))) / 0.77351;
+    }
+    try neighborhood_sizes.append(allocator, init_total);
+
+    var step: usize = 1;
+    while (step <= max_steps) : (step += 1) {
+        @memcpy(next, current);
+        var changed = false;
+
+        for (0..V) |u| {
+            var succ_it = graph.successors(@intCast(u));
+            while (succ_it.next()) |edge| {
+                const v = edge.to;
+                if (u == v) continue;
+                for (0..m) |i| {
+                    const old_val = next[u * m + i];
+                    const new_val = old_val | current[v * m + i];
+                    if (new_val != old_val) {
+                        next[u * m + i] = new_val;
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        if (!changed) {
+            break;
+        }
+
+        @memcpy(current, next);
+
+        var total: f64 = 0.0;
+        for (0..V) |u| {
+            var sum_b: f64 = 0;
+            for (0..m) |i| {
+                sum_b += @as(f64, @floatFromInt(@ctz(~current[u * m + i])));
+            }
+            total += @exp2(sum_b / @as(f64, @floatFromInt(m))) / 0.77351;
+        }
+        try neighborhood_sizes.append(allocator, total);
+    }
+
+    const n_inf = neighborhood_sizes.items[neighborhood_sizes.items.len - 1];
+    const target = 0.9 * n_inf;
+    var effective_diameter: f64 = 0.0;
+    
+    for (0..neighborhood_sizes.items.len) |t| {
+        if (neighborhood_sizes.items[t] >= target) {
+            if (t == 0) {
+                effective_diameter = 0.0;
+            } else {
+                const prev = neighborhood_sizes.items[t - 1];
+                const curr = neighborhood_sizes.items[t];
+                if (curr > prev) {
+                    effective_diameter = @as(f64, @floatFromInt(t - 1)) + (target - prev) / (curr - prev);
+                } else {
+                    effective_diameter = @as(f64, @floatFromInt(t));
+                }
+            }
+            break;
+        }
+    }
+
+    const ns_slice = try neighborhood_sizes.toOwnedSlice(allocator);
+
+    return AnfResult{
+        .neighborhood_sizes = ns_slice,
+        .effective_diameter = effective_diameter,
+    };
+}
+
+test "anf: simple path" {
+    const allocator = std.testing.allocator;
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+    var g = AG(void, f64).init(allocator);
+    defer g.deinit();
+
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+
+    // 0 -> 1 -> 2
+    _ = try g.addEdge(0, 1, 1.0);
+    _ = try g.addEdge(1, 2, 1.0);
+
+    const res = try anf(allocator, g, 10, 32);
+    defer allocator.free(res.neighborhood_sizes);
+
+    try std.testing.expect(res.neighborhood_sizes.len > 0);
+    try std.testing.expect(res.effective_diameter >= 0.0);
+}

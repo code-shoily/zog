@@ -164,4 +164,31 @@ defmodule Zog.MetricsTest do
       assert r <= 0.0
     end
   end
+
+  describe "anf/2" do
+    test "returns neighborhood sizes and effective diameter" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+
+      assert {:ok, %{neighborhood_sizes: sizes, effective_diameter: eff_diam}} =
+               Metrics.anf(builder, max_steps: 10, m: 32)
+
+      assert is_list(sizes)
+      assert length(sizes) > 0
+      assert is_float(eff_diam)
+      assert eff_diam >= 0.0
+
+      res_graph = Zog.ResourceGraph.new(builder)
+
+      assert {:ok, %{neighborhood_sizes: rg_sizes, effective_diameter: rg_eff_diam}} =
+               Zog.ResourceGraph.anf(res_graph, max_steps: 10, m: 32)
+
+      assert is_list(rg_sizes)
+      assert length(rg_sizes) == length(sizes)
+      assert is_float(rg_eff_diam)
+      Zog.ResourceGraph.destroy(res_graph)
+    end
+  end
 end

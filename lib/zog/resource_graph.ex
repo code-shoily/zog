@@ -67,6 +67,7 @@ defmodule Zog.ResourceGraph do
         nif_average_clustering_coefficient: [concurrency: :dirty_cpu],
         nif_local_clustering_coefficient: [concurrency: :dirty_cpu],
         nif_assortativity: [concurrency: :dirty_cpu],
+        nif_anf: [concurrency: :dirty_cpu],
         nif_core_numbers: [concurrency: :dirty_cpu],
         nif_analyze_connectivity: [concurrency: :dirty_cpu],
         nif_strongly_connected_components: [concurrency: :dirty_cpu],
@@ -546,6 +547,19 @@ defmodule Zog.ResourceGraph do
             .soa => |g| try zog.metrics.assortativity(allocator, g),
             .hash_graph => |g| try zog.metrics.assortativity(allocator, g),
         };
+    }
+
+    pub fn nif_anf(res: GraphRes, max_steps: usize, m: usize) !beam.term {
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.metrics.anf(allocator, g, max_steps, m),
+            .hash_graph => |g| try zog.metrics.anf(allocator, g, max_steps, m),
+        };
+        errdefer allocator.free(result.neighborhood_sizes);
+
+        const term = beam.make(.{.ok, result.neighborhood_sizes, result.effective_diameter}, .{});
+        allocator.free(result.neighborhood_sizes);
+        return term;
     }
 
     pub fn nif_core_numbers(res: GraphRes) ![]u32 {
@@ -1867,6 +1881,35 @@ defmodule Zog.ResourceGraph do
     end
 
     @doc """
+    Computes the Approximate Neighborhood Function (ANF) and effective diameter.
+    Returns `{:ok, %{neighborhood_sizes: [float()], effective_diameter: float()}}` or `{:error, any()}`.
+
+    ## Options
+
+      * `:max_steps` - Maximum number of steps to traverse (defaults to `30`).
+      * `:m` - Number of registers (trials) per node (defaults to `64`).
+    """
+    @spec anf(t(), keyword()) ::
+            {:ok, %{neighborhood_sizes: [float()], effective_diameter: float()}}
+            | {:error, any()}
+    def anf(%{resource: res}, opts \\ []) do
+      max_steps = Keyword.get(opts, :max_steps, 30)
+      m = Keyword.get(opts, :m, 64)
+
+      case nif_anf(res, max_steps, m) do
+        {:ok, neighborhood_sizes, effective_diameter} ->
+          {:ok,
+           %{
+             neighborhood_sizes: neighborhood_sizes,
+             effective_diameter: effective_diameter
+           }}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+
+    @doc """
     Calculates all core numbers for all nodes in the ResourceGraph.
 
     ## Options
@@ -2207,6 +2250,7 @@ defmodule Zog.ResourceGraph do
           :average_clustering_coefficient,
           :local_clustering_coefficient,
           :assortativity,
+          :anf,
           :core_numbers,
           :strongly_connected_components,
           :weakly_connected_components,

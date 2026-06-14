@@ -13,7 +13,8 @@ defmodule Zog.Metrics do
         triangle_count: [concurrency: :dirty_cpu],
         average_clustering_coefficient: [concurrency: :dirty_cpu],
         local_clustering_coefficient: [concurrency: :dirty_cpu],
-        assortativity: [concurrency: :dirty_cpu]
+        assortativity: [concurrency: :dirty_cpu],
+        nif_anf: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -83,6 +84,18 @@ defmodule Zog.Metrics do
 
         return try zog.metrics.assortativity(beam.allocator, g);
     }
+
+    pub fn nif_anf(node_count: usize, from: []u32, to: []u32, weight: []f64, max_steps: usize, m: usize) !beam.term {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        const res = try zog.metrics.anf(beam.allocator, g, max_steps, m);
+        errdefer beam.allocator.free(res.neighborhood_sizes);
+
+        const term = beam.make(.{.ok, res.neighborhood_sizes, res.effective_diameter}, .{});
+        beam.allocator.free(res.neighborhood_sizes);
+        return term;
+    }
     """
 
     @doc """
@@ -142,6 +155,37 @@ defmodule Zog.Metrics do
       |> Enum.zip(scores)
       |> Map.new()
     end
+
+    @doc """
+    Computes the Approximate Neighborhood Function (ANF) and effective diameter.
+    Returns `{:ok, %{neighborhood_sizes: [float()], effective_diameter: float()}}` or `{:error, any()}`.
+
+    ## Options
+
+      * `:max_steps` - Maximum number of steps to traverse (defaults to `30`).
+      * `:m` - Number of registers (trials) per node (defaults to `64`).
+    """
+    @spec anf(SoA.t(), keyword()) ::
+            {:ok, %{neighborhood_sizes: [float()], effective_diameter: float()}}
+            | {:error, any()}
+    def anf(%SoA{} = builder, opts \\ []) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
+      max_steps = Keyword.get(opts, :max_steps, 30)
+      m = Keyword.get(opts, :m, 64)
+
+      case nif_anf(node_count, from, to, weights, max_steps, m) do
+        {:ok, neighborhood_sizes, effective_diameter} ->
+          {:ok,
+           %{
+             neighborhood_sizes: neighborhood_sizes,
+             effective_diameter: effective_diameter
+           }}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
   else
     @moduledoc """
     Native graph metrics backed by Zog (Zig) via Zigler.
@@ -159,6 +203,10 @@ defmodule Zog.Metrics do
       def unquote(fun)(_builder) do
         raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
       end
+    end
+
+    def anf(_builder, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
   end
 end

@@ -69,7 +69,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Tarjan's SCC** | `Yog.Connectivity` | Strongly connected components | ✅ **Implemented** | Native Zig via `Zog.Connectivity.strongly_connected_components/1`. |
 | **Kosaraju's SCC** | `Yog.Connectivity` | Strongly connected components (two-pass) | ❌ **Missing** | *Deliberately Omitted* — Tarjan's SCC is faster and already implemented. |
 | **Connected Components** | `Yog.Connectivity` | Undirected connected components | ❌ **Missing** | *Deliberately Omitted* — can be resolved via SCC on undirected graphs. |
-| **Weakly Connected Components** | `Yog.Connectivity.Components` | Directed components ignoring direction | ❌ **Missing** | *Deferred* — low priority. |
+| **Weakly Connected Components** | `Yog.Connectivity.Components` | Directed components ignoring direction | ✅ **Implemented** | Native Zig via `Zog.Connectivity.weakly_connected_components/1` and `Zog.ResourceGraph.weakly_connected_components/2`. |
 | **Tarjan's Bridges** | `Yog.Connectivity.Analysis` | Bridge edges | ✅ **Implemented** | Native Zig via `Zog.Connectivity.analyze/1`. |
 | **Tarjan's Articulation** | `Yog.Connectivity.Analysis` | Articulation points | ✅ **Implemented** | Native Zig via `Zog.Connectivity.analyze/1`. |
 | **K-Core** | `Yog.Connectivity.KCore` | Core decomposition | ✅ **Implemented** | Native Zig via `Zog.Connectivity.core_numbers/1` and `Zog.Connectivity.detect/2`. |
@@ -258,6 +258,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Radius** | `Yog.Health` | Minimum eccentricity | ❌ **Missing** | *WIP/Roadmap* — planned for a future metrics update. |
 | **Eccentricity** | `Yog.Health` | Max distance from node | ❌ **Missing** | *WIP/Roadmap* — planned for a future metrics update. |
 | **Assortativity** | `Yog.Health` | Degree correlation | ✅ **Implemented** | Native Zig via `Zog.Metrics.assortativity/1`. |
+| **ANF & Effective Diameter** | *N/A (Zog exclusive)* | Approximate Neighborhood Function and 90% effective diameter | ✅ **Implemented** | Native Zig via `Zog.Metrics.anf/2` and `Zog.ResourceGraph.anf/2`. |
 | **APL** | `Yog.Health` | Average path length | ❌ **Missing** | *WIP/Roadmap* — planned for a future metrics update. |
 | **Global Efficiency** | `Yog.Health` | Inverse mean distance | ❌ **Missing** | *Deferred* — low priority. |
 | **Local Efficiency** | `Yog.Health` | Neighborhood efficiency | ❌ **Missing** | *Deferred* — low priority. |
