@@ -132,7 +132,9 @@ defmodule Zog.Generator do
   def barabasi_albert(n, m, opts \\ [])
       when is_integer(n) and is_integer(m) and n > m and m >= 1 do
     kind = Keyword.get(opts, :kind, :undirected)
-    initial_builder = Enum.reduce(0..(n - 1), Zog.new(kind), fn i, acc -> SoA.add_node(acc, i) end)
+
+    initial_builder =
+      Enum.reduce(0..(n - 1), Zog.new(kind), fn i, acc -> SoA.add_node(acc, i) end)
 
     # 2. Build initial clique of size m
     builder_clique =
