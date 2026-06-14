@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `weakly_connected_components/1` to `Zog.Connectivity` and `weakly_connected_components/2` to `Zog.ResourceGraph`.
 - Added `anf/2` (Approximate Neighborhood Function) to `Zog.Metrics` and `Zog.ResourceGraph` to compute neighborhood sizes and estimate the 90-percentile effective diameter.
 - Added `kino` as an optional dependency to support future integration.
+- Added `bipartite_check/1` and `bipartite_partition/1` to `Zog.Connectivity` for native 2-colorability testing and bipartite partition extraction.
+- Added `bipartite_check/2` and `bipartite_partition/2` to `Zog.ResourceGraph` for the same operations on native resource-backed graphs.
 - Added `subgraph/2` to `Zog.Transform` (delegated via `Zog.subgraph/2`) and `subgraph/3` to `Zog.ResourceGraph` (with native Zig NIF backing) for induced subgraph extraction.
   - Accepts both list and `MapSet` inputs for node labels.
   - Both `SoA` builder and `ResourceGraph` paths are covered with unit tests.

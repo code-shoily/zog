@@ -3,25 +3,22 @@
 Roadmap and release planning for Zog's native Elixir/Zig graph algorithms.
 
 ## Current Status (v0.3.0)
-Zog v0.3.0 implements high-performance native implementations of core graph algorithms including Pathfinding (Dijkstra, A*, Bellman-Ford, Floyd-Warshall, Johnson's), Flow (Edmonds-Karp, Push-Relabel, Stoer-Wagner), MST (Kruskal's), Connectivity (Tarjan's SCC, Bridges, Articulation, K-core, Weakly Connected Components), Centrality (PageRank, Betweenness, Closeness, Harmonic, Eigenvector, Katz, Alpha), Community Detection (Louvain, Leiden, Label Propagation), general Metrics (Density, Triangles, Assortativity, Clustering Coefficient, Approximate Neighborhood Function / Effective Diameter), and **Graph Transformations (Subgraph Extraction)**.
+Zog v0.3.0 implements high-performance native implementations of core graph algorithms including Pathfinding (Dijkstra, A*, Bellman-Ford, Floyd-Warshall, Johnson's), Flow (Edmonds-Karp, Push-Relabel, Stoer-Wagner), MST (Kruskal's), Connectivity (Tarjan's SCC, Bridges, Articulation, K-core, Weakly Connected Components, **Bipartite Check / Partition**), Centrality (PageRank, Betweenness, Closeness, Harmonic, Eigenvector, Katz, Alpha), Community Detection (Louvain, Leiden, Label Propagation), general Metrics (Density, Triangles, Assortativity, Clustering Coefficient, Approximate Neighborhood Function / Effective Diameter), and **Graph Transformations (Subgraph Extraction)**.
 
 ---
 
 ## Release Milestones
 
-### ✅ v0.3.0: Matching & Graph Manipulation *(released 2026-06-14)*
-Focuses on bipartite/general matchings and subgraph extraction.
+### 📅 v0.3.0: Bipartite Properties, Ego Graphs & Graph Manipulation
+Focuses on bipartite property detection, ego-graph extraction, and subgraph manipulation.
 
-- **Matching Algorithms** *(deferred to next cycle)*
-  - [ ] Hopcroft-Karp (Maximum Bipartite Matching)
-  - [ ] Hungarian Algorithm (Weighted Bipartite Matching)
-  - [ ] Blossom Algorithm (Maximum Matching in General Graphs)
-- **Graph Properties** *(deferred to next cycle)*
-  - [ ] Bipartite Check (2-colorability verification)
-  - [ ] Bipartite Partition (Color assignment)
-  - [ ] Maximum Bipartite Matching
-- **Transformations**
+- **Bipartite**
+  - [x] Bipartite Check (2-colorability verification)
+  - [x] Bipartite Partition (Color assignment)
+- **Transformations & Operations**
   - [x] Subgraph extraction (Induced subgraphs by node IDs)
+  - [ ] Ego Graph (Neighborhood-induced subgraph around a node)
+  - [ ] Node/Edge filter predicates (Graph filtering by predicate functions)
 
 ---
 
@@ -59,10 +56,11 @@ These features are not scheduled for immediate releases and will be implemented 
 
 - **Pathfinding**: Bidirectional Dijkstra, Bidirectional BFS, Yen's K-Shortest, Widest Path, All-Pairs Unweighted.
 - **Network Flow**: Successive Shortest Path (Min-cost max-flow).
+- **Matching**: Hopcroft-Karp (Maximum Bipartite Matching), Hungarian Algorithm (Weighted Bipartite Matching), Blossom Algorithm (Maximum Matching in General Graphs).
 - **Spanning Tree**: Minimum Spanning Arborescence (Edmonds' Directed MST).
-- **Connectivity**: Reachability Exact. (Weakly Connected Components has been implemented in v0.3.0)
+- **Connectivity**: Reachability Exact. (Weakly Connected Components and Bipartite Check/Partition have been implemented in v0.3.0)
 - **Centrality & Metrics**: HITS (Hubs and Authorities), Transitivity.
 - **Community Detection**: Walktrap, Infomap, Clique Percolation, Fluid Communities, Local Community.
-- **Transformations & Operations**: Ego Graph, Transitive Closure/Reduction, Contract, node/edge filter predicates.
+- **Transformations & Operations**: Transitive Closure/Reduction, Contract.
 - **Graph Properties**: Complete Graph detection, Tree/Forest/Branching checks, Isomorphism, Graph Hash.
 - **Generators**: GNM random generator, Stochastic Block Models (SBM, DCSBM, HSBM), Random Regular, Geometric/Waxman generators.
