@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replaced the recursive Tarjan SCC implementation with a highly optimized iterative Tarjan implementation, eliminating stack-overflow risk on deep graphs and achieving up to 8-9x speedup over pure Elixir while preserving the same public API and component groupings.
 - Optimized `averageClusteringCoefficient` on native resource graphs using a degree-ordered forward-triangle based algorithm, achieving optimal O(E^1.5) complexity and avoiding redundant O(sum d(u)^2) neighborhood scans.
+- Optimized native graph `triangle_count` and `average_clustering_coefficient` CSR builders to perform direct SoA/flat slice lookups for `ArrayGraph` and direct list fetches for `GraphMap`, avoiding hot successors iterator allocation and `.next()` function call overhead. Halved the cache footprint for clustering coefficient by storing `triangles_per_node` using `u32` instead of `usize`.
+- Optimized `nif_subgraph` and `nif_node_degrees` to use direct SoA/adjacency slice lookups instead of allocating successors iterators, achieving up to 4x speedups on large-scale subgraph extraction.
+- Optimized undirected edge loading in `nif_read_edgelist` by replacing the `std.AutoHashMap` based edge deduplication with an in-place sort and single contiguous scan, reducing load times for the 69M edge LiveJournal graph from 115s to under 12s.
 
 ### Fixed
 
