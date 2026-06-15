@@ -42,5 +42,8 @@ jobs:
       - name: Compile (Warnings as Errors)
         run: mix compile --warnings-as-errors
 
-      - name: Run Tests
+      - name: Run Elixir Tests
         run: mix test
+
+      - name: Run Zig Tests
+        run: zig test priv/zog/src/root.zig
