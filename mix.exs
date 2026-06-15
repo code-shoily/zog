@@ -1,7 +1,7 @@
 defmodule Zog.MixProject do
   use Mix.Project
 
-  @version "0.3.0-dev"
+  @version "0.3.0"
   @source_url "https://github.com/code-shoily/zog"
 
   def project do
