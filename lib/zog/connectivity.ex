@@ -7,6 +7,7 @@ defmodule Zog.Connectivity do
   if Code.ensure_loaded?(Zig) do
     use Zig,
       otp_app: :zog,
+      optimize: {:env, if(Mix.env() == :prod, do: :fast, else: :debug)},
       extra_modules: [zog: {"../../priv/zog/src/root.zig", []}],
       nifs: [
         nif_core_numbers: [concurrency: :dirty_cpu],

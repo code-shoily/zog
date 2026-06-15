@@ -144,6 +144,135 @@ pub fn MetricWorkspace(comptime NodeId: type) type {
 /// back to sorting + HashMap rank lookups.
 ///
 /// **Time Complexity:** O(E^1.5) for real-world graphs; O(V × k²) worst case.
+fn buildCSR(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    nodes: []const utils.NodeId(@TypeOf(graph)),
+    max_id: utils.NodeId(@TypeOf(graph)),
+) !struct {
+    degree_slice: []usize,
+    offsets: []usize,
+    neighbors: []utils.NodeId(@TypeOf(graph)),
+} {
+    const NodeId = utils.NodeId(@TypeOf(graph));
+    const GraphType = @TypeOf(graph);
+
+    const degree_slice = try allocator.alloc(usize, @as(usize, max_id) + 1);
+    errdefer allocator.free(degree_slice);
+    @memset(degree_slice, 0);
+
+    const offsets = try allocator.alloc(usize, @as(usize, max_id) + 2);
+    errdefer allocator.free(offsets);
+    @memset(offsets, 0);
+
+    // Phase 1: Count degrees
+    if (comptime @hasField(GraphType, "nodes") and @hasField(GraphType, "edges")) {
+        // High-performance direct SoA path (ArrayGraph)
+        const first_edges = graph.nodes.items(.first_edge);
+        const to_slice = graph.edges.items(.to);
+        const next_edge_slice = graph.edges.items(.next_edge);
+        const edge_is_deleted = graph.edges.items(.is_deleted);
+        const node_is_deleted = graph.nodes.items(.is_deleted);
+
+        for (nodes) |node| {
+            var deg: usize = 0;
+            var edge_idx = first_edges[@as(usize, node)];
+            while (edge_idx) |idx| {
+                const dest = to_slice[idx];
+                if (!edge_is_deleted[idx] and !node_is_deleted[dest]) {
+                    deg += 1;
+                }
+                edge_idx = next_edge_slice[idx];
+            }
+            degree_slice[@as(usize, node)] = deg;
+            offsets[@as(usize, node) + 1] = deg;
+        }
+    } else if (comptime @hasField(GraphType, "out_edges")) {
+        // High-performance GraphMap path
+        for (nodes) |node| {
+            var deg: usize = 0;
+            if (graph.out_edges.get(node)) |list| {
+                deg = list.items.len;
+            }
+            degree_slice[@as(usize, node)] = deg;
+            offsets[@as(usize, node) + 1] = deg;
+        }
+    } else {
+        // Fallback generic iterator path
+        for (nodes) |node| {
+            var deg: usize = 0;
+            var sit = graph.successors(node);
+            while (sit.next()) |_| deg += 1;
+            degree_slice[@as(usize, node)] = deg;
+            offsets[@as(usize, node) + 1] = deg;
+        }
+    }
+
+    for (1..offsets.len) |i| {
+        offsets[i] += offsets[i - 1];
+    }
+
+    const total_edges = offsets[offsets.len - 1];
+    const neighbors = try allocator.alloc(NodeId, total_edges);
+    errdefer allocator.free(neighbors);
+
+    const current_offsets = try allocator.alloc(usize, @as(usize, max_id) + 1);
+    defer allocator.free(current_offsets);
+    @memcpy(current_offsets, offsets[0..current_offsets.len]);
+
+    // Phase 2: Fill neighbors
+    if (comptime @hasField(GraphType, "nodes") and @hasField(GraphType, "edges")) {
+        const first_edges = graph.nodes.items(.first_edge);
+        const to_slice = graph.edges.items(.to);
+        const next_edge_slice = graph.edges.items(.next_edge);
+        const edge_is_deleted = graph.edges.items(.is_deleted);
+        const node_is_deleted = graph.nodes.items(.is_deleted);
+
+        for (nodes) |u| {
+            var edge_idx = first_edges[@as(usize, u)];
+            while (edge_idx) |idx| {
+                const v = to_slice[idx];
+                if (!edge_is_deleted[idx] and !node_is_deleted[v]) {
+                    const offset_idx = @as(usize, u);
+                    const insert_pos = current_offsets[offset_idx];
+                    neighbors[insert_pos] = v;
+                    current_offsets[offset_idx] += 1;
+                }
+                edge_idx = next_edge_slice[idx];
+            }
+        }
+    } else if (comptime @hasField(GraphType, "out_edges")) {
+        for (nodes) |u| {
+            if (graph.out_edges.get(u)) |list| {
+                for (list.items) |edge| {
+                    const v = edge.to;
+                    const offset_idx = @as(usize, u);
+                    const insert_pos = current_offsets[offset_idx];
+                    neighbors[insert_pos] = v;
+                    current_offsets[offset_idx] += 1;
+                }
+            }
+        }
+    } else {
+        for (nodes) |u| {
+            var sit = graph.successors(u);
+            while (sit.next()) |edge| {
+                const v = edge.to;
+                const offset_idx = @as(usize, u);
+                const insert_pos = current_offsets[offset_idx];
+                neighbors[insert_pos] = v;
+                current_offsets[offset_idx] += 1;
+            }
+        }
+    }
+
+    return .{
+        .degree_slice = degree_slice,
+        .offsets = offsets,
+        .neighbors = neighbors,
+    };
+}
+
 pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
     const NodeId = utils.NodeId(@TypeOf(graph));
     const node_id_is_unsigned = switch (@typeInfo(NodeId)) {
@@ -164,16 +293,13 @@ pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
             if (node > max_id) max_id = node;
         }
 
-        const degree_slice = try allocator.alloc(usize, @as(usize, max_id) + 1);
+        const csr = try buildCSR(allocator, graph, nodes.items, max_id);
+        const degree_slice = csr.degree_slice;
         defer allocator.free(degree_slice);
-        @memset(degree_slice, 0);
-
-        for (nodes.items) |node| {
-            var deg: usize = 0;
-            var sit = graph.successors(node);
-            while (sit.next()) |_| deg += 1;
-            degree_slice[@as(usize, node)] = deg;
-        }
+        const offsets = csr.offsets;
+        defer allocator.free(offsets);
+        const neighbors = csr.neighbors;
+        defer allocator.free(neighbors);
 
         const in_neighbors = try allocator.alloc(bool, @as(usize, max_id) + 1);
         defer allocator.free(in_neighbors);
@@ -182,11 +308,11 @@ pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
         var count: usize = 0;
         for (nodes.items) |u| {
             const du = degree_slice[@as(usize, u)];
+            const u_start = offsets[@as(usize, u)];
+            const u_end = offsets[@as(usize, u) + 1];
 
             // Build forward neighbor set.
-            var sit = graph.successors(u);
-            while (sit.next()) |edge| {
-                const v = edge.to;
+            for (neighbors[u_start..u_end]) |v| {
                 const dv = degree_slice[@as(usize, v)];
                 if (du < dv or (du == dv and u < v)) {
                     in_neighbors[@as(usize, v)] = true;
@@ -194,15 +320,13 @@ pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
             }
 
             // Check triangles through forward edges.
-            var sit2 = graph.successors(u);
-            while (sit2.next()) |edge| {
-                const v = edge.to;
+            for (neighbors[u_start..u_end]) |v| {
                 const dv = degree_slice[@as(usize, v)];
                 if (!(du < dv or (du == dv and u < v))) continue;
 
-                var v_sit = graph.successors(v);
-                while (v_sit.next()) |v_edge| {
-                    const w = v_edge.to;
+                const v_start = offsets[@as(usize, v)];
+                const v_end = offsets[@as(usize, v) + 1];
+                for (neighbors[v_start..v_end]) |w| {
                     const dw = degree_slice[@as(usize, w)];
                     if (!(dv < dw or (dv == dw and v < w))) continue;
 
@@ -213,9 +337,7 @@ pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
             }
 
             // Reset neighbors for next node.
-            var reset_sit = graph.successors(u);
-            while (reset_sit.next()) |edge| {
-                const v = edge.to;
+            for (neighbors[u_start..u_end]) |v| {
                 in_neighbors[@as(usize, v)] = false;
             }
         }
@@ -479,18 +601,15 @@ pub fn averageClusteringCoefficient(allocator: std.mem.Allocator, graph: anytype
             if (node > max_id) max_id = node;
         }
 
-        const degree_slice = try allocator.alloc(usize, @as(usize, max_id) + 1);
+        const csr = try buildCSR(allocator, graph, nodes.items, max_id);
+        const degree_slice = csr.degree_slice;
         defer allocator.free(degree_slice);
-        @memset(degree_slice, 0);
+        const offsets = csr.offsets;
+        defer allocator.free(offsets);
+        const neighbors = csr.neighbors;
+        defer allocator.free(neighbors);
 
-        for (nodes.items) |node| {
-            var deg: usize = 0;
-            var sit = graph.successors(node);
-            while (sit.next()) |_| deg += 1;
-            degree_slice[@as(usize, node)] = deg;
-        }
-
-        const triangles_per_node = try allocator.alloc(usize, @as(usize, max_id) + 1);
+        const triangles_per_node = try allocator.alloc(u32, @as(usize, max_id) + 1);
         defer allocator.free(triangles_per_node);
         @memset(triangles_per_node, 0);
 
@@ -500,11 +619,11 @@ pub fn averageClusteringCoefficient(allocator: std.mem.Allocator, graph: anytype
 
         for (nodes.items) |u| {
             const du = degree_slice[@as(usize, u)];
+            const u_start = offsets[@as(usize, u)];
+            const u_end = offsets[@as(usize, u) + 1];
 
             // Build forward neighbor set.
-            var sit = graph.successors(u);
-            while (sit.next()) |edge| {
-                const v = edge.to;
+            for (neighbors[u_start..u_end]) |v| {
                 const dv = degree_slice[@as(usize, v)];
                 if (du < dv or (du == dv and u < v)) {
                     in_neighbors[@as(usize, v)] = true;
@@ -512,15 +631,13 @@ pub fn averageClusteringCoefficient(allocator: std.mem.Allocator, graph: anytype
             }
 
             // Check triangles through forward edges.
-            var sit2 = graph.successors(u);
-            while (sit2.next()) |edge| {
-                const v = edge.to;
+            for (neighbors[u_start..u_end]) |v| {
                 const dv = degree_slice[@as(usize, v)];
                 if (!(du < dv or (du == dv and u < v))) continue;
 
-                var v_sit = graph.successors(v);
-                while (v_sit.next()) |v_edge| {
-                    const w = v_edge.to;
+                const v_start = offsets[@as(usize, v)];
+                const v_end = offsets[@as(usize, v) + 1];
+                for (neighbors[v_start..v_end]) |w| {
                     const dw = degree_slice[@as(usize, w)];
                     if (!(dv < dw or (dv == dw and v < w))) continue;
 
@@ -533,9 +650,7 @@ pub fn averageClusteringCoefficient(allocator: std.mem.Allocator, graph: anytype
             }
 
             // Reset neighbors for next node.
-            var reset_sit = graph.successors(u);
-            while (reset_sit.next()) |edge| {
-                const v = edge.to;
+            for (neighbors[u_start..u_end]) |v| {
                 in_neighbors[@as(usize, v)] = false;
             }
         }

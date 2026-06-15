@@ -7,6 +7,7 @@ defmodule Zog.Metrics do
   if Code.ensure_loaded?(Zig) do
     use Zig,
       otp_app: :zog,
+      optimize: {:env, if(Mix.env() == :prod, do: :fast, else: :debug)},
       extra_modules: [zog: {"../../priv/zog/src/root.zig", []}],
       nifs: [
         density: [concurrency: :dirty_cpu],

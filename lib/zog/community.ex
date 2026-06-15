@@ -9,6 +9,7 @@ defmodule Zog.Community do
   if Code.ensure_loaded?(Zig) do
     use Zig,
       otp_app: :zog,
+      optimize: {:env, if(Mix.env() == :prod, do: :fast, else: :debug)},
       extra_modules: [zog: {"../../priv/zog/src/root.zig", []}],
       nifs: [
         louvain: [concurrency: :dirty_cpu],
