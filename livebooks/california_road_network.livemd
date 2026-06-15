@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  {:zog, path: ".."},
+  {:zog, "~> 0.3.0"},
   {:kino, "~> 0.12"}
 ])
 ```

@@ -41,3 +41,7 @@ zog-*.tar
 *.so
 # Benchmark results
 /benchmarks/results/
+
+# Livebook datasets
+/livebooks/*.txt
+/livebooks/*.txt.gz
