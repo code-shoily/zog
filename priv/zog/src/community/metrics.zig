@@ -468,27 +468,86 @@ pub fn averageClusteringCoefficient(allocator: std.mem.Allocator, graph: anytype
         else => false,
     };
 
-    const V = graph.nodeCount();
+    var nodes = try utils.collectNodes(allocator, graph);
+    defer nodes.deinit(allocator);
+    const V = nodes.items.len;
     if (V == 0) return 0.0;
 
     if (node_id_is_unsigned) {
         var max_id: NodeId = 0;
-        var node_it = graph.nodeIds();
-        while (node_it.next()) |node| {
+        for (nodes.items) |node| {
             if (node > max_id) max_id = node;
         }
+
+        const degree_slice = try allocator.alloc(usize, @as(usize, max_id) + 1);
+        defer allocator.free(degree_slice);
+        @memset(degree_slice, 0);
+
+        for (nodes.items) |node| {
+            var deg: usize = 0;
+            var sit = graph.successors(node);
+            while (sit.next()) |_| deg += 1;
+            degree_slice[@as(usize, node)] = deg;
+        }
+
+        const triangles_per_node = try allocator.alloc(usize, @as(usize, max_id) + 1);
+        defer allocator.free(triangles_per_node);
+        @memset(triangles_per_node, 0);
 
         const in_neighbors = try allocator.alloc(bool, @as(usize, max_id) + 1);
         defer allocator.free(in_neighbors);
         @memset(in_neighbors, false);
 
-        var neighbors_list = try std.ArrayList(NodeId).initCapacity(allocator, V);
-        defer neighbors_list.deinit(allocator);
+        for (nodes.items) |u| {
+            const du = degree_slice[@as(usize, u)];
+
+            // Build forward neighbor set.
+            var sit = graph.successors(u);
+            while (sit.next()) |edge| {
+                const v = edge.to;
+                const dv = degree_slice[@as(usize, v)];
+                if (du < dv or (du == dv and u < v)) {
+                    in_neighbors[@as(usize, v)] = true;
+                }
+            }
+
+            // Check triangles through forward edges.
+            var sit2 = graph.successors(u);
+            while (sit2.next()) |edge| {
+                const v = edge.to;
+                const dv = degree_slice[@as(usize, v)];
+                if (!(du < dv or (du == dv and u < v))) continue;
+
+                var v_sit = graph.successors(v);
+                while (v_sit.next()) |v_edge| {
+                    const w = v_edge.to;
+                    const dw = degree_slice[@as(usize, w)];
+                    if (!(dv < dw or (dv == dw and v < w))) continue;
+
+                    if (in_neighbors[@as(usize, w)]) {
+                        triangles_per_node[@as(usize, u)] += 1;
+                        triangles_per_node[@as(usize, v)] += 1;
+                        triangles_per_node[@as(usize, w)] += 1;
+                    }
+                }
+            }
+
+            // Reset neighbors for next node.
+            var reset_sit = graph.successors(u);
+            while (reset_sit.next()) |edge| {
+                const v = edge.to;
+                in_neighbors[@as(usize, v)] = false;
+            }
+        }
 
         var sum: f64 = 0.0;
-        var node_it2 = graph.nodeIds();
-        while (node_it2.next()) |node| {
-            sum += clusteringCoefficientWithWorkspaceOptimized(allocator, graph, node, in_neighbors, &neighbors_list);
+        for (nodes.items) |node| {
+            const k = degree_slice[@as(usize, node)];
+            if (k >= 2) {
+                const t = triangles_per_node[@as(usize, node)];
+                const kf = @as(f64, @floatFromInt(k));
+                sum += 2.0 * @as(f64, @floatFromInt(t)) / (kf * (kf - 1.0));
+            }
         }
 
         return sum / @as(f64, @floatFromInt(V));
@@ -500,8 +559,7 @@ pub fn averageClusteringCoefficient(allocator: std.mem.Allocator, graph: anytype
     var sum: f64 = 0.0;
     var count: usize = 0;
 
-    var it = graph.nodeIds();
-    while (it.next()) |node| {
+    for (nodes.items) |node| {
         sum += clusteringCoefficientWithWorkspace(graph, node, &workspace);
         count += 1;
     }
