@@ -1,0 +1,135 @@
+# California Road Network Analysis with Zog
+
+```elixir
+Mix.install([
+  {:zog, path: ".."},
+  {:kino, "~> 0.12"}
+])
+```
+
+## Setup & Data Ingestion
+
+In this notebook, we'll download and analyze the **California Road Network** dataset from the SNAP repository. This dataset contains **1,965,206 nodes** (intersections) and **5,533,214 edges** (roads connecting them).
+
+First, let's download and decompress the dataset. We'll use Elixir's built-in `:httpc` and `:zlib` modules so no extra libraries are needed:
+
+```elixir
+# Start HTTPS dependencies
+Application.ensure_all_started(:inets)
+Application.ensure_all_started(:ssl)
+
+zip_path = "roadNet-CA.txt.gz"
+txt_path = "roadNet-CA.txt"
+
+# Download the dataset
+unless File.exists?(zip_path) do
+  IO.puts("Downloading California Road Network dataset (roadNet-CA)...")
+  url = "https://snap.stanford.edu/data/roadNet-CA.txt.gz"
+  {:ok, {{_version, 200, _reason}, _headers, body}} = 
+    :httpc.request(:get, {String.to_charlist(url), []}, [], [{:body_format, :binary}])
+  File.write!(zip_path, body)
+  IO.puts("Download complete!")
+end
+
+# Decompress
+unless File.exists?(txt_path) do
+  IO.puts("Decompressing roadNet-CA.txt.gz...")
+  compressed = File.read!(zip_path)
+  decompressed = :zlib.gunzip(compressed)
+  File.write!(txt_path, decompressed)
+  IO.puts("Decompression complete!")
+end
+```
+
+## Loading the Graph into Native Memory
+
+Zog uses the **ResourceGraph** pattern. Instead of loading millions of edges into Elixir heap memory (which causes high GC pressure and slow operations), we parse the file directly into native Zig memory (`ArrayGraph` SoA).
+
+Let's load the dataset in **undirected mode** (`directed: false`) with **integer labels** enabled for maximum performance:
+
+```elixir
+alias Zog.IO, as: ZogIO
+alias Zog.ResourceGraph
+
+IO.puts("Loading California Road Network into native memory...")
+{time_load, graph} = :timer.tc(fn -> 
+  ZogIO.load(txt_path, directed: false, integer_labels: true)
+end)
+
+IO.puts("Loaded graph in #{Float.round(time_load / 1_000_000, 3)}s")
+
+v = ResourceGraph.node_count(graph)
+e = ResourceGraph.edge_count(graph)
+
+IO.puts("Nodes: #{v}")
+IO.puts("Edges: #{e}")
+```
+
+## Weakly Connected Components (WCC)
+
+Let's compute the Weakly Connected Components of the road network to see if it is fully connected, and identify the size of the largest connected component.
+
+```elixir
+IO.puts("Computing Weakly Connected Components (WCC)...")
+{time_wcc, wcc_assignments} = :timer.tc(fn -> 
+  ResourceGraph.weakly_connected_components(graph, raw: true) 
+end)
+IO.puts("WCC computed in #{Float.round(time_wcc / 1_000_000, 3)}s")
+
+# Let's count how many components exist and get the size of the largest one
+frequencies = Enum.frequencies(wcc_assignments)
+num_components = map_size(frequencies)
+{largest_id, largest_count} = Enum.max_by(frequencies, fn {_, count} -> count end)
+
+IO.puts("Number of components: #{num_components}")
+IO.puts("Largest component ID: #{largest_id} (contains #{largest_count} nodes, #{Float.round(largest_count / v * 100, 2)}% of the network)")
+```
+
+## Native Dijkstra Pathfinding
+
+Since this is a road network, let's run a Dijkstra shortest path query. We will find a route between two arbitrary intersections.
+
+Because we loaded the graph with `integer_labels: true`, we can use `raw: true` in Dijkstra to pass raw node IDs and receive the raw path back in microseconds.
+
+Let's find the shortest path from node `0` to node `100_000`:
+
+```elixir
+start_node = 0
+goal_node = 100_000
+
+IO.puts("Finding shortest path from #{start_node} to #{goal_node}...")
+{time_path, result} = :timer.tc(fn ->
+  ResourceGraph.dijkstra(graph, start_node, goal_node, raw: true)
+end)
+
+case result do
+  {:ok, {path, cost}} ->
+    IO.puts("Path found in #{Float.round(time_path / 1_000, 2)}ms")
+    IO.puts("Path cost (hops): #{cost}")
+    IO.puts("Path route (first 10 nodes): #{inspect(Enum.take(path, 10))} ... total #{length(path)} nodes")
+  {:error, :no_path} ->
+    IO.puts("No path exists between #{start_node} and #{goal_node}!")
+end
+```
+
+## Triangle Counting (Graph Clustering Metrics)
+
+In social networks, triangle counts are huge. On road networks, they are typically small since intersections rarely form dense triadic cliques. Let's see how fast Zog counts triangles on this road network:
+
+```elixir
+IO.puts("Counting triangles...")
+{time_tri, triangles} = :timer.tc(fn -> 
+  ResourceGraph.triangle_count(graph) 
+end)
+
+IO.puts("Triangles: #{triangles} (computed in #{Float.round(time_tri / 1_000_000, 3)}s)")
+```
+
+## Clean Up Native Memory
+
+Always remember to free the native graph resource when done to avoid memory leaks:
+
+```elixir
+ResourceGraph.destroy(graph)
+IO.puts("Native graph memory successfully released!")
+```
