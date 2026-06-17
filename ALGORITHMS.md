@@ -129,10 +129,10 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | :--- | :--- | :--- | :--- | :--- |
 | **BFS** | `Yog.Traversal` | Breadth-first exploration | ❌ **Missing** | *Deliberately Omitted* — BFS traversal is done internally in Zig; not exposed as a public API. |
 | **DFS** | `Yog.Traversal` | Depth-first exploration | ❌ **Missing** | *Deliberately Omitted* — DFS traversal is done internally in Zig; not exposed as a public API. |
-| **Topological Sort** | `Yog.Traversal` | DAG vertex ordering | ❌ **Missing** | *WIP/Roadmap* — planned for a future DAG-focused release. |
+| **Topological Sort** | `Yog.Traversal` | DAG vertex ordering | ✅ **Implemented** | Native Zig via `Zog.Traversal.topological_sort/1` and `Zog.ResourceGraph.topological_sort/2`. |
 | **Find Path** | `Yog.Traversal` | Any path between nodes | ❌ **Missing** | *Deliberately Omitted* — shortest path algorithms (Dijkstra/BFS) handle path finding. |
 | **Implicit Search** | `Yog.Traversal.Implicit` | On-demand graph traversal | ❌ **Missing** | *Won't Have* — FGL/lazy evaluation concepts do not fit Zog's memory model. |
-| **Kahn's Algorithm** | `Yog.Traversal.Sort` | Topological sort (BFS-based) | ❌ **Missing** | *WIP/Roadmap* — planned for a future DAG release. |
+| **Kahn's Algorithm** | `Yog.Traversal.Sort` | Topological sort (BFS-based) | ✅ **Implemented** | Native Zig via `Zog.Traversal.topological_sort/2` with `[algorithm: :kahn]` and `Zog.ResourceGraph.topological_sort/2` with `[algorithm: :kahn]`. |
 | **Lexicographical TopSort** | `Yog.Traversal.Sort` | Deterministic topological ordering | ❌ **Missing** | *Won't Have* — low priority. |
 | **Best-First Walk** | `Yog.Traversal.Walk` | Priority-guided traversal | ❌ **Missing** | *Won't Have* — low priority. |
 | **Random Walk** | `Yog.Traversal.Walk` | Stochastic path exploration | ❌ **Missing** | *Deferred* — low priority. |
@@ -164,7 +164,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Bipartite Partition** | `Yog.Property.Bipartite` | Two-color assignment | ✅ **Implemented** | Native Zig via `Zog.Connectivity.bipartite_partition/1` and `Zog.ResourceGraph.bipartite_partition/2`. |
 | **Max Bipartite Matching** | `Yog.Property.Bipartite` | Maximum matching | ✅ **Implemented** | Native Zig via `Zog.Connectivity.maximum_bipartite_matching/1` and `Zog.ResourceGraph.maximum_bipartite_matching/2` (Hopcroft-Karp). |
 | **Stable Marriage** | `Yog.Property.Bipartite` | Gale-Shapley stable matching | ❌ **Missing** | *Won't Have* — outside core graph project scope. |
-| **Acyclicity Test** | `Yog.Property.Cyclicity` | Cycle detection | ❌ **Missing** | *WIP/Roadmap* — planned for a future DAG release. |
+| **Acyclicity Test** | `Yog.Property.Cyclicity` | Cycle detection | ✅ **Implemented** | Native Zig via `Zog.Traversal.acyclic?/1` and `Zog.ResourceGraph.acyclic?/1`. |
 | **Eulerian Circuit** | `Yog.Property.Eulerian` | Eulerian cycle existence | ❌ **Missing** | *Deferred* — low priority. |
 | **Eulerian Path** | `Yog.Property.Eulerian` | Eulerian path existence | ❌ **Missing** | *Deferred* — low priority. |
 | **Bron-Kerbosch** | `Yog.Property.Clique` | All maximal cliques | ✅ **Implemented** | Native Zig via `Zog.Property.all_maximal_cliques/1`. |
@@ -254,12 +254,12 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 
 | Algorithm | YogEx Module | Purpose | Zog Status | Notes / Details |
 | :--- | :--- | :--- | :--- | :--- |
-| **Diameter** | `Yog.Health` | Longest shortest path | ❌ **Missing** | *WIP/Roadmap* — planned for a future metrics update. |
-| **Radius** | `Yog.Health` | Minimum eccentricity | ❌ **Missing** | *WIP/Roadmap* — planned for a future metrics update. |
-| **Eccentricity** | `Yog.Health` | Max distance from node | ❌ **Missing** | *WIP/Roadmap* — planned for a future metrics update. |
+| **Diameter** | `Yog.Health` | Longest shortest path | ✅ **Implemented** | Native Zig via `Zog.HealthMetrics.diameter/1` and `Zog.ResourceGraph.diameter/1`. |
+| **Radius** | `Yog.Health` | Minimum eccentricity | ✅ **Implemented** | Native Zig via `Zog.HealthMetrics.radius/1` and `Zog.ResourceGraph.radius/1`. |
+| **Eccentricity** | `Yog.Health` | Max distance from node | ✅ **Implemented** | Native Zig via `Zog.HealthMetrics.eccentricity/1` and `Zog.ResourceGraph.eccentricity/2`. |
 | **Assortativity** | `Yog.Health` | Degree correlation | ✅ **Implemented** | Native Zig via `Zog.Metrics.assortativity/1`. |
 | **ANF & Effective Diameter** | *N/A (Zog exclusive)* | Approximate Neighborhood Function and 90% effective diameter | ✅ **Implemented** | Native Zig via `Zog.Metrics.anf/2` and `Zog.ResourceGraph.anf/2`. |
-| **APL** | `Yog.Health` | Average path length | ❌ **Missing** | *WIP/Roadmap* — planned for a future metrics update. |
+| **APL** | `Yog.Health` | Average path length | ✅ **Implemented** | Native Zig via `Zog.HealthMetrics.average_path_length/1` and `Zog.ResourceGraph.average_path_length/1`. |
 | **Global Efficiency** | `Yog.Health` | Inverse mean distance | ❌ **Missing** | *Deferred* — low priority. |
 | **Local Efficiency** | `Yog.Health` | Neighborhood efficiency | ❌ **Missing** | *Deferred* — low priority. |
 

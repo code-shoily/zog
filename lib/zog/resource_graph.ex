@@ -86,6 +86,9 @@ defmodule Zog.ResourceGraph do
         nif_subgraph: [concurrency: :dirty_cpu],
         nif_is_bipartite: [concurrency: :dirty_cpu],
         nif_maximum_bipartite_matching: [concurrency: :dirty_cpu],
+        nif_topological_sort: [concurrency: :dirty_cpu],
+        nif_is_acyclic: [concurrency: :dirty_cpu],
+        nif_health_metrics: [concurrency: :dirty_cpu],
         nif_node_degrees: [concurrency: :dirty_cpu],
         nif_node_count: [],
         nif_edge_count: []
@@ -672,6 +675,58 @@ defmodule Zog.ResourceGraph do
             },
             .not_bipartite => return beam.make(.not_bipartite, .{}),
         }
+    }
+
+    pub fn nif_is_acyclic(res: GraphRes) !bool {
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.traversal.isAcyclic(allocator, g),
+            .hash_graph => |g| try zog.traversal.isAcyclic(allocator, g),
+        };
+    }
+
+    pub fn nif_health_metrics(res: GraphRes) !beam.term {
+        const allocator = beam.allocator;
+        var result = switch (res.unpack()) {
+            .soa => |g| try zog.health_metrics.analyze(allocator, g),
+            .hash_graph => |g| try zog.health_metrics.analyze(allocator, g),
+        };
+        defer result.deinit(allocator);
+
+        return beam.make(.{
+            .ok,
+            result.eccentricity,
+            result.diameter,
+            result.radius,
+            result.average_path_length,
+        }, .{});
+    }
+
+    pub fn nif_topological_sort(res: GraphRes, algorithm: beam.term) !beam.term {
+        const allocator = beam.allocator;
+        const AlgorithmType = enum { dfs, kahn };
+        const algo = try beam.get(AlgorithmType, algorithm, .{});
+
+        const order = switch (res.unpack()) {
+            .soa => |g| switch (algo) {
+                .dfs => zog.traversal.topologicalSort(allocator, g),
+                .kahn => zog.traversal.kahnTopologicalSort(allocator, g),
+            },
+            .hash_graph => |g| switch (algo) {
+                .dfs => zog.traversal.topologicalSort(allocator, g),
+                .kahn => zog.traversal.kahnTopologicalSort(allocator, g),
+            },
+        } catch |err| {
+            if (err == error.Cycle) {
+                return beam.make(.{.@"error", .cycle}, .{});
+            }
+            return err;
+        };
+        errdefer allocator.free(order);
+
+        const term = beam.make(.{.ok, order}, .{});
+        allocator.free(order);
+        return term;
     }
 
     pub fn nif_kruskal(res: GraphRes) !beam.term {
@@ -2249,6 +2304,132 @@ defmodule Zog.ResourceGraph do
       end
     end
 
+    @doc """
+    Computes a topological ordering of the directed ResourceGraph.
+
+    Returns `{:ok, [labels]}` for a DAG, or `{:error, :cycle}` if the graph
+    contains a directed cycle.
+
+    ## Options
+
+      * `:raw` - If true, returns a list of internal `u32` node IDs instead of
+        mapping to Elixir labels.
+    """
+    @spec topological_sort(t(), keyword()) ::
+            {:ok, [SoA.label()]} | {:ok, [non_neg_integer()]} | {:error, :cycle}
+    def topological_sort(%{resource: res, builder: builder}, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
+      algorithm = Keyword.get(opts, :algorithm, :dfs)
+
+      case nif_topological_sort(res, algorithm) do
+        {:ok, order} ->
+          if raw do
+            {:ok, order}
+          else
+            labels = SoA.all_labels(builder)
+            labels_tuple = List.to_tuple(labels)
+            sorted_labels = Enum.map(order, &elem(labels_tuple, &1))
+            {:ok, sorted_labels}
+          end
+
+        {:error, :cycle} ->
+          {:error, :cycle}
+      end
+    end
+
+    @doc """
+    Returns `true` if the directed ResourceGraph contains no directed cycles.
+    """
+    @spec acyclic?(t()) :: boolean()
+    def acyclic?(%{resource: res}) do
+      nif_is_acyclic(res)
+    end
+
+    @doc """
+    Returns `true` if the directed ResourceGraph contains at least one directed
+    cycle.
+    """
+    @spec cyclic?(t()) :: boolean()
+    def cyclic?(%{resource: res}) do
+      not nif_is_acyclic(res)
+    end
+
+    @doc """
+    Computes all health metrics at once on a `ResourceGraph`.
+
+    Returns a map with `:eccentricity`, `:diameter`, `:radius`, and
+    `:average_path_length`. The `:eccentricity` value is a map from node
+    labels to eccentricity values.
+
+    ## Options
+
+      * `:raw` - If true, returns eccentricity as a list directly corresponding
+        to internal `u32` node IDs instead of mapping to Elixir labels.
+    """
+    @spec health_metrics(t(), keyword()) :: %{
+            eccentricity: %{SoA.label() => float()} | [float()],
+            diameter: float(),
+            radius: float(),
+            average_path_length: float()
+          }
+    def health_metrics(%{resource: res, builder: builder}, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
+
+      case nif_health_metrics(res) do
+        {:ok, eccentricity, diameter, radius, average_path_length} ->
+          eccentricity_result =
+            if raw do
+              eccentricity
+            else
+              labels = SoA.all_labels(builder)
+              labels_tuple = List.to_tuple(labels)
+
+              eccentricity
+              |> Enum.with_index()
+              |> Map.new(fn {value, idx} -> {elem(labels_tuple, idx), value} end)
+            end
+
+          %{
+            eccentricity: eccentricity_result,
+            diameter: diameter,
+            radius: radius,
+            average_path_length: average_path_length
+          }
+      end
+    end
+
+    @doc """
+    Returns a map from node label to eccentricity for a `ResourceGraph`.
+    """
+    @spec eccentricity(t(), keyword()) :: %{SoA.label() => float()} | [float()]
+    def eccentricity(res_graph, opts \\ []) do
+      health_metrics(res_graph, opts).eccentricity
+    end
+
+    @doc """
+    Returns the diameter of a `ResourceGraph`.
+    """
+    @spec diameter(t()) :: float()
+    def diameter(res_graph) do
+      health_metrics(res_graph).diameter
+    end
+
+    @doc """
+    Returns the radius of a `ResourceGraph`.
+    """
+    @spec radius(t()) :: float()
+    def radius(res_graph) do
+      health_metrics(res_graph).radius
+    end
+
+    @doc """
+    Returns the average path length of a `ResourceGraph`.
+    """
+    @spec average_path_length(t()) :: float()
+    def average_path_length(res_graph) do
+      health_metrics(res_graph).average_path_length
+    end
+
     @spec kruskal(t(), keyword()) :: {:ok, [Yog.MST.edge()]}
     def kruskal(graph, opts \\ [])
 
@@ -2623,6 +2804,13 @@ defmodule Zog.ResourceGraph do
           :strongly_connected_components,
           :weakly_connected_components,
           :analyze,
+          :topological_sort,
+          :acyclic?,
+          :health_metrics,
+          :eccentricity,
+          :diameter,
+          :radius,
+          :average_path_length,
           :kruskal,
           :node_degrees,
           :node_count,
@@ -2670,6 +2858,38 @@ defmodule Zog.ResourceGraph do
     end
 
     def maximum_bipartite_matching(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def topological_sort(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def acyclic?(_graph) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def cyclic?(_graph) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def health_metrics(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def eccentricity(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def diameter(_graph) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def radius(_graph) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def average_path_length(_graph) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 

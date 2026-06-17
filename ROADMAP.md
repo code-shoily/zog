@@ -28,14 +28,14 @@ Focuses on bipartite property detection, ego-graph extraction, and graph transfo
 Focuses on Directed Acyclic Graph (DAG) sorting/checks and structural health metrics.
 
 - **DAG & Traversals**
-  - [ ] Topological Sort (DFS-based)
-  - [ ] Kahn's Algorithm (Topological sort with queue)
-  - [ ] Acyclicity Test (Cycle detection)
+  - [x] Topological Sort (DFS-based)
+  - [x] Kahn's Algorithm (Topological sort with queue)
+  - [x] Acyclicity Test (Cycle detection)
 - **Network Health Metrics**
-  - [ ] Diameter (Longest shortest path)
-  - [ ] Radius (Minimum eccentricity)
-  - [ ] Eccentricity (Max distance from node)
-  - [ ] Average Path Length (APL)
+  - [x] Diameter (Longest shortest path)
+  - [x] Radius (Minimum eccentricity)
+  - [x] Eccentricity (Max distance from node)
+  - [x] Average Path Length (APL)
 
 ---
 

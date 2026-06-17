@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-16
+
+### Added
+
+- Added `Zog.Traversal` module for DAG traversal algorithms:
+  - `topological_sort/2` with `:dfs` (default) and `:kahn` algorithms.
+  - `acyclic?/1` and `cyclic?/1` for directed cycle detection.
+- Added `Zog.ResourceGraph.topological_sort/2`, `acyclic?/1`, and `cyclic?/1` for native resource-backed graphs.
+- Added `Zog.HealthMetrics` module for network health metrics:
+  - `analyze/1`, `eccentricity/1`, `diameter/1`, `radius/1`, and `average_path_length/1`.
+- Added `Zog.ResourceGraph.health_metrics/2`, `eccentricity/2`, `diameter/1`, `radius/1`, and `average_path_length/1` for native resource-backed graphs.
+- Added native Zig implementations in `priv/zog/src/traversal.zig` and `priv/zog/src/health_metrics.zig`.
+- Added benchmarks comparing v0.4.0 algorithms against YogEx:
+  - `benchmarks/native_vs_elixir_topological_sort.exs`
+  - `benchmarks/native_vs_elixir_acyclicity.exs`
+  - `benchmarks/native_vs_elixir_health_metrics.exs`
+
+### Changed
+
+- Updated `ROADMAP.md` and `ALGORITHMS.md` to mark all v0.4.0 milestone items as implemented.
+- Added `Zog.Traversal` and `Zog.HealthMetrics` to the Algorithms docs group in `mix.exs`.
+
 ## [0.3.0] - 2026-06-14
 
 ### Added

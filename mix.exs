@@ -105,11 +105,13 @@ defmodule Zog.MixProject do
           Zog.Connectivity,
           Zog.Flow,
           Zog.Generator,
+          Zog.HealthMetrics,
           Zog.IO,
           Zog.MST,
           Zog.Metrics,
           Zog.Pathfinding,
-          Zog.Property
+          Zog.Property,
+          Zog.Traversal
         ]
       ]
     ]
