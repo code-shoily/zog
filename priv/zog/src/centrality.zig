@@ -562,17 +562,15 @@ pub fn betweenness(
                 zero_val: Weight,
                 add_param: fn (Weight, Weight) Weight,
                 compare_param: fn (Weight, Weight) std.math.Order,
-                alloc_param: std.mem.Allocator,
             ) void {
+                var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+                defer arena.deinit();
+                const alloc_param = arena.allocator();
+
                 const inner_V = g.nodeCapacity();
                 var dist = alloc_param.alloc(?Weight, inner_V) catch return;
-                defer alloc_param.free(dist);
-
                 var sigma = alloc_param.alloc(usize, inner_V) catch return;
-                defer alloc_param.free(sigma);
-
                 var delta = alloc_param.alloc(f64, inner_V) catch return;
-                defer alloc_param.free(delta);
 
                 var preds = alloc_param.alloc(std.ArrayList(u32), inner_V) catch return;
                 for (0..inner_V) |i| {
@@ -603,7 +601,8 @@ pub fn betweenness(
                 defer stack.deinit(alloc_param);
 
                 for (chunk_nodes) |s| {
-                    @memset(dist, null);
+                    if (!g.hasNode(s)) continue;
+                    for (dist) |*ptr| ptr.* = null;
                     @memset(sigma, @as(usize, 0));
                     @memset(delta, 0.0);
                     for (0..inner_V) |i| {
@@ -641,7 +640,8 @@ pub fn betweenness(
                                     preds[w].append(alloc_param, v) catch {};
                                     pq.push(alloc_param, .{ .d = new_dist, .node = w }) catch {};
                                 } else if (ord == .eq) {
-                                    sigma[w] += sigma[v];
+                                     sigma[w] = std.math.add(usize, sigma[w], sigma[v]) catch @as(usize, 9007199254740992);
+                                     if (sigma[w] > 9007199254740992) sigma[w] = 9007199254740992;
                                     preds[w].append(alloc_param, v) catch {};
                                 }
                             } else {
@@ -653,22 +653,24 @@ pub fn betweenness(
                         }
                     }
 
-                    var i: usize = stack.items.len;
-                    while (i > 0) {
-                        i -= 1;
-                        const v = stack.items[i];
+                    while (stack.items.len > 0) {
+                        const v = stack.pop() orelse break;
+                        const v_idx: usize = v;
+                        const cap_v = @min(sigma[v_idx], @as(usize, 9007199254740991));
+                        const sigma_v_f = @as(f64, @floatFromInt(cap_v));
+                        if (sigma_v_f == 0.0) continue;
+                        const delta_v = delta[v_idx];
 
-                        const sigma_v_f = @as(f64, @floatFromInt(sigma[v]));
-                        const delta_v = delta[v];
-
-                        for (preds[v].items) |u| {
-                            const sigma_u_f = @as(f64, @floatFromInt(sigma[u]));
+                        for (preds[v_idx].items) |u| {
+                            const u_idx: usize = u;
+                            const cap_u = @min(sigma[u_idx], @as(usize, 9007199254740991));
+                            const sigma_u_f = @as(f64, @floatFromInt(cap_u));
                             const c = (sigma_u_f / sigma_v_f) * (1.0 + delta_v);
-                            delta[u] += c;
+                            delta[u_idx] += c;
                         }
 
                         if (v != s) {
-                            local_scores[v] += delta_v;
+                            local_scores[v_idx] += delta_v;
                         }
                     }
                 }
@@ -692,7 +694,6 @@ pub fn betweenness(
                 zero,
                 addFn,
                 compareFn,
-                allocator,
             });
             spawn_count += 1;
             i = end;
@@ -761,37 +762,29 @@ pub fn betweennessUnweighted(
                 g: @TypeOf(graph),
                 chunk_nodes: []const u32,
                 local_scores: []f64,
-                alloc_param: std.mem.Allocator,
             ) void {
+                var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+                defer arena.deinit();
+                const alloc_param = arena.allocator();
+
                 const inner_V = g.nodeCapacity();
-                var dist = alloc_param.alloc(?u32, inner_V) catch return;
-                defer alloc_param.free(dist);
-
+                var dist = alloc_param.alloc(u32, inner_V) catch return;
                 var sigma = alloc_param.alloc(usize, inner_V) catch return;
-                defer alloc_param.free(sigma);
-
                 var delta = alloc_param.alloc(f64, inner_V) catch return;
-                defer alloc_param.free(delta);
 
                 var preds = alloc_param.alloc(std.ArrayList(u32), inner_V) catch return;
                 for (0..inner_V) |idx| {
                     preds[idx] = std.ArrayList(u32).empty;
                 }
-                defer {
-                    for (0..inner_V) |idx| {
-                        preds[idx].deinit(alloc_param);
-                    }
-                    alloc_param.free(preds);
-                }
 
                 var queue = std.ArrayList(u32).empty;
-                defer queue.deinit(alloc_param);
-
                 var stack = std.ArrayList(u32).empty;
-                defer stack.deinit(alloc_param);
+
+                const UNVISITED = std.math.maxInt(u32);
 
                 for (chunk_nodes) |s| {
-                    @memset(dist, null);
+                    if (!g.hasNode(s)) continue;
+                    @memset(dist, UNVISITED);
                     @memset(sigma, @as(usize, 0));
                     @memset(delta, 0.0);
                     for (0..inner_V) |idx| {
@@ -810,40 +803,44 @@ pub fn betweennessUnweighted(
                         head += 1;
                         stack.append(alloc_param, v) catch continue;
 
-                        const d_v = dist[v].?;
+                        const d_v = dist[v];
+                        const next_d = d_v + 1;
 
                         var sit = g.successors(v);
                         while (sit.next()) |edge| {
                             const w = edge.to;
 
-                            if (dist[w] == null) {
-                                dist[w] = d_v + 1;
+                            if (dist[w] == UNVISITED) {
+                                dist[w] = next_d;
                                 queue.append(alloc_param, w) catch {};
                             }
 
-                            if (dist[w].? == d_v + 1) {
-                                sigma[w] += sigma[v];
+                            if (dist[w] == next_d) {
+                                sigma[w] = std.math.add(usize, sigma[w], sigma[v]) catch @as(usize, 9007199254740992);
+                                if (sigma[w] > 9007199254740992) sigma[w] = 9007199254740992;
                                 preds[w].append(alloc_param, v) catch {};
                             }
                         }
                     }
 
-                    var idx: usize = stack.items.len;
-                    while (idx > 0) {
-                        idx -= 1;
-                        const v = stack.items[idx];
+                    while (stack.items.len > 0) {
+                        const v = stack.pop() orelse break;
+                        const v_idx: usize = v;
+                        const cap_v = @min(sigma[v_idx], @as(usize, 9007199254740991));
+                        const sigma_v_f = @as(f64, @floatFromInt(cap_v));
+                        if (sigma_v_f == 0.0) continue;
+                        const delta_v = delta[v_idx];
 
-                        const sigma_v_f = @as(f64, @floatFromInt(sigma[v]));
-                        const delta_v = delta[v];
-
-                        for (preds[v].items) |u| {
-                            const sigma_u_f = @as(f64, @floatFromInt(sigma[u]));
+                        for (preds[v_idx].items) |u| {
+                            const u_idx: usize = u;
+                            const cap_u = @min(sigma[u_idx], @as(usize, 9007199254740991));
+                            const sigma_u_f = @as(f64, @floatFromInt(cap_u));
                             const c = (sigma_u_f / sigma_v_f) * (1.0 + delta_v);
-                            delta[u] += c;
+                            delta[u_idx] += c;
                         }
 
                         if (v != s) {
-                            local_scores[v] += delta_v;
+                            local_scores[v_idx] += delta_v;
                         }
                     }
                 }
@@ -864,7 +861,6 @@ pub fn betweennessUnweighted(
                 graph,
                 chunk,
                 all_local_scores[spawn_count * V .. (spawn_count + 1) * V],
-                allocator,
             });
             spawn_count += 1;
             i = end;
