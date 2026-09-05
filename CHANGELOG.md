@@ -23,9 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added HITS (Hyperlink-Induced Topic Search) hubs and authorities centrality algorithm (`hits/2`) in `Zog.Centrality`.
 - Added Yen's $K$-Shortest Paths algorithm (`yen_k_shortest/5`) in `Zog.Pathfinding`.
 - Added Weisfeiler-Leman Graph Hash & Fingerprinting algorithm (`graph_hash/2`) in `Zog.Property`.
+- Added VF2 Graph Isomorphism matching (`isomorphic?/2`, `find_isomorphism/2`) and structural graph predicates (`tree?/1`, `forest?/1`, `arborescence?/1`, `arborescence_root/1`, `branching?/1`, `complete?/1`, `regular?/2`) in `Zog.Property`.
 - Added Hierholzer's Eulerian Circuit (`eulerian_circuit/2`) & Eulerian Path (`eulerian_path/2`) detection, along with `has_eulerian_circuit?/1` and `has_eulerian_path?/1` in `Zog.Property`.
-- Added native resource-graph wrappers in `Zog.ResourceGraph` for Blossom matching, Hungarian matching, Walktrap community detection, HITS centrality, Yen's K-Shortest paths, Graph Hash, and Eulerian circuit/path analysis.
-- Added native Zig implementations in `priv/zog/src/matching.zig`, `priv/zog/src/community/walktrap.zig`, `priv/zog/src/traversal.zig`, and `priv/zog/src/health_metrics.zig`.
+- Added native resource-graph wrappers in `Zog.ResourceGraph` for Blossom matching, Hungarian matching, Walktrap community detection, HITS centrality, Yen's K-Shortest paths, Graph Hash, VF2 Isomorphism, Structural Tree Predicates, and Eulerian circuit/path analysis.
+- Added native Zig implementations in `priv/zog/src/matching.zig`, `priv/zog/src/community/walktrap.zig`, `priv/zog/src/traversal.zig`, `priv/zog/src/health_metrics.zig`, and `priv/zog/src/property.zig`.
 - Added benchmarks comparing v0.4.0 algorithms against YogEx:
   - `benchmarks/native_vs_elixir_topological_sort.exs`
   - `benchmarks/native_vs_elixir_acyclicity.exs`
@@ -36,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `benchmarks/native_vs_elixir_hits.exs`
   - `benchmarks/native_vs_elixir_yen.exs`
   - `benchmarks/native_vs_elixir_graph_hash.exs`
+  - `benchmarks/native_vs_elixir_isomorphism.exs`
   - `benchmarks/native_vs_elixir_eulerian.exs`
 
 ### Changed

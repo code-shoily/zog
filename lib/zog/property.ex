@@ -17,7 +17,16 @@ defmodule Zog.Property do
         nif_weisfeiler_lehman_hash_custom: [concurrency: :dirty_cpu],
         nif_has_eulerian_circuit: [concurrency: :dirty_cpu],
         nif_has_eulerian_path: [concurrency: :dirty_cpu],
-        nif_eulerian_path: [concurrency: :dirty_cpu]
+        nif_eulerian_path: [concurrency: :dirty_cpu],
+        nif_is_tree: [concurrency: :dirty_cpu],
+        nif_is_forest: [concurrency: :dirty_cpu],
+        nif_is_arborescence: [concurrency: :dirty_cpu],
+        nif_arborescence_root: [concurrency: :dirty_cpu],
+        nif_is_branching: [concurrency: :dirty_cpu],
+        nif_is_complete: [concurrency: :dirty_cpu],
+        nif_is_regular: [concurrency: :dirty_cpu],
+        nif_isomorphic: [concurrency: :dirty_cpu],
+        nif_find_isomorphism: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -113,6 +122,86 @@ defmodule Zog.Property do
         } else {
             const err_atom: beam.term = if (is_circuit_only) beam.make(.no_eulerian_circuit, .{}) else beam.make(.no_eulerian_path, .{});
             return beam.make(.{.@"error", err_atom}, .{});
+        }
+    }
+
+    pub fn nif_is_tree(node_count: usize, from: []u32, to: []u32, weight: []f64, is_directed: bool) !bool {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        return try zog.property.isTree(beam.allocator, g, is_directed);
+    }
+
+    pub fn nif_is_forest(node_count: usize, from: []u32, to: []u32, weight: []f64, is_directed: bool) !bool {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        return try zog.property.isForest(beam.allocator, g, is_directed);
+    }
+
+    pub fn nif_is_arborescence(node_count: usize, from: []u32, to: []u32, weight: []f64) !bool {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        return try zog.property.isArborescence(beam.allocator, g);
+    }
+
+    pub fn nif_arborescence_root(node_count: usize, from: []u32, to: []u32, weight: []f64) !beam.term {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        const root_opt = try zog.property.arborescenceRoot(beam.allocator, g);
+        if (root_opt) |r| {
+            return beam.make(.{.ok, r}, .{});
+        } else {
+            return beam.make(.none, .{});
+        }
+    }
+
+    pub fn nif_is_branching(node_count: usize, from: []u32, to: []u32, weight: []f64) !bool {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        return try zog.property.isBranching(beam.allocator, g);
+    }
+
+    pub fn nif_is_complete(node_count: usize, from: []u32, to: []u32, weight: []f64, is_directed: bool) !bool {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        return try zog.property.isComplete(beam.allocator, g, is_directed);
+    }
+
+    pub fn nif_is_regular(node_count: usize, from: []u32, to: []u32, weight: []f64, k: u32, is_directed: bool) !bool {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        return try zog.property.isRegular(beam.allocator, g, k, is_directed);
+    }
+
+    pub fn nif_isomorphic(nc1: usize, f1: []u32, t1: []u32, w1: []f64, nc2: usize, f2: []u32, t2: []u32, w2: []f64, is_directed: bool) !bool {
+        var g1 = try buildGraph(nc1, f1, t1, w1);
+        defer g1.deinit();
+
+        var g2 = try buildGraph(nc2, f2, t2, w2);
+        defer g2.deinit();
+
+        return try zog.property.isIsomorphic(beam.allocator, g1, g2, is_directed);
+    }
+
+    pub fn nif_find_isomorphism(nc1: usize, f1: []u32, t1: []u32, w1: []f64, nc2: usize, f2: []u32, t2: []u32, w2: []f64, is_directed: bool) !beam.term {
+        var g1 = try buildGraph(nc1, f1, t1, w1);
+        defer g1.deinit();
+
+        var g2 = try buildGraph(nc2, f2, t2, w2);
+        defer g2.deinit();
+
+        const map_opt = try zog.property.findIsomorphism(beam.allocator, g1, g2, is_directed);
+        if (map_opt) |mapping| {
+            defer beam.allocator.free(mapping);
+            return beam.make(.{.ok, mapping}, .{});
+        } else {
+            return beam.make(.@"error", .{});
         }
     }
     """
@@ -266,14 +355,6 @@ defmodule Zog.Property do
     end
 
     @doc """
-    Checks if two graphs are structurally isomorphic using Weisfeiler-Lehman graph hashing.
-    """
-    @spec isomorphic?(SoA.t() | struct(), SoA.t() | struct(), keyword()) :: boolean()
-    def isomorphic?(g1, g2, opts \\ []) do
-      hash(g1, opts) == hash(g2, opts)
-    end
-
-    @doc """
     Checks if the graph contains an Eulerian circuit.
     """
     @spec has_eulerian_circuit?(SoA.t() | struct()) :: boolean()
@@ -388,6 +469,215 @@ defmodule Zog.Property do
     def eulerian_path(%Yog.DAG{graph: yog_graph}, opts) do
       eulerian_path(Zog.from_graph(yog_graph), opts)
     end
+
+    @doc """
+    Checks if the graph is a tree.
+    """
+    def tree?(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
+      is_directed = builder.kind == :directed
+      nif_is_tree(node_count, from, to, weights, is_directed)
+    end
+
+    def tree?(%{resource: _res} = res_graph) do
+      Zog.ResourceGraph.tree?(res_graph)
+    end
+
+    def tree?(%Yog.Graph{} = yog_graph), do: tree?(Zog.from_graph(yog_graph))
+    def tree?(%Yog.DAG{graph: yog_graph}), do: tree?(Zog.from_graph(yog_graph))
+
+    def is_tree?(graph), do: tree?(graph)
+
+    @doc """
+    Checks if the graph is a forest.
+    """
+    def forest?(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
+      is_directed = builder.kind == :directed
+      nif_is_forest(node_count, from, to, weights, is_directed)
+    end
+
+    def forest?(%{resource: _res} = res_graph) do
+      Zog.ResourceGraph.forest?(res_graph)
+    end
+
+    def forest?(%Yog.Graph{} = yog_graph), do: forest?(Zog.from_graph(yog_graph))
+    def forest?(%Yog.DAG{graph: yog_graph}), do: forest?(Zog.from_graph(yog_graph))
+
+    def is_forest?(graph), do: forest?(graph)
+
+    @doc """
+    Checks if the graph is an arborescence (directed tree with a single root).
+    """
+    def arborescence?(%SoA{} = builder) do
+      if builder.kind != :directed do
+        false
+      else
+        node_count = SoA.node_count(builder)
+        {from, to, weights} = SoA.to_edge_arrays(builder)
+        nif_is_arborescence(node_count, from, to, weights)
+      end
+    end
+
+    def arborescence?(%{resource: _res} = res_graph) do
+      Zog.ResourceGraph.arborescence?(res_graph)
+    end
+
+    def arborescence?(%Yog.Graph{} = yog_graph), do: arborescence?(Zog.from_graph(yog_graph))
+    def arborescence?(%Yog.DAG{graph: yog_graph}), do: arborescence?(Zog.from_graph(yog_graph))
+
+    def is_arborescence?(graph), do: arborescence?(graph)
+
+    @doc """
+    Finds the root label of an arborescence, or nil if none exists.
+    """
+    def arborescence_root(%SoA{} = builder) do
+      if builder.kind != :directed do
+        nil
+      else
+        node_count = SoA.node_count(builder)
+        {from, to, weights} = SoA.to_edge_arrays(builder)
+
+        case nif_arborescence_root(node_count, from, to, weights) do
+          {:ok, root_id} -> SoA.id_to_label(builder, root_id)
+          :none -> nil
+        end
+      end
+    end
+
+    def arborescence_root(%{resource: _res} = res_graph) do
+      Zog.ResourceGraph.arborescence_root(res_graph)
+    end
+
+    def arborescence_root(%Yog.Graph{} = yog_graph),
+      do: arborescence_root(Zog.from_graph(yog_graph))
+
+    def arborescence_root(%Yog.DAG{graph: yog_graph}),
+      do: arborescence_root(Zog.from_graph(yog_graph))
+
+    @doc """
+    Checks if a directed graph is a branching (directed forest).
+    """
+    def branching?(%SoA{} = builder) do
+      if builder.kind != :directed do
+        false
+      else
+        node_count = SoA.node_count(builder)
+        {from, to, weights} = SoA.to_edge_arrays(builder)
+        nif_is_branching(node_count, from, to, weights)
+      end
+    end
+
+    def branching?(%{resource: _res} = res_graph) do
+      Zog.ResourceGraph.branching?(res_graph)
+    end
+
+    def branching?(%Yog.Graph{} = yog_graph), do: branching?(Zog.from_graph(yog_graph))
+    def branching?(%Yog.DAG{graph: yog_graph}), do: branching?(Zog.from_graph(yog_graph))
+
+    def is_branching?(graph), do: branching?(graph)
+
+    @doc """
+    Checks if the graph is a complete graph (K_n).
+    """
+    def complete?(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
+      is_directed = builder.kind == :directed
+      nif_is_complete(node_count, from, to, weights, is_directed)
+    end
+
+    def complete?(%{resource: _res} = res_graph) do
+      Zog.ResourceGraph.complete?(res_graph)
+    end
+
+    def complete?(%Yog.Graph{} = yog_graph), do: complete?(Zog.from_graph(yog_graph))
+    def complete?(%Yog.DAG{graph: yog_graph}), do: complete?(Zog.from_graph(yog_graph))
+
+    def is_complete?(graph), do: complete?(graph)
+
+    @doc """
+    Checks if the graph is k-regular.
+    """
+    def regular?(%SoA{} = builder, k) when is_integer(k) and k >= 0 do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
+      is_directed = builder.kind == :directed
+      nif_is_regular(node_count, from, to, weights, k, is_directed)
+    end
+
+    def regular?(%{resource: _res} = res_graph, k) do
+      Zog.ResourceGraph.regular?(res_graph, k)
+    end
+
+    def regular?(%Yog.Graph{} = yog_graph, k), do: regular?(Zog.from_graph(yog_graph), k)
+    def regular?(%Yog.DAG{graph: yog_graph}, k), do: regular?(Zog.from_graph(yog_graph), k)
+
+    def is_regular?(graph, k), do: regular?(graph, k)
+
+    @doc """
+    Checks if two graphs are isomorphic using exact VF2 matching.
+    """
+    def isomorphic?(%SoA{} = g1, %SoA{} = g2) do
+      if g1.kind != g2.kind or SoA.node_count(g1) != SoA.node_count(g2) do
+        false
+      else
+        nc1 = SoA.node_count(g1)
+        {f1, t1, w1} = SoA.to_edge_arrays(g1)
+        nc2 = SoA.node_count(g2)
+        {f2, t2, w2} = SoA.to_edge_arrays(g2)
+        is_directed = g1.kind == :directed
+
+        nif_isomorphic(nc1, f1, t1, w1, nc2, f2, t2, w2, is_directed)
+      end
+    end
+
+    def isomorphic?(%{resource: _res1} = g1, %{resource: _res2} = g2) do
+      Zog.ResourceGraph.isomorphic?(g1, g2)
+    end
+
+    def isomorphic?(g1, g2) do
+      isomorphic?(Zog.from_graph(g1), Zog.from_graph(g2))
+    end
+
+    def is_isomorphic?(g1, g2), do: isomorphic?(g1, g2)
+
+    @doc """
+    Finds node mapping dict %{g1_label => g2_label} if isomorphic, or nil.
+    """
+    def find_isomorphism(%SoA{} = g1, %SoA{} = g2) do
+      if g1.kind != g2.kind or SoA.node_count(g1) != SoA.node_count(g2) do
+        nil
+      else
+        nc1 = SoA.node_count(g1)
+        {f1, t1, w1} = SoA.to_edge_arrays(g1)
+        nc2 = SoA.node_count(g2)
+        {f2, t2, w2} = SoA.to_edge_arrays(g2)
+        is_directed = g1.kind == :directed
+
+        case nif_find_isomorphism(nc1, f1, t1, w1, nc2, f2, t2, w2, is_directed) do
+          {:ok, mapping_array} ->
+            mapping_array
+            |> Enum.with_index()
+            |> Map.new(fn {v2_id, u1_id} ->
+              {SoA.id_to_label(g1, u1_id), SoA.id_to_label(g2, v2_id)}
+            end)
+
+          :error ->
+            nil
+        end
+      end
+    end
+
+    def find_isomorphism(%{resource: _res1} = g1, %{resource: _res2} = g2) do
+      Zog.ResourceGraph.find_isomorphism(g1, g2)
+    end
+
+    def find_isomorphism(g1, g2) do
+      find_isomorphism(Zog.from_graph(g1), Zog.from_graph(g2))
+    end
   else
     @moduledoc """
     Native graph properties backed by Zog (Zig) via Zigler.
@@ -405,7 +695,7 @@ defmodule Zog.Property do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
-    def isomorphic?(_g1, _g2, _opts \\ []) do
+    def isomorphic?(_g1, _g2) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 

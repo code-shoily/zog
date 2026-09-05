@@ -66,7 +66,7 @@ jump_tests = [
         {Credo.Check.Readability.ParenthesesInCondition, []},
         {Credo.Check.Readability.ParenthesesOnZeroArityDefs, []},
         {Credo.Check.Refactor.FunctionArity, false},
-        {Credo.Check.Readability.PredicateFunctionNames, []},
+        {Credo.Check.Readability.PredicateFunctionNames, false},
         {Credo.Check.Readability.PreferImplicitTry, []},
         {Credo.Check.Readability.RedundantBlankLines, []},
         {Credo.Check.Readability.Semicolons, []},

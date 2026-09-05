@@ -84,6 +84,15 @@ defmodule Zog.ResourceGraph do
         nif_has_eulerian_circuit: [concurrency: :dirty_cpu],
         nif_has_eulerian_path: [concurrency: :dirty_cpu],
         nif_eulerian_path: [concurrency: :dirty_cpu],
+        nif_is_tree: [concurrency: :dirty_cpu],
+        nif_is_forest: [concurrency: :dirty_cpu],
+        nif_is_arborescence: [concurrency: :dirty_cpu],
+        nif_arborescence_root: [concurrency: :dirty_cpu],
+        nif_is_branching: [concurrency: :dirty_cpu],
+        nif_is_complete: [concurrency: :dirty_cpu],
+        nif_is_regular: [concurrency: :dirty_cpu],
+        nif_isomorphic: [concurrency: :dirty_cpu],
+        nif_find_isomorphism: [concurrency: :dirty_cpu],
         nif_max_flow: [concurrency: :dirty_cpu],
         nif_push_relabel: [concurrency: :dirty_cpu],
         nif_global_min_cut: [concurrency: :dirty_cpu],
@@ -606,6 +615,103 @@ defmodule Zog.ResourceGraph do
         } else {
             const err_atom: beam.term = if (is_circuit_only) beam.make(.no_eulerian_circuit, .{}) else beam.make(.no_eulerian_path, .{});
             return beam.make(.{.@"error", err_atom}, .{});
+        }
+    }
+
+    pub fn nif_is_tree(res: GraphRes, is_directed: bool) !bool {
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.property.isTree(allocator, g, is_directed),
+            .hash_graph => |g| try zog.property.isTree(allocator, g, is_directed),
+        };
+    }
+
+    pub fn nif_is_forest(res: GraphRes, is_directed: bool) !bool {
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.property.isForest(allocator, g, is_directed),
+            .hash_graph => |g| try zog.property.isForest(allocator, g, is_directed),
+        };
+    }
+
+    pub fn nif_is_arborescence(res: GraphRes) !bool {
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.property.isArborescence(allocator, g),
+            .hash_graph => |g| try zog.property.isArborescence(allocator, g),
+        };
+    }
+
+    pub fn nif_arborescence_root(res: GraphRes) !beam.term {
+        const allocator = beam.allocator;
+        const root_opt = switch (res.unpack()) {
+            .soa => |g| try zog.property.arborescenceRoot(allocator, g),
+            .hash_graph => |g| try zog.property.arborescenceRoot(allocator, g),
+        };
+
+        if (root_opt) |r| {
+            return beam.make(.{.ok, r}, .{});
+        } else {
+            return beam.make(.none, .{});
+        }
+    }
+
+    pub fn nif_is_branching(res: GraphRes) !bool {
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.property.isBranching(allocator, g),
+            .hash_graph => |g| try zog.property.isBranching(allocator, g),
+        };
+    }
+
+    pub fn nif_is_complete(res: GraphRes, is_directed: bool) !bool {
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.property.isComplete(allocator, g, is_directed),
+            .hash_graph => |g| try zog.property.isComplete(allocator, g, is_directed),
+        };
+    }
+
+    pub fn nif_is_regular(res: GraphRes, k: u32, is_directed: bool) !bool {
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.property.isRegular(allocator, g, k, is_directed),
+            .hash_graph => |g| try zog.property.isRegular(allocator, g, k, is_directed),
+        };
+    }
+
+    pub fn nif_isomorphic(res1: GraphRes, res2: GraphRes, is_directed: bool) !bool {
+        const allocator = beam.allocator;
+        return switch (res1.unpack()) {
+            .soa => |g1| switch (res2.unpack()) {
+                .soa => |g2| try zog.property.isIsomorphic(allocator, g1, g2, is_directed),
+                .hash_graph => |g2| try zog.property.isIsomorphic(allocator, g1, g2, is_directed),
+            },
+            .hash_graph => |g1| switch (res2.unpack()) {
+                .soa => |g2| try zog.property.isIsomorphic(allocator, g1, g2, is_directed),
+                .hash_graph => |g2| try zog.property.isIsomorphic(allocator, g1, g2, is_directed),
+            },
+        };
+    }
+
+    pub fn nif_find_isomorphism(res1: GraphRes, res2: GraphRes, is_directed: bool) !beam.term {
+        const allocator = beam.allocator;
+        const map_opt = switch (res1.unpack()) {
+            .soa => |g1| switch (res2.unpack()) {
+                .soa => |g2| try zog.property.findIsomorphism(allocator, g1, g2, is_directed),
+                .hash_graph => |g2| try zog.property.findIsomorphism(allocator, g1, g2, is_directed),
+            },
+            .hash_graph => |g1| switch (res2.unpack()) {
+                .soa => |g2| try zog.property.findIsomorphism(allocator, g1, g2, is_directed),
+                .hash_graph => |g2| try zog.property.findIsomorphism(allocator, g1, g2, is_directed),
+            },
+        };
+
+        if (map_opt) |mapping| {
+            defer allocator.free(mapping);
+            return beam.make(.{.ok, mapping}, .{});
+        } else {
+            return beam.make(.@"error", .{});
         }
     }
 
@@ -2178,16 +2284,18 @@ defmodule Zog.ResourceGraph do
                   "expected target_communities to be nil or integer >= 1, got: #{inspect(other)}"
         end
 
+      alias Zog.Community.Result, as: CommunityResult
+
       assignments = nif_walktrap(res, walk_length, has_target, target_val)
 
       if raw do
         assignments
         |> Enum.with_index()
         |> Map.new(fn {comm, idx} -> {idx, comm} end)
-        |> Community.Result.new()
+        |> CommunityResult.new()
       else
         mapped = map_assignments(builder, assignments)
-        Community.Result.new(mapped)
+        CommunityResult.new(mapped)
       end
     end
 
@@ -2195,6 +2303,9 @@ defmodule Zog.ResourceGraph do
     Hierarchical Walktrap community detection.
     """
     def walktrap_hierarchical(%{resource: res, builder: builder}, opts \\ []) do
+      alias Zog.Community.Dendrogram, as: CommunityDendrogram
+      alias Zog.Community.Result, as: CommunityResult
+
       walk_length = Keyword.get(opts, :walk_length, 4)
       raw = Keyword.get(opts, :raw, false)
 
@@ -2206,14 +2317,14 @@ defmodule Zog.ResourceGraph do
             assignments
             |> Enum.with_index()
             |> Map.new(fn {comm, idx} -> {idx, comm} end)
-            |> Community.Result.new()
+            |> CommunityResult.new()
           else
             mapped = map_assignments(builder, assignments)
-            Community.Result.new(mapped)
+            CommunityResult.new(mapped)
           end
         end)
 
-      Community.Dendrogram.new(levels, [])
+      CommunityDendrogram.new(levels, [])
     end
 
     @doc """
@@ -2398,6 +2509,123 @@ defmodule Zog.ResourceGraph do
 
         {:error, :no_eulerian_path} ->
           {:error, :no_eulerian_path}
+      end
+    end
+
+    @doc """
+    Checks if the native resource graph is a tree.
+    """
+    def tree?(%{resource: res, builder: builder}) do
+      is_directed = builder.kind == :directed
+      nif_is_tree(res, is_directed)
+    end
+
+    def is_tree?(res_graph), do: tree?(res_graph)
+
+    @doc """
+    Checks if the native resource graph is a forest.
+    """
+    def forest?(%{resource: res, builder: builder}) do
+      is_directed = builder.kind == :directed
+      nif_is_forest(res, is_directed)
+    end
+
+    def is_forest?(res_graph), do: forest?(res_graph)
+
+    @doc """
+    Checks if the native resource graph is an arborescence.
+    """
+    def arborescence?(%{resource: res, builder: builder}) do
+      if builder.kind != :directed do
+        false
+      else
+        nif_is_arborescence(res)
+      end
+    end
+
+    def is_arborescence?(res_graph), do: arborescence?(res_graph)
+
+    @doc """
+    Finds the root label of an arborescence in the native resource graph, or nil.
+    """
+    def arborescence_root(%{resource: res, builder: builder}) do
+      if builder.kind != :directed do
+        nil
+      else
+        case nif_arborescence_root(res) do
+          {:ok, root_id} -> SoA.id_to_label(builder, root_id)
+          :none -> nil
+        end
+      end
+    end
+
+    @doc """
+    Checks if the native resource graph is a branching.
+    """
+    def branching?(%{resource: res, builder: builder}) do
+      if builder.kind != :directed do
+        false
+      else
+        nif_is_branching(res)
+      end
+    end
+
+    def is_branching?(res_graph), do: branching?(res_graph)
+
+    @doc """
+    Checks if the native resource graph is complete.
+    """
+    def complete?(%{resource: res, builder: builder}) do
+      is_directed = builder.kind == :directed
+      nif_is_complete(res, is_directed)
+    end
+
+    def is_complete?(res_graph), do: complete?(res_graph)
+
+    @doc """
+    Checks if the native resource graph is k-regular.
+    """
+    def regular?(%{resource: res, builder: builder}, k) when is_integer(k) and k >= 0 do
+      is_directed = builder.kind == :directed
+      nif_is_regular(res, k, is_directed)
+    end
+
+    def is_regular?(res_graph, k), do: regular?(res_graph, k)
+
+    @doc """
+    Checks if two native resource graphs are isomorphic using exact VF2 matching.
+    """
+    def isomorphic?(%{resource: res1, builder: b1}, %{resource: res2, builder: b2}) do
+      if b1.kind != b2.kind or SoA.node_count(b1) != SoA.node_count(b2) do
+        false
+      else
+        is_directed = b1.kind == :directed
+        nif_isomorphic(res1, res2, is_directed)
+      end
+    end
+
+    def is_isomorphic?(g1, g2), do: isomorphic?(g1, g2)
+
+    @doc """
+    Finds node mapping dict %{g1_label => g2_label} if isomorphic, or nil.
+    """
+    def find_isomorphism(%{resource: res1, builder: b1}, %{resource: res2, builder: b2}) do
+      if b1.kind != b2.kind or SoA.node_count(b1) != SoA.node_count(b2) do
+        nil
+      else
+        is_directed = b1.kind == :directed
+
+        case nif_find_isomorphism(res1, res2, is_directed) do
+          {:ok, mapping_array} ->
+            mapping_array
+            |> Enum.with_index()
+            |> Map.new(fn {v2_id, u1_id} ->
+              {SoA.id_to_label(b1, u1_id), SoA.id_to_label(b2, v2_id)}
+            end)
+
+          :error ->
+            nil
+        end
       end
     end
 
