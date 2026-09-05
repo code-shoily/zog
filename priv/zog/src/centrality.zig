@@ -538,130 +538,177 @@ pub fn betweenness(
 
     if (is_array_graph) {
         const V = graph.nodeCapacity();
+        var nodes = try utils.collectNodes(allocator, graph);
+        defer nodes.deinit(allocator);
 
-        // Allocate all workspaces once
-        var dist = try allocator.alloc(?Weight, V);
-        defer allocator.free(dist);
+        var scores = std.AutoHashMap(NodeId, f64).init(allocator);
+        if (nodes.items.len == 0) return .{ .scores = scores };
 
-        var sigma = try allocator.alloc(usize, V);
-        defer allocator.free(sigma);
+        const cpu_count = @max(1, std.Thread.getCpuCount() catch 1);
+        const chunk_size = (nodes.items.len + cpu_count - 1) / cpu_count;
 
-        var delta = try allocator.alloc(f64, V);
-        defer allocator.free(delta);
+        const all_local_scores = try allocator.alloc(f64, cpu_count * V);
+        defer allocator.free(all_local_scores);
+        @memset(all_local_scores, 0.0);
 
-        var preds = try allocator.alloc(std.ArrayList(u32), V);
-        for (0..V) |i| {
-            preds[i] = std.ArrayList(u32).empty;
-        }
-        defer {
-            for (0..V) |i| {
-                preds[i].deinit(allocator);
-            }
-            allocator.free(preds);
-        }
+        var threads = try allocator.alloc(std.Thread, cpu_count);
+        defer allocator.free(threads);
 
-        const Item = struct {
-            d: Weight,
-            node: u32,
-        };
+        const Worker = struct {
+            fn run(
+                g: @TypeOf(graph),
+                chunk_nodes: []const u32,
+                local_scores: []f64,
+                zero_val: Weight,
+                add_param: fn (Weight, Weight) Weight,
+                compare_param: fn (Weight, Weight) std.math.Order,
+                alloc_param: std.mem.Allocator,
+            ) void {
+                const inner_V = g.nodeCapacity();
+                var dist = alloc_param.alloc(?Weight, inner_V) catch return;
+                defer alloc_param.free(dist);
 
-        const PQ = std.PriorityQueue(Item, *const fn (Weight, Weight) std.math.Order, struct {
-            fn lessThan(compare: *const fn (Weight, Weight) std.math.Order, a: Item, b: Item) std.math.Order {
-                return compare(a.d, b.d);
-            }
-        }.lessThan);
+                var sigma = alloc_param.alloc(usize, inner_V) catch return;
+                defer alloc_param.free(sigma);
 
-        var pq = PQ.initContext(compareFn);
-        defer pq.deinit(allocator);
+                var delta = alloc_param.alloc(f64, inner_V) catch return;
+                defer alloc_param.free(delta);
 
-        var stack = std.ArrayList(u32).empty;
-        defer stack.deinit(allocator);
+                var preds = alloc_param.alloc(std.ArrayList(u32), inner_V) catch return;
+                for (0..inner_V) |i| {
+                    preds[i] = std.ArrayList(u32).empty;
+                }
+                defer {
+                    for (0..inner_V) |i| {
+                        preds[i].deinit(alloc_param);
+                    }
+                    alloc_param.free(preds);
+                }
 
-        var scores_slice = try allocator.alloc(f64, V);
-        @memset(scores_slice, 0.0);
-        defer allocator.free(scores_slice);
+                const Item = struct {
+                    d: Weight,
+                    node: u32,
+                };
 
-        var node_it = graph.nodeIds();
-        while (node_it.next()) |s| {
-            // Reset workspaces
-            @memset(dist, null);
-            @memset(sigma, @as(usize, 0));
-            @memset(delta, 0.0);
-            for (0..V) |i| {
-                preds[i].clearRetainingCapacity();
-            }
-            pq.items.len = 0;
-            stack.clearRetainingCapacity();
+                const PQ = std.PriorityQueue(Item, *const fn (Weight, Weight) std.math.Order, struct {
+                    fn lessThan(compare: *const fn (Weight, Weight) std.math.Order, a: Item, b: Item) std.math.Order {
+                        return compare(a.d, b.d);
+                    }
+                }.lessThan);
 
-            // Initialize source
-            dist[s] = zero;
-            sigma[s] = 1;
-            try pq.push(allocator, .{ .d = zero, .node = s });
+                var pq = PQ.initContext(compare_param);
+                defer pq.deinit(alloc_param);
 
-            while (pq.count() > 0) {
-                const item = pq.pop().?;
-                const d_v = item.d;
-                const v = item.node;
+                var stack = std.ArrayList(u32).empty;
+                defer stack.deinit(alloc_param);
 
-                const current_best = dist[v] orelse d_v;
-                if (compareFn(d_v, current_best) == .gt) continue;
+                for (chunk_nodes) |s| {
+                    @memset(dist, null);
+                    @memset(sigma, @as(usize, 0));
+                    @memset(delta, 0.0);
+                    for (0..inner_V) |i| {
+                        preds[i].clearRetainingCapacity();
+                    }
+                    pq.items.len = 0;
+                    stack.clearRetainingCapacity();
 
-                try stack.append(allocator, v);
+                    dist[s] = zero_val;
+                    sigma[s] = 1;
+                    pq.push(alloc_param, .{ .d = zero_val, .node = s }) catch continue;
 
-                var sit = graph.successors(v);
-                while (sit.next()) |edge| {
-                    const w = edge.to;
-                    const weight = edge.data;
-                    const new_dist = addFn(d_v, weight);
+                    while (pq.count() > 0) {
+                        const item = pq.pop().?;
+                        const d_v = item.d;
+                        const v = item.node;
 
-                    if (dist[w]) |old_dist| {
-                        const ord = compareFn(new_dist, old_dist);
-                        if (ord == .lt) {
-                            dist[w] = new_dist;
-                            sigma[w] = sigma[v];
-                            preds[w].clearRetainingCapacity();
-                            try preds[w].append(allocator, v);
-                            try pq.push(allocator, .{ .d = new_dist, .node = w });
-                        } else if (ord == .eq) {
-                            sigma[w] += sigma[v];
-                            try preds[w].append(allocator, v);
+                        const current_best = dist[v] orelse d_v;
+                        if (compare_param(d_v, current_best) == .gt) continue;
+
+                        stack.append(alloc_param, v) catch continue;
+
+                        var sit = g.successors(v);
+                        while (sit.next()) |edge| {
+                            const w = edge.to;
+                            const weight = edge.data;
+                            const new_dist = add_param(d_v, weight);
+
+                            if (dist[w]) |old_dist| {
+                                const ord = compare_param(new_dist, old_dist);
+                                if (ord == .lt) {
+                                    dist[w] = new_dist;
+                                    sigma[w] = sigma[v];
+                                    preds[w].clearRetainingCapacity();
+                                    preds[w].append(alloc_param, v) catch {};
+                                    pq.push(alloc_param, .{ .d = new_dist, .node = w }) catch {};
+                                } else if (ord == .eq) {
+                                    sigma[w] += sigma[v];
+                                    preds[w].append(alloc_param, v) catch {};
+                                }
+                            } else {
+                                dist[w] = new_dist;
+                                sigma[w] = sigma[v];
+                                preds[w].append(alloc_param, v) catch {};
+                                pq.push(alloc_param, .{ .d = new_dist, .node = w }) catch {};
+                            }
                         }
-                    } else {
-                        dist[w] = new_dist;
-                        sigma[w] = sigma[v];
-                        try preds[w].append(allocator, v);
-                        try pq.push(allocator, .{ .d = new_dist, .node = w });
+                    }
+
+                    var i: usize = stack.items.len;
+                    while (i > 0) {
+                        i -= 1;
+                        const v = stack.items[i];
+
+                        const sigma_v_f = @as(f64, @floatFromInt(sigma[v]));
+                        const delta_v = delta[v];
+
+                        for (preds[v].items) |u| {
+                            const sigma_u_f = @as(f64, @floatFromInt(sigma[u]));
+                            const c = (sigma_u_f / sigma_v_f) * (1.0 + delta_v);
+                            delta[u] += c;
+                        }
+
+                        if (v != s) {
+                            local_scores[v] += delta_v;
+                        }
                     }
                 }
             }
+        };
 
-            // Accumulate dependency
-            var i: usize = stack.items.len;
-            while (i > 0) {
-                i -= 1;
-                const v = stack.items[i];
-
-                const sigma_v_f = @as(f64, @floatFromInt(sigma[v]));
-                const delta_v = delta[v];
-
-                for (preds[v].items) |u| {
-                    const sigma_u_f = @as(f64, @floatFromInt(sigma[u]));
-                    const c = (sigma_u_f / sigma_v_f) * (1.0 + delta_v);
-                    delta[u] += c;
-                }
-
-                if (v != s) {
-                    scores_slice[v] += delta_v;
-                }
-            }
+        var spawn_count: usize = 0;
+        errdefer {
+            for (threads[0..spawn_count]) |t| t.join();
         }
 
-        var scores = std.AutoHashMap(NodeId, f64).init(allocator);
+        var i: usize = 0;
+        while (i < nodes.items.len) {
+            const end = @min(i + chunk_size, nodes.items.len);
+            const chunk = nodes.items[i..end];
+
+            threads[spawn_count] = try std.Thread.spawn(.{}, Worker.run, .{
+                graph,
+                chunk,
+                all_local_scores[spawn_count * V .. (spawn_count + 1) * V],
+                zero,
+                addFn,
+                compareFn,
+                allocator,
+            });
+            spawn_count += 1;
+            i = end;
+        }
+
+        for (threads[0..spawn_count]) |t| {
+            t.join();
+        }
+
         errdefer scores.deinit();
-        for (0..V) |i| {
-            if (graph.hasNode(@intCast(i))) {
-                try scores.put(@intCast(i), scores_slice[i]);
+        for (nodes.items) |node_id| {
+            var sum: f64 = 0.0;
+            for (0..spawn_count) |t| {
+                sum += all_local_scores[t * V + @as(usize, node_id)];
             }
+            try scores.put(node_id, sum);
         }
         return .{ .scores = scores };
     }
@@ -693,106 +740,147 @@ pub fn betweennessUnweighted(
 
     if (is_array_graph) {
         const V = graph.nodeCapacity();
-
-        // Allocate all workspaces once
-        var dist = try allocator.alloc(?u32, V);
-        defer allocator.free(dist);
-
-        var sigma = try allocator.alloc(usize, V);
-        defer allocator.free(sigma);
-
-        var delta = try allocator.alloc(f64, V);
-        defer allocator.free(delta);
-
-        var preds = try allocator.alloc(std.ArrayList(u32), V);
-        for (0..V) |i| {
-            preds[i] = std.ArrayList(u32).empty;
-        }
-        defer {
-            for (0..V) |i| {
-                preds[i].deinit(allocator);
-            }
-            allocator.free(preds);
-        }
-
-        var queue = std.ArrayList(u32).empty;
-        defer queue.deinit(allocator);
-
-        var stack = std.ArrayList(u32).empty;
-        defer stack.deinit(allocator);
-
-        var scores_slice = try allocator.alloc(f64, V);
-        @memset(scores_slice, 0.0);
-        defer allocator.free(scores_slice);
-
-        var node_it = graph.nodeIds();
-        while (node_it.next()) |s| {
-            // Reset workspaces
-            @memset(dist, null);
-            @memset(sigma, @as(usize, 0));
-            @memset(delta, 0.0);
-            for (0..V) |i| {
-                preds[i].clearRetainingCapacity();
-            }
-            queue.clearRetainingCapacity();
-            stack.clearRetainingCapacity();
-
-            // Initialize source
-            dist[s] = 0;
-            sigma[s] = 1;
-            try queue.append(allocator, s);
-
-            var head: usize = 0;
-            while (head < queue.items.len) {
-                const v = queue.items[head];
-                head += 1;
-                try stack.append(allocator, v);
-
-                const d_v = dist[v].?;
-
-                var sit = graph.successors(v);
-                while (sit.next()) |edge| {
-                    const w = edge.to;
-
-                    if (dist[w] == null) {
-                        dist[w] = d_v + 1;
-                        try queue.append(allocator, w);
-                    }
-
-                    if (dist[w].? == d_v + 1) {
-                        sigma[w] += sigma[v];
-                        try preds[w].append(allocator, v);
-                    }
-                }
-            }
-
-            // Accumulate dependency
-            var i: usize = stack.items.len;
-            while (i > 0) {
-                i -= 1;
-                const v = stack.items[i];
-
-                const sigma_v_f = @as(f64, @floatFromInt(sigma[v]));
-                const delta_v = delta[v];
-
-                for (preds[v].items) |u| {
-                    const sigma_u_f = @as(f64, @floatFromInt(sigma[u]));
-                    const c = (sigma_u_f / sigma_v_f) * (1.0 + delta_v);
-                    delta[u] += c;
-                }
-
-                if (v != s) {
-                    scores_slice[v] += delta_v;
-                }
-            }
-        }
+        var nodes = try utils.collectNodes(allocator, graph);
+        defer nodes.deinit(allocator);
 
         var scores = std.AutoHashMap(NodeId, f64).init(allocator);
-        errdefer scores.deinit();
-        for (0..V) |i| {
-            if (graph.hasNode(@intCast(i))) {
-                try scores.put(@intCast(i), scores_slice[i]);
+        if (nodes.items.len == 0) return .{ .scores = scores };
+
+        const cpu_count = @max(1, std.Thread.getCpuCount() catch 1);
+        const chunk_size = (nodes.items.len + cpu_count - 1) / cpu_count;
+
+        const all_local_scores = try allocator.alloc(f64, cpu_count * V);
+        defer allocator.free(all_local_scores);
+        @memset(all_local_scores, 0.0);
+
+        var threads = try allocator.alloc(std.Thread, cpu_count);
+        defer allocator.free(threads);
+
+        const Worker = struct {
+            fn run(
+                g: @TypeOf(graph),
+                chunk_nodes: []const u32,
+                local_scores: []f64,
+                alloc_param: std.mem.Allocator,
+            ) void {
+                const inner_V = g.nodeCapacity();
+                var dist = alloc_param.alloc(?u32, inner_V) catch return;
+                defer alloc_param.free(dist);
+
+                var sigma = alloc_param.alloc(usize, inner_V) catch return;
+                defer alloc_param.free(sigma);
+
+                var delta = alloc_param.alloc(f64, inner_V) catch return;
+                defer alloc_param.free(delta);
+
+                var preds = alloc_param.alloc(std.ArrayList(u32), inner_V) catch return;
+                for (0..inner_V) |idx| {
+                    preds[idx] = std.ArrayList(u32).empty;
+                }
+                defer {
+                    for (0..inner_V) |idx| {
+                        preds[idx].deinit(alloc_param);
+                    }
+                    alloc_param.free(preds);
+                }
+
+                var queue = std.ArrayList(u32).empty;
+                defer queue.deinit(alloc_param);
+
+                var stack = std.ArrayList(u32).empty;
+                defer stack.deinit(alloc_param);
+
+                for (chunk_nodes) |s| {
+                    @memset(dist, null);
+                    @memset(sigma, @as(usize, 0));
+                    @memset(delta, 0.0);
+                    for (0..inner_V) |idx| {
+                        preds[idx].clearRetainingCapacity();
+                    }
+                    queue.clearRetainingCapacity();
+                    stack.clearRetainingCapacity();
+
+                    dist[s] = 0;
+                    sigma[s] = 1;
+                    queue.append(alloc_param, s) catch continue;
+
+                    var head: usize = 0;
+                    while (head < queue.items.len) {
+                        const v = queue.items[head];
+                        head += 1;
+                        stack.append(alloc_param, v) catch continue;
+
+                        const d_v = dist[v].?;
+
+                        var sit = g.successors(v);
+                        while (sit.next()) |edge| {
+                            const w = edge.to;
+
+                            if (dist[w] == null) {
+                                dist[w] = d_v + 1;
+                                queue.append(alloc_param, w) catch {};
+                            }
+
+                            if (dist[w].? == d_v + 1) {
+                                sigma[w] += sigma[v];
+                                preds[w].append(alloc_param, v) catch {};
+                            }
+                        }
+                    }
+
+                    var idx: usize = stack.items.len;
+                    while (idx > 0) {
+                        idx -= 1;
+                        const v = stack.items[idx];
+
+                        const sigma_v_f = @as(f64, @floatFromInt(sigma[v]));
+                        const delta_v = delta[v];
+
+                        for (preds[v].items) |u| {
+                            const sigma_u_f = @as(f64, @floatFromInt(sigma[u]));
+                            const c = (sigma_u_f / sigma_v_f) * (1.0 + delta_v);
+                            delta[u] += c;
+                        }
+
+                        if (v != s) {
+                            local_scores[v] += delta_v;
+                        }
+                    }
+                }
             }
+        };
+
+        var spawn_count: usize = 0;
+        errdefer {
+            for (threads[0..spawn_count]) |t| t.join();
+        }
+
+        var i: usize = 0;
+        while (i < nodes.items.len) {
+            const end = @min(i + chunk_size, nodes.items.len);
+            const chunk = nodes.items[i..end];
+
+            threads[spawn_count] = try std.Thread.spawn(.{}, Worker.run, .{
+                graph,
+                chunk,
+                all_local_scores[spawn_count * V .. (spawn_count + 1) * V],
+                allocator,
+            });
+            spawn_count += 1;
+            i = end;
+        }
+
+        for (threads[0..spawn_count]) |t| {
+            t.join();
+        }
+
+        errdefer scores.deinit();
+        for (nodes.items) |node_id| {
+            var sum: f64 = 0.0;
+            for (0..spawn_count) |t| {
+                sum += all_local_scores[t * V + @as(usize, node_id)];
+            }
+            try scores.put(node_id, sum);
         }
         return .{ .scores = scores };
     }
@@ -945,8 +1033,18 @@ pub fn pagerank(
             }
 
             var l1_norm: f64 = 0.0;
-            for (nodes.items) |node| {
-                l1_norm += @abs(new_ranks[node] - ranks[node]);
+            var k: usize = 0;
+            const SimdVec = @Vector(4, f64);
+            var norm_vec: SimdVec = @splat(0.0);
+            while (k + 4 <= V) : (k += 4) {
+                const v_new: SimdVec = new_ranks[k..][0..4].*;
+                const v_old: SimdVec = ranks[k..][0..4].*;
+                const diff = v_new - v_old;
+                norm_vec += @abs(diff);
+            }
+            l1_norm = @reduce(.Add, norm_vec);
+            while (k < V) : (k += 1) {
+                l1_norm += @abs(new_ranks[k] - ranks[k]);
             }
 
             // Swap ranks and new_ranks
@@ -1572,6 +1670,146 @@ pub fn hits(
     errdefer auth_scores.deinit();
 
     if (n == 0) {
+        return .{ .hubs = hub_scores, .authorities = auth_scores };
+    }
+
+    const is_array_graph = @hasDecl(@TypeOf(graph), "nodeCapacity") and NodeId == u32;
+
+    if (is_array_graph) {
+        const V = graph.nodeCapacity();
+
+        const initial = 1.0 / @sqrt(@as(f64, @floatFromInt(n)));
+
+        var hubs_arr = try allocator.alloc(f64, V);
+        defer allocator.free(hubs_arr);
+        @memset(hubs_arr, 0.0);
+
+        var auths_arr = try allocator.alloc(f64, V);
+        defer allocator.free(auths_arr);
+        @memset(auths_arr, 0.0);
+
+        for (nodes.items) |node| {
+            hubs_arr[node] = initial;
+            auths_arr[node] = initial;
+        }
+
+        var in_neighbors = try allocator.alloc(std.ArrayList(u32), V);
+        for (0..V) |i| {
+            in_neighbors[i] = std.ArrayList(u32).empty;
+        }
+        defer {
+            for (0..V) |i| {
+                in_neighbors[i].deinit(allocator);
+            }
+            allocator.free(in_neighbors);
+        }
+
+        var out_neighbors = try allocator.alloc(std.ArrayList(u32), V);
+        for (0..V) |i| {
+            out_neighbors[i] = std.ArrayList(u32).empty;
+        }
+        defer {
+            for (0..V) |i| {
+                out_neighbors[i].deinit(allocator);
+            }
+            allocator.free(out_neighbors);
+        }
+
+        var node_it = graph.nodeIds();
+        while (node_it.next()) |from| {
+            var sit = graph.successors(from);
+            while (sit.next()) |edge| {
+                try in_neighbors[edge.to].append(allocator, from);
+                try out_neighbors[from].append(allocator, edge.to);
+            }
+        }
+
+        var new_auth = try allocator.alloc(f64, V);
+        defer allocator.free(new_auth);
+        @memset(new_auth, 0.0);
+
+        var new_hub = try allocator.alloc(f64, V);
+        defer allocator.free(new_hub);
+        @memset(new_hub, 0.0);
+
+        var iteration: usize = 0;
+        while (iteration < max_iterations) : (iteration += 1) {
+            for (nodes.items) |node| {
+                var sum: f64 = 0.0;
+                for (in_neighbors[node].items) |pred| {
+                    sum += hubs_arr[pred];
+                }
+                new_auth[node] = sum;
+            }
+
+            for (nodes.items) |node| {
+                var sum: f64 = 0.0;
+                for (out_neighbors[node].items) |succ| {
+                    sum += new_auth[succ];
+                }
+                new_hub[node] = sum;
+            }
+
+            // SIMD L2 norm
+            const SimdVec = @Vector(4, f64);
+            var auth_sq_vec: SimdVec = @splat(0.0);
+            var hub_sq_vec: SimdVec = @splat(0.0);
+            var k: usize = 0;
+            while (k + 4 <= V) : (k += 4) {
+                const a: SimdVec = new_auth[k..][0..4].*;
+                const h: SimdVec = new_hub[k..][0..4].*;
+                auth_sq_vec += a * a;
+                hub_sq_vec += h * h;
+            }
+            var auth_l2: f64 = @reduce(.Add, auth_sq_vec);
+            var hub_l2: f64 = @reduce(.Add, hub_sq_vec);
+            while (k < V) : (k += 1) {
+                auth_l2 += new_auth[k] * new_auth[k];
+                hub_l2 += new_hub[k] * new_hub[k];
+            }
+            auth_l2 = @sqrt(auth_l2);
+            hub_l2 = @sqrt(hub_l2);
+
+            for (nodes.items) |node| {
+                if (auth_l2 > 0.0) new_auth[node] /= auth_l2;
+                if (hub_l2 > 0.0) new_hub[node] /= hub_l2;
+            }
+
+            // SIMD L2 diff
+            var auth_diff_vec: SimdVec = @splat(0.0);
+            var hub_diff_vec: SimdVec = @splat(0.0);
+            k = 0;
+            while (k + 4 <= V) : (k += 4) {
+                const na: SimdVec = new_auth[k..][0..4].*;
+                const oa: SimdVec = auths_arr[k..][0..4].*;
+                const da = na - oa;
+                const nh: SimdVec = new_hub[k..][0..4].*;
+                const oh: SimdVec = hubs_arr[k..][0..4].*;
+                const dh = nh - oh;
+                auth_diff_vec += da * da;
+                hub_diff_vec += dh * dh;
+            }
+            var auth_diff_sq: f64 = @reduce(.Add, auth_diff_vec);
+            var hub_diff_sq: f64 = @reduce(.Add, hub_diff_vec);
+            while (k < V) : (k += 1) {
+                const da = new_auth[k] - auths_arr[k];
+                const dh = new_hub[k] - hubs_arr[k];
+                auth_diff_sq += da * da;
+                hub_diff_sq += dh * dh;
+            }
+            const auth_diff = @sqrt(auth_diff_sq);
+            const hub_diff = @sqrt(hub_diff_sq);
+
+            @memcpy(auths_arr, new_auth);
+            @memcpy(hubs_arr, new_hub);
+
+            if (auth_diff < tolerance and hub_diff < tolerance) break;
+        }
+
+        for (nodes.items) |node| {
+            try hub_scores.put(node, hubs_arr[node]);
+            try auth_scores.put(node, auths_arr[node]);
+        }
         return .{ .hubs = hub_scores, .authorities = auth_scores };
     }
 

@@ -101,7 +101,15 @@ pub fn detectHierarchical(
                     const aik = p_curr[i_off + k];
                     if (aik > 1.0e-12) {
                         const k_off = k * N;
-                        for (0..N) |j| {
+                        var j: usize = 0;
+                        const SimdVec = @Vector(4, f64);
+                        const aik_vec: SimdVec = @splat(aik);
+                        while (j + 4 <= N) : (j += 4) {
+                            const p_next_vec: SimdVec = p_next[i_off + j ..][0..4].*;
+                            const p1_vec: SimdVec = p1[k_off + j ..][0..4].*;
+                            p_next[i_off + j ..][0..4].* = p_next_vec + aik_vec * p1_vec;
+                        }
+                        while (j < N) : (j += 1) {
                             p_next[i_off + j] += aik * p1[k_off + j];
                         }
                     }
@@ -135,8 +143,18 @@ pub fn detectHierarchical(
         for (0..N) |j| {
             if (i < j) {
                 const j_off = j * N;
-                var r2: f64 = 0.0;
-                for (0..N) |k| {
+                const SimdVec = @Vector(4, f64);
+                var r2_vec: SimdVec = @splat(0.0);
+                var k: usize = 0;
+                while (k + 4 <= N) : (k += 4) {
+                    const pi: SimdVec = p_curr[i_off + k ..][0..4].*;
+                    const pj: SimdVec = p_curr[j_off + k ..][0..4].*;
+                    const pd: SimdVec = degrees[k ..][0..4].*;
+                    const diff = pi - pj;
+                    r2_vec += (diff * diff) / pd;
+                }
+                var r2: f64 = @reduce(.Add, r2_vec);
+                while (k < N) : (k += 1) {
                     const diff = p_curr[i_off + k] - p_curr[j_off + k];
                     r2 += (diff * diff) / degrees[k];
                 }

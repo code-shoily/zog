@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Updated `ROADMAP.md` and `ALGORITHMS.md` to mark all v0.4.0 milestone items as implemented.
 - Added `Zog.Traversal` and `Zog.HealthMetrics` to the Algorithms docs group in `mix.exs`.
+- Optimized execution performance across core graph algorithms:
+  - Added `@Vector(4, f64)` SIMD vectorization for matrix operations and norm calculations in Walktrap community detection, HITS, PageRank, and centrality linear algebra loops.
+  - Added multi-threaded parallel execution via `std.Thread` across CPU cores for Floyd-Warshall All-Pairs Shortest Path and Brandes Betweenness Centrality.
+  - Configured all NIF modules with `[concurrency: :dirty_cpu]` for BEAM scheduler stability during heavy native graph computations.
 
 ## [0.3.0] - 2026-06-14
 
