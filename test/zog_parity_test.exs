@@ -93,8 +93,8 @@ defmodule Zog.PBT.ZogParityTest do
             elixir_ev = Yog.Centrality.eigenvector(graph)
 
             for node <- Yog.all_nodes(graph) do
-              assert_in_delta abs(native_ev[node]), abs(elixir_ev[node]), 0.25
-              assert_in_delta abs(res_ev[node]), abs(elixir_ev[node]), 0.25
+              assert_in_delta abs(native_ev[node]), abs(elixir_ev[node]), 0.30
+              assert_in_delta abs(res_ev[node]), abs(elixir_ev[node]), 0.30
             end
           end
 

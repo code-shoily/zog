@@ -15,7 +15,8 @@ defmodule Zog.Pathfinding do
         nif_dijkstra: [concurrency: :dirty_cpu],
         nif_bellman_ford: [concurrency: :dirty_cpu],
         nif_astar: [concurrency: :dirty_cpu],
-        nif_is_reachable: [concurrency: :dirty_cpu]
+        nif_is_reachable: [concurrency: :dirty_cpu],
+        nif_yen_k_shortest: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -204,6 +205,48 @@ defmodule Zog.Pathfinding do
         const reachable = try zog.pathfinding.isReachable(beam.allocator, g, start_node, goal_node);
         return beam.make(reachable, .{});
     }
+
+    pub fn nif_yen_k_shortest(
+        node_count: usize,
+        from: []u32,
+        to: []u32,
+        weight: []f64,
+        start_node: u32,
+        goal_node: u32,
+        k: usize,
+    ) !beam.term {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        const opt_res = zog.pathfinding.yenKShortest(beam.allocator, g, start_node, goal_node, k) catch |err| {
+            return err;
+        };
+
+        if (opt_res) |paths| {
+            defer {
+                for (paths) |*p| p.deinit(beam.allocator);
+                beam.allocator.free(paths);
+            }
+
+            const PathTuple = struct {
+                nodes: []u32,
+                weight: f64,
+            };
+
+            const tuples = try beam.allocator.alloc(PathTuple, paths.len);
+            defer beam.allocator.free(tuples);
+
+            for (paths, 0..) |p, i| {
+                const path_slice = try beam.allocator.alloc(u32, p.nodes.items.len);
+                @memcpy(path_slice, p.nodes.items);
+                tuples[i] = .{ .nodes = path_slice, .weight = p.weight };
+            }
+
+            return beam.make(.{.ok, tuples}, .{});
+        } else {
+            return beam.make(.{.@"error", .no_path}, .{});
+        }
+    }
     """
 
     @doc """
@@ -383,6 +426,44 @@ defmodule Zog.Pathfinding do
         end
       end
     end
+
+    @doc """
+    Computes the k shortest loopless paths and their weights between two nodes using Yen's algorithm.
+    """
+    @spec yen_k_shortest(SoA.t(), SoA.label(), SoA.label(), pos_integer()) ::
+            {:ok, [{[SoA.label()], float()}]} | {:error, :no_path}
+    def yen_k_shortest(%SoA{} = builder, start_label, goal_label, k)
+        when is_integer(k) and k >= 1 do
+      start_id = Map.get(builder.label_to_id, start_label)
+      goal_id = Map.get(builder.label_to_id, goal_label)
+
+      if is_nil(start_id) or is_nil(goal_id) do
+        {:error, :no_path}
+      else
+        node_count = SoA.node_count(builder)
+        {from, to, weights} = SoA.to_edge_arrays(builder)
+
+        case nif_yen_k_shortest(node_count, from, to, weights, start_id, goal_id, k) do
+          {:ok, raw_paths} ->
+            paths =
+              Enum.map(raw_paths, fn %{nodes: path_ids, weight: weight} ->
+                path_labels = Enum.map(path_ids, &SoA.id_to_label(builder, &1))
+                {path_labels, weight}
+              end)
+
+            {:ok, paths}
+
+          {:error, :no_path} ->
+            {:error, :no_path}
+        end
+      end
+    end
+
+    @doc """
+    Alias for `yen_k_shortest/4`.
+    """
+    def k_shortest_paths(%SoA{} = builder, start_label, goal_label, k),
+      do: yen_k_shortest(builder, start_label, goal_label, k)
   else
     @moduledoc """
     Native pathfinding algorithms backed by Zog (Zig) via Zigler.
@@ -409,6 +490,14 @@ defmodule Zog.Pathfinding do
     end
 
     def reachable?(_builder, _start_label, _goal_label) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def yen_k_shortest(_builder, _start_label, _goal_label, _k) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def k_shortest_paths(_builder, _start_label, _goal_label, _k) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
   end

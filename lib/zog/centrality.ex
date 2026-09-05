@@ -18,7 +18,8 @@ defmodule Zog.Centrality do
         pagerank: [concurrency: :dirty_cpu],
         eigenvector: [concurrency: :dirty_cpu],
         katz: [concurrency: :dirty_cpu],
-        alpha_centrality: [concurrency: :dirty_cpu]
+        alpha_centrality: [concurrency: :dirty_cpu],
+        nif_hits: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -182,6 +183,34 @@ defmodule Zog.Centrality do
 
         return extractScores(result, node_count);
     }
+
+    pub fn nif_hits(
+        node_count: usize,
+        from: []u32,
+        to: []u32,
+        weight: []f64,
+        max_iterations: usize,
+        tolerance: f64,
+    ) !beam.term {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        var result = try zog.centrality.hits(beam.allocator, g, max_iterations, tolerance);
+        defer result.deinit();
+
+        const hubs = try beam.allocator.alloc(f64, node_count);
+        defer beam.allocator.free(hubs);
+        const auths = try beam.allocator.alloc(f64, node_count);
+        defer beam.allocator.free(auths);
+
+        for (0..node_count) |i| {
+            const u: u32 = @intCast(i);
+            hubs[i] = result.hubs.get(u) orelse 0.0;
+            auths[i] = result.authorities.get(u) orelse 0.0;
+        }
+
+        return beam.make(.{ .ok, hubs, auths }, .{});
+    }
     """
 
     @doc """
@@ -312,6 +341,64 @@ defmodule Zog.Centrality do
       map_scores(builder, scores)
     end
 
+    @doc """
+    Calculates HITS hub and authority scores for all nodes natively.
+
+    Returns `%{hubs: %{label => score}, authorities: %{label => score}}`.
+
+    ## Options
+
+      * `:max_iterations` - Maximum power iterations (default: 100).
+      * `:tolerance` - Convergence threshold for L2 norm (default: 1.0e-6).
+    """
+    @spec hits(SoA.t() | struct(), keyword()) :: %{
+            hubs: %{SoA.label() => float()},
+            authorities: %{SoA.label() => float()}
+          }
+    def hits(graph, opts \\ [])
+
+    def hits(%SoA{} = builder, opts) do
+      max_iterations = Keyword.get(opts, :max_iterations, 100)
+      tolerance = Keyword.get(opts, :tolerance, 1.0e-6)
+
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
+
+      if node_count == 0 do
+        %{hubs: %{}, authorities: %{}}
+      else
+        {:ok, hubs_list, auths_list} =
+          nif_hits(node_count, from, to, weights, max_iterations, tolerance)
+
+        labels = SoA.all_labels(builder)
+        labels_tuple = List.to_tuple(labels)
+
+        hubs =
+          hubs_list
+          |> Enum.with_index()
+          |> Map.new(fn {score, idx} -> {elem(labels_tuple, idx), score} end)
+
+        authorities =
+          auths_list
+          |> Enum.with_index()
+          |> Map.new(fn {score, idx} -> {elem(labels_tuple, idx), score} end)
+
+        %{hubs: hubs, authorities: authorities}
+      end
+    end
+
+    def hits(%{resource: _res} = res_graph, opts) do
+      Zog.ResourceGraph.hits(res_graph, opts)
+    end
+
+    def hits(%Yog.Graph{} = yog_graph, opts) do
+      hits(Zog.from_graph(yog_graph), opts)
+    end
+
+    def hits(%Yog.DAG{graph: yog_graph}, opts) do
+      hits(Zog.from_graph(yog_graph), opts)
+    end
+
     # ============================================================================
     # Private Helpers
     # ============================================================================
@@ -343,7 +430,8 @@ defmodule Zog.Centrality do
           :pagerank,
           :eigenvector,
           :katz,
-          :alpha_centrality
+          :alpha_centrality,
+          :hits
         ] do
       def unquote(fun)(_builder, _opts \\ []) do
         raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."

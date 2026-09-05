@@ -574,3 +574,536 @@ test "dsatur & exactColoring: cycle graph" {
     try std.testing.expectEqual(@as(u32, 3), exact_res.chi);
 }
 
+/// Computes the Weisfeiler-Lehman (WL) structural graph hash.
+/// Returns a 32-character lowercase hex string (MD5 digest).
+pub fn weisfeilerLehmanHash(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    iterations: usize,
+    custom_initial_labels: ?[]const []const u8,
+) ![32]u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
+    const V = graph.nodeCount();
+    if (V == 0) {
+        var md5 = std.crypto.hash.Md5.init(.{});
+        var digest: [16]u8 = undefined;
+        md5.final(&digest);
+        const hex_chars = "0123456789abcdef";
+        var result: [32]u8 = undefined;
+        for (digest, 0..) |b, idx| {
+            result[idx * 2] = hex_chars[b >> 4];
+            result[idx * 2 + 1] = hex_chars[b & 0x0F];
+        }
+        return result;
+    }
+
+    // Pre-build neighbor lists for each node 0..V-1
+    var neighbors = try arena_alloc.alloc([]u32, V);
+    for (0..V) |i| {
+        var count: usize = 0;
+        var succ_it = graph.successors(@intCast(i));
+        while (succ_it.next()) |_| count += 1;
+
+        var list = try arena_alloc.alloc(u32, count);
+        succ_it = graph.successors(@intCast(i));
+        var idx: usize = 0;
+        while (succ_it.next()) |edge| {
+            list[idx] = @intCast(edge.to);
+            idx += 1;
+        }
+        neighbors[i] = list;
+    }
+
+    // Initial labels for each node 0..V-1
+    var current_labels = try arena_alloc.alloc([]u8, V);
+
+    if (custom_initial_labels) |labels| {
+        for (0..V) |i| {
+            current_labels[i] = try arena_alloc.dupe(u8, labels[i]);
+        }
+    } else {
+        // Default degree labeling
+        for (0..V) |i| {
+            const deg = neighbors[i].len;
+            current_labels[i] = try std.fmt.allocPrint(arena_alloc, "{d}", .{deg});
+        }
+    }
+
+    // Message-passing iterations
+    var next_labels = try arena_alloc.alloc([]u8, V);
+
+    for (0..iterations) |_| {
+        for (0..V) |u| {
+            const u_neighbors = neighbors[u];
+            var n_labels = try arena_alloc.alloc([]const u8, u_neighbors.len);
+
+            for (u_neighbors, 0..) |v, idx| {
+                n_labels[idx] = current_labels[v];
+            }
+
+            // Sort neighbor labels lexicographically
+            const sortFn = struct {
+                fn cmp(_: void, a: []const u8, b: []const u8) bool {
+                    return std.mem.order(u8, a, b) == .lt;
+                }
+            }.cmp;
+            std.mem.sort([]const u8, n_labels, {}, sortFn);
+
+            // Combine: label[u] + concatenated sorted neighbor labels
+            var combined_len: usize = current_labels[u].len;
+            for (n_labels) |nl| combined_len += nl.len;
+
+            var combined = try arena_alloc.alloc(u8, combined_len);
+
+            @memcpy(combined[0..current_labels[u].len], current_labels[u]);
+            var offset: usize = current_labels[u].len;
+            for (n_labels) |nl| {
+                @memcpy(combined[offset .. offset + nl.len], nl);
+                offset += nl.len;
+            }
+
+            // Hash MD5 -> 32 char lower hex
+            var md5 = std.crypto.hash.Md5.init(.{});
+            md5.update(combined);
+            var digest: [16]u8 = undefined;
+            md5.final(&digest);
+
+            const hex_chars = "0123456789abcdef";
+            var hex_str = try arena_alloc.alloc(u8, 32);
+            for (digest, 0..) |b, idx| {
+                hex_str[idx * 2] = hex_chars[b >> 4];
+                hex_str[idx * 2 + 1] = hex_chars[b & 0x0F];
+            }
+
+            next_labels[u] = hex_str;
+        }
+
+        // Swap current_labels and next_labels
+        const tmp = current_labels;
+        current_labels = next_labels;
+        next_labels = tmp;
+    }
+
+    // Final Hash: Collect all final node labels, sort lexicographically, join and MD5
+    var final_labels = try arena_alloc.alloc([]const u8, V);
+    for (0..V) |i| {
+        final_labels[i] = current_labels[i];
+    }
+
+    const sortFn = struct {
+        fn cmp(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.order(u8, a, b) == .lt;
+        }
+    }.cmp;
+    std.mem.sort([]const u8, final_labels, {}, sortFn);
+
+    var total_len: usize = 0;
+    for (final_labels) |fl| total_len += fl.len;
+
+    var final_combined = try arena_alloc.alloc(u8, total_len);
+
+    var offset: usize = 0;
+    for (final_labels) |fl| {
+        @memcpy(final_combined[offset .. offset + fl.len], fl);
+        offset += fl.len;
+    }
+
+    var md5 = std.crypto.hash.Md5.init(.{});
+    md5.update(final_combined);
+    var final_digest: [16]u8 = undefined;
+    md5.final(&final_digest);
+
+    const hex_chars = "0123456789abcdef";
+    var result: [32]u8 = undefined;
+    for (final_digest, 0..) |b, idx| {
+        result[idx * 2] = hex_chars[b >> 4];
+        result[idx * 2 + 1] = hex_chars[b & 0x0F];
+    }
+
+    return result;
+}
+
+test "weisfeilerLehmanHash: isomorphic graphs get same hash" {
+    const allocator = std.testing.allocator;
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+
+    // Graph 1: 0-1-2
+    var g1 = AG(void, void).init(allocator);
+    defer g1.deinit();
+    _ = try g1.addNode({}); _ = try g1.addNode({}); _ = try g1.addNode({});
+    _ = try g1.addEdge(0, 1, {}); _ = try g1.addEdge(1, 0, {});
+    _ = try g1.addEdge(1, 2, {}); _ = try g1.addEdge(2, 1, {});
+
+    // Graph 2: 2-0-1 (same structure, different node indexing order)
+    var g2 = AG(void, void).init(allocator);
+    defer g2.deinit();
+    _ = try g2.addNode({}); _ = try g2.addNode({}); _ = try g2.addNode({});
+    _ = try g2.addEdge(2, 0, {}); _ = try g2.addEdge(0, 2, {});
+    _ = try g2.addEdge(0, 1, {}); _ = try g2.addEdge(1, 0, {});
+
+    const h1 = try weisfeilerLehmanHash(allocator, g1, 3, null);
+    const h2 = try weisfeilerLehmanHash(allocator, g2, 3, null);
+
+    try std.testing.expectEqualSlices(u8, &h1, &h2);
+
+    // Graph 3: Triangle (different structure)
+    var g3 = AG(void, void).init(allocator);
+    defer g3.deinit();
+    _ = try g3.addNode({}); _ = try g3.addNode({}); _ = try g3.addNode({});
+    _ = try g3.addEdge(0, 1, {}); _ = try g3.addEdge(1, 0, {});
+    _ = try g3.addEdge(1, 2, {}); _ = try g3.addEdge(2, 1, {});
+    _ = try g3.addEdge(2, 0, {}); _ = try g3.addEdge(0, 2, {});
+
+    const h3 = try weisfeilerLehmanHash(allocator, g3, 3, null);
+    try std.testing.expect(!std.mem.eql(u8, &h1, &h3));
+}
+
+// ---------------------------------------------------------------------------
+// Eulerian Path & Circuit Algorithms (Hierholzer's Algorithm)
+// ---------------------------------------------------------------------------
+
+pub fn isEulerianConnected(allocator: std.mem.Allocator, graph: anytype) !bool {
+    const node_count = graph.nodeCount();
+    if (node_count == 0) return false;
+
+    var in_deg = try allocator.alloc(u32, node_count);
+    defer allocator.free(in_deg);
+    @memset(in_deg, 0);
+
+    var out_deg = try allocator.alloc(u32, node_count);
+    defer allocator.free(out_deg);
+    @memset(out_deg, 0);
+
+    var node_it = graph.nodeIds();
+    while (node_it.next()) |u| {
+        var succ_it = graph.successors(u);
+        while (succ_it.next()) |edge| {
+            out_deg[u] += 1;
+            in_deg[edge.to] += 1;
+        }
+    }
+
+    var non_isolated_count: usize = 0;
+    var start_node: ?u32 = null;
+
+    for (0..node_count) |i| {
+        const total = in_deg[i] + out_deg[i];
+        if (total > 0) {
+            non_isolated_count += 1;
+            if (start_node == null) start_node = @intCast(i);
+        }
+    }
+
+    if (non_isolated_count == 0) return false;
+    const start = start_node.?;
+
+    var visited = try allocator.alloc(bool, node_count);
+    defer allocator.free(visited);
+    @memset(visited, false);
+
+    var queue = std.ArrayList(u32).empty;
+    defer queue.deinit(allocator);
+
+    visited[start] = true;
+    try queue.append(allocator, start);
+    var reached_count: usize = 0;
+
+    var head: usize = 0;
+    while (head < queue.items.len) : (head += 1) {
+        const u = queue.items[head];
+        reached_count += 1;
+
+        var succ_it = graph.successors(u);
+        while (succ_it.next()) |edge| {
+            const v = edge.to;
+            if (!visited[v]) {
+                visited[v] = true;
+                try queue.append(allocator, v);
+            }
+        }
+
+        // Check predecessors for weak connectivity
+        for (0..node_count) |v| {
+            if (!visited[v]) {
+                var v_succ = graph.successors(@intCast(v));
+                while (v_succ.next()) |e| {
+                    if (e.to == u) {
+                        visited[v] = true;
+                        try queue.append(allocator, @intCast(v));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    return reached_count == non_isolated_count;
+}
+
+pub fn hasEulerianCircuit(allocator: std.mem.Allocator, graph: anytype, is_directed: bool) !bool {
+    const node_count = graph.nodeCount();
+    if (node_count == 0) return false;
+
+    var in_deg = try allocator.alloc(u32, node_count);
+    defer allocator.free(in_deg);
+    @memset(in_deg, 0);
+
+    var out_deg = try allocator.alloc(u32, node_count);
+    defer allocator.free(out_deg);
+    @memset(out_deg, 0);
+
+    var total_edges: usize = 0;
+    var node_it = graph.nodeIds();
+    while (node_it.next()) |u| {
+        var succ_it = graph.successors(u);
+        while (succ_it.next()) |edge| {
+            out_deg[u] += 1;
+            in_deg[edge.to] += 1;
+            total_edges += 1;
+        }
+    }
+
+    if (total_edges == 0) return false;
+
+    if (is_directed) {
+        for (0..node_count) |i| {
+            if (in_deg[i] != out_deg[i]) return false;
+        }
+    } else {
+        for (0..node_count) |i| {
+            if (in_deg[i] % 2 != 0) return false;
+        }
+    }
+
+    return try isEulerianConnected(allocator, graph);
+}
+
+pub fn hasEulerianPath(allocator: std.mem.Allocator, graph: anytype, is_directed: bool) !bool {
+    const node_count = graph.nodeCount();
+    if (node_count == 0) return false;
+
+    var in_deg = try allocator.alloc(u32, node_count);
+    defer allocator.free(in_deg);
+    @memset(in_deg, 0);
+
+    var out_deg = try allocator.alloc(u32, node_count);
+    defer allocator.free(out_deg);
+    @memset(out_deg, 0);
+
+    var total_edges: usize = 0;
+    var node_it = graph.nodeIds();
+    while (node_it.next()) |u| {
+        var succ_it = graph.successors(u);
+        while (succ_it.next()) |edge| {
+            out_deg[u] += 1;
+            in_deg[edge.to] += 1;
+            total_edges += 1;
+        }
+    }
+
+    if (total_edges == 0) return false;
+
+    if (is_directed) {
+        var start_count: usize = 0;
+        var end_count: usize = 0;
+        for (0..node_count) |i| {
+            const diff = @as(i64, out_deg[i]) - @as(i64, in_deg[i]);
+            if (diff == 1) {
+                start_count += 1;
+            } else if (diff == -1) {
+                end_count += 1;
+            } else if (diff != 0) {
+                return false;
+            }
+        }
+        if (!((start_count == 0 and end_count == 0) or (start_count == 1 and end_count == 1))) {
+            return false;
+        }
+    } else {
+        var odd_count: usize = 0;
+        for (0..node_count) |i| {
+            if (in_deg[i] % 2 != 0) odd_count += 1;
+        }
+        if (odd_count != 0 and odd_count != 2) return false;
+    }
+
+    return try isEulerianConnected(allocator, graph);
+}
+
+pub fn eulerianPathOrCircuit(allocator: std.mem.Allocator, graph: anytype, is_directed: bool, is_circuit_only: bool) !?[]u32 {
+    const valid = if (is_circuit_only)
+        try hasEulerianCircuit(allocator, graph, is_directed)
+    else
+        try hasEulerianPath(allocator, graph, is_directed);
+
+    if (!valid) return null;
+
+    const node_count = graph.nodeCount();
+
+    var in_deg = try allocator.alloc(u32, node_count);
+    defer allocator.free(in_deg);
+    @memset(in_deg, 0);
+
+    var out_deg = try allocator.alloc(u32, node_count);
+    defer allocator.free(out_deg);
+    @memset(out_deg, 0);
+
+    var node_it = graph.nodeIds();
+    while (node_it.next()) |u| {
+        var succ_it = graph.successors(u);
+        while (succ_it.next()) |edge| {
+            out_deg[u] += 1;
+            in_deg[edge.to] += 1;
+        }
+    }
+
+    // Find start node
+    var start_node: u32 = 0;
+    var found_start = false;
+
+    if (!is_circuit_only and is_directed) {
+        for (0..node_count) |i| {
+            if (@as(i64, out_deg[i]) - @as(i64, in_deg[i]) == 1) {
+                start_node = @intCast(i);
+                found_start = true;
+                break;
+            }
+        }
+    } else if (!is_circuit_only and !is_directed) {
+        for (0..node_count) |i| {
+            if (in_deg[i] % 2 != 0) {
+                start_node = @intCast(i);
+                found_start = true;
+                break;
+            }
+        }
+    }
+
+    if (!found_start) {
+        for (0..node_count) |i| {
+            if (out_deg[i] > 0 or in_deg[i] > 0) {
+                start_node = @intCast(i);
+                break;
+            }
+        }
+    }
+
+    const EdgeRef = struct {
+        to: u32,
+        edge_id: u32,
+    };
+
+    var adj = try allocator.alloc(std.ArrayList(EdgeRef), node_count);
+    defer {
+        for (adj) |*list| list.deinit(allocator);
+        allocator.free(adj);
+    }
+    for (0..node_count) |i| adj[i] = std.ArrayList(EdgeRef).empty;
+
+    var next_edge_id: u32 = 0;
+
+    if (is_directed) {
+        var nit = graph.nodeIds();
+        while (nit.next()) |u| {
+            var sit = graph.successors(u);
+            while (sit.next()) |edge| {
+                const eid = next_edge_id;
+                next_edge_id += 1;
+                try adj[u].append(allocator, .{ .to = edge.to, .edge_id = eid });
+            }
+        }
+    } else {
+        var nit = graph.nodeIds();
+        while (nit.next()) |u| {
+            var sit = graph.successors(u);
+            while (sit.next()) |edge| {
+                const v = edge.to;
+                if (u <= v) {
+                    const eid = next_edge_id;
+                    next_edge_id += 1;
+                    try adj[u].append(allocator, .{ .to = v, .edge_id = eid });
+                    if (u != v) {
+                        try adj[v].append(allocator, .{ .to = u, .edge_id = eid });
+                    }
+                }
+            }
+        }
+    }
+
+    var used_edges = try allocator.alloc(bool, next_edge_id);
+    defer allocator.free(used_edges);
+    @memset(used_edges, false);
+
+    var adj_idx = try allocator.alloc(usize, node_count);
+    defer allocator.free(adj_idx);
+    @memset(adj_idx, 0);
+
+    var stack = std.ArrayList(u32).empty;
+    defer stack.deinit(allocator);
+
+    var circuit = std.ArrayList(u32).empty;
+    errdefer circuit.deinit(allocator);
+
+    try stack.append(allocator, start_node);
+
+    while (stack.items.len > 0) {
+        const u = stack.items[stack.items.len - 1];
+
+        var found_edge = false;
+        while (adj_idx[u] < adj[u].items.len) {
+            const edge_ref = adj[u].items[adj_idx[u]];
+            adj_idx[u] += 1;
+
+            if (!used_edges[edge_ref.edge_id]) {
+                used_edges[edge_ref.edge_id] = true;
+                try stack.append(allocator, edge_ref.to);
+                found_edge = true;
+                break;
+            }
+        }
+
+        if (!found_edge) {
+            try circuit.append(allocator, stack.pop().?);
+        }
+    }
+
+    std.mem.reverse(u32, circuit.items);
+    return try circuit.toOwnedSlice(allocator);
+}
+
+test "eulerian circuit on square graph" {
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+    var g = AG(void, f64).init(std.testing.allocator);
+    defer g.deinit();
+
+    _ = try g.addNode({}); // 0
+    _ = try g.addNode({}); // 1
+    _ = try g.addNode({}); // 2
+    _ = try g.addNode({}); // 3
+
+    // 0 - 1 - 2 - 3 - 0
+    _ = try g.addEdge(0, 1, 1.0);
+    _ = try g.addEdge(1, 0, 1.0);
+    _ = try g.addEdge(1, 2, 1.0);
+    _ = try g.addEdge(2, 1, 1.0);
+    _ = try g.addEdge(2, 3, 1.0);
+    _ = try g.addEdge(3, 2, 1.0);
+    _ = try g.addEdge(3, 0, 1.0);
+    _ = try g.addEdge(0, 3, 1.0);
+
+    const has_c = try hasEulerianCircuit(std.testing.allocator, g, false);
+    try std.testing.expect(has_c);
+
+    const circuit_opt = try eulerianPathOrCircuit(std.testing.allocator, g, false, true);
+    try std.testing.expect(circuit_opt != null);
+    const circuit = circuit_opt.?;
+    defer std.testing.allocator.free(circuit);
+
+    try std.testing.expectEqual(@as(usize, 5), circuit.len);
+    try std.testing.expectEqual(circuit[0], circuit[circuit.len - 1]);
+}
+
+

@@ -479,6 +479,12 @@ pub const HeuristicContext = struct {
     }
 };
 
+pub const FilterContext = struct {
+    disabled_nodes: ?[]const bool = null,
+    disabled_targets: ?[]const u32 = null,
+    spur_node: ?u32 = null,
+};
+
 fn pointToPointSearchInternal(
     comptime is_astar: bool,
     allocator: std.mem.Allocator,
@@ -491,6 +497,7 @@ fn pointToPointSearchInternal(
     comptime compareFn: fn (a: Weight, b: Weight) std.math.Order,
     heuristic_ctx_opt: ?HeuristicContext,
     workspace_opt: ?*SSSPWorkspace(@TypeOf(start_node), Weight),
+    filter_ctx_opt: ?FilterContext,
 ) !?ShortestPathResult(@TypeOf(start_node), Weight) {
     const NodeId = @TypeOf(start_node);
 
@@ -541,6 +548,26 @@ fn pointToPointSearchInternal(
 
         var it = graph.successors(current.node);
         while (it.next()) |edge| {
+            if (filter_ctx_opt) |filter| {
+                if (filter.disabled_nodes) |dn| {
+                    if (edge.to < dn.len and dn[edge.to]) continue;
+                }
+                if (filter.spur_node) |spur| {
+                    if (current.node == spur) {
+                        if (filter.disabled_targets) |dt| {
+                            var is_disabled = false;
+                            for (dt) |target| {
+                                if (edge.to == target) {
+                                    is_disabled = true;
+                                    break;
+                                }
+                            }
+                            if (is_disabled) continue;
+                        }
+                    }
+                }
+            }
+
             const tentative_g = addFn(current.g, edge.data);
             const to_idx = try mapper.getOrPut(edge.to);
             const old_g_opt = ws.dist[to_idx];
@@ -569,7 +596,31 @@ pub fn dijkstraGeneric(
     comptime compareFn: fn (a: Weight, b: Weight) std.math.Order,
     workspace_opt: ?*SSSPWorkspace(@TypeOf(start_node), Weight),
 ) !?ShortestPathResult(@TypeOf(start_node), Weight) {
-    return pointToPointSearchInternal(false, allocator, graph, start_node, goal_node, Weight, zero, addFn, compareFn, null, workspace_opt);
+    return pointToPointSearchInternal(false, allocator, graph, start_node, goal_node, Weight, zero, addFn, compareFn, null, workspace_opt, null);
+}
+
+pub fn dijkstraGenericWithFilter(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    start_node: anytype,
+    goal_node: anytype,
+    comptime Weight: type,
+    zero: Weight,
+    comptime addFn: fn (a: Weight, b: Weight) Weight,
+    comptime compareFn: fn (a: Weight, b: Weight) std.math.Order,
+    filter: FilterContext,
+) !?ShortestPathResult(@TypeOf(start_node), Weight) {
+    return pointToPointSearchInternal(false, allocator, graph, start_node, goal_node, Weight, zero, addFn, compareFn, null, null, filter);
+}
+
+pub fn dijkstraWithFilter(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    start_node: u32,
+    goal_node: u32,
+    filter: FilterContext,
+) !?ShortestPathResult(u32, f64) {
+    return dijkstraGenericWithFilter(allocator, graph, start_node, goal_node, f64, 0.0, utils.addF64, utils.compareF64, filter);
 }
 
 pub fn dijkstra(
@@ -600,7 +651,7 @@ pub fn astarGeneric(
         .y_coords = y_coords,
         .type = heuristic_type,
     };
-    return pointToPointSearchInternal(true, allocator, graph, start_node, goal_node, Weight, zero, addFn, compareFn, ctx, workspace_opt);
+    return pointToPointSearchInternal(true, allocator, graph, start_node, goal_node, Weight, zero, addFn, compareFn, ctx, workspace_opt, null);
 }
 
 pub fn astar(
@@ -1455,3 +1506,232 @@ test "bellmanFord: simple path and negative cycle" {
     const cycle_res = bellmanFord(allocator, g, 0, 2);
     try std.testing.expectError(error.NegativeCycle, cycle_res);
 }
+
+// ---------------------------------------------------------------------------
+// Yen's K-Shortest Loopless Paths Algorithm
+// ---------------------------------------------------------------------------
+
+pub const YenPathResult = struct {
+    nodes: std.ArrayList(u32),
+    weight: f64,
+
+    pub fn deinit(self: *YenPathResult, allocator: std.mem.Allocator) void {
+        self.nodes.deinit(allocator);
+    }
+
+    pub fn clone(self: *const YenPathResult, allocator: std.mem.Allocator) !YenPathResult {
+        var new_nodes = std.ArrayList(u32).empty;
+        try new_nodes.appendSlice(allocator, self.nodes.items);
+        return YenPathResult{
+            .nodes = new_nodes,
+            .weight = self.weight,
+        };
+    }
+};
+
+fn equalNodeSlices(a: []const u32, b: []const u32) bool {
+    if (a.len != b.len) return false;
+    for (a, 0..) |elem, i| {
+        if (elem != b[i]) return false;
+    }
+    return true;
+}
+
+fn containsNodeSlice(list: []const YenPathResult, slice: []const u32) bool {
+    for (list) |p| {
+        if (equalNodeSlices(p.nodes.items, slice)) return true;
+    }
+    return false;
+}
+
+fn getEdgeWeight(graph: anytype, u: u32, v: u32) f64 {
+    var sit = graph.successors(u);
+    while (sit.next()) |edge| {
+        if (edge.to == v) return edge.data;
+    }
+    return 0.0;
+}
+
+pub fn yenKShortest(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    start_node: u32,
+    goal_node: u32,
+    k: usize,
+) !?[]YenPathResult {
+    if (k == 0) return null;
+
+    const first_res_opt = try dijkstra(allocator, graph, start_node, goal_node);
+    if (first_res_opt == null) return null;
+
+    const first_res = first_res_opt.?;
+
+    var paths = std.ArrayList(YenPathResult).empty;
+    errdefer {
+        for (paths.items) |*p| p.deinit(allocator);
+        paths.deinit(allocator);
+    }
+
+    const first_yen = YenPathResult{
+        .nodes = first_res.path,
+        .weight = first_res.weight,
+    };
+    try paths.append(allocator, first_yen);
+
+    if (k == 1) return try paths.toOwnedSlice(allocator);
+
+    const YenPQ = std.PriorityQueue(YenPathResult, void, struct {
+        fn lessThan(_: void, a: YenPathResult, b: YenPathResult) std.math.Order {
+            if (a.weight < b.weight) return .lt;
+            if (a.weight > b.weight) return .gt;
+            const min_len = @min(a.nodes.items.len, b.nodes.items.len);
+            for (0..min_len) |i| {
+                if (a.nodes.items[i] < b.nodes.items[i]) return .lt;
+                if (a.nodes.items[i] > b.nodes.items[i]) return .gt;
+            }
+            if (a.nodes.items.len < b.nodes.items.len) return .lt;
+            if (a.nodes.items.len > b.nodes.items.len) return .gt;
+            return .eq;
+        }
+    }.lessThan);
+
+    var candidates = YenPQ.initContext({});
+    defer {
+        while (candidates.count() > 0) {
+            var item = candidates.pop().?;
+            item.deinit(allocator);
+        }
+        candidates.deinit(allocator);
+    }
+
+    var seen_candidates = std.ArrayList(YenPathResult).empty;
+    defer {
+        for (seen_candidates.items) |*p| p.deinit(allocator);
+        seen_candidates.deinit(allocator);
+    }
+
+    const node_count = graphNodeCapacity(graph);
+    var disabled_nodes = try allocator.alloc(bool, node_count);
+    defer allocator.free(disabled_nodes);
+
+    var k_count: usize = 1;
+    while (k_count < k) : (k_count += 1) {
+        const prev_path = paths.items[paths.items.len - 1];
+        if (prev_path.nodes.items.len < 2) break;
+
+        @memset(disabled_nodes, false);
+        var prefix_weight: f64 = 0.0;
+
+        var i: usize = 0;
+        const spur_limit = prev_path.nodes.items.len - 1;
+        while (i < spur_limit) : (i += 1) {
+            const spur_node = prev_path.nodes.items[i];
+            if (i > 0) {
+                const prev_node = prev_path.nodes.items[i - 1];
+                disabled_nodes[prev_node] = true;
+                prefix_weight += getEdgeWeight(graph, prev_node, spur_node);
+            }
+
+            var disabled_targets = std.ArrayList(u32).empty;
+            defer disabled_targets.deinit(allocator);
+
+            const root_path = prev_path.nodes.items[0 .. i + 1];
+
+            for (paths.items) |p| {
+                if (p.nodes.items.len > i + 1) {
+                    if (std.mem.eql(u32, p.nodes.items[0 .. i + 1], root_path)) {
+                        try disabled_targets.append(allocator, p.nodes.items[i + 1]);
+                    }
+                }
+            }
+
+            const filter = FilterContext{
+                .disabled_nodes = disabled_nodes,
+                .disabled_targets = disabled_targets.items,
+                .spur_node = spur_node,
+            };
+
+            const spur_res_opt = try dijkstraWithFilter(allocator, graph, spur_node, goal_node, filter);
+            if (spur_res_opt) |spur_res| {
+                var spur_res_mut = spur_res;
+                defer spur_res_mut.deinit(allocator);
+
+                var total_nodes = std.ArrayList(u32).empty;
+                try total_nodes.appendSlice(allocator, prev_path.nodes.items[0..i]);
+                try total_nodes.appendSlice(allocator, spur_res_mut.path.items);
+
+                const total_weight = prefix_weight + spur_res_mut.weight;
+
+                if (!containsNodeSlice(paths.items, total_nodes.items) and
+                    !containsNodeSlice(seen_candidates.items, total_nodes.items))
+                {
+                    var cand_path = YenPathResult{
+                        .nodes = total_nodes,
+                        .weight = total_weight,
+                    };
+                    const cand_clone = try cand_path.clone(allocator);
+                    try candidates.push(allocator, cand_path);
+                    try seen_candidates.append(allocator, cand_clone);
+                } else {
+                    total_nodes.deinit(allocator);
+                }
+            }
+        }
+
+        var found_valid = false;
+        while (candidates.count() > 0) {
+            var cand = candidates.pop().?;
+            if (!containsNodeSlice(paths.items, cand.nodes.items)) {
+                try paths.append(allocator, cand);
+                found_valid = true;
+                break;
+            } else {
+                cand.deinit(allocator);
+            }
+        }
+
+        if (!found_valid) break;
+    }
+
+    return try paths.toOwnedSlice(allocator);
+}
+
+test "yenKShortest on simple directed graph" {
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+    var g = AG(void, f64).init(std.testing.allocator);
+    defer g.deinit();
+
+    _ = try g.addNode({}); // 0
+    _ = try g.addNode({}); // 1
+    _ = try g.addNode({}); // 2
+    _ = try g.addNode({}); // 3
+    _ = try g.addNode({}); // 4
+    _ = try g.addNode({}); // 5 (unused node 0 to 5)
+
+    _ = try g.addEdge(1, 2, 1.0);
+    _ = try g.addEdge(1, 3, 2.0);
+    _ = try g.addEdge(2, 3, 1.0);
+    _ = try g.addEdge(2, 4, 3.0);
+    _ = try g.addEdge(3, 4, 1.0);
+    _ = try g.addEdge(3, 5, 4.0);
+    _ = try g.addEdge(4, 5, 1.0);
+
+    const paths_opt = try yenKShortest(std.testing.allocator, g, 1, 5, 3);
+    try std.testing.expect(paths_opt != null);
+    const paths = paths_opt.?;
+    defer {
+        for (paths) |*p| p.deinit(std.testing.allocator);
+        std.testing.allocator.free(paths);
+    }
+
+    try std.testing.expectEqual(@as(usize, 3), paths.len);
+    try std.testing.expectEqual(@as(f64, 4.0), paths[0].weight);
+    try std.testing.expectEqualSlices(u32, &[_]u32{ 1, 3, 4, 5 }, paths[0].nodes.items);
+
+    try std.testing.expectEqual(@as(f64, 4.0), paths[1].weight);
+    try std.testing.expectEqualSlices(u32, &[_]u32{ 1, 2, 3, 4, 5 }, paths[1].nodes.items);
+
+    try std.testing.expectEqual(@as(f64, 5.0), paths[2].weight);
+    try std.testing.expectEqualSlices(u32, &[_]u32{ 1, 2, 4, 5 }, paths[2].nodes.items);
+}
+

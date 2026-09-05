@@ -39,6 +39,7 @@ zog-*.tar
 /priv/zog/.zig-cache/
 /priv/zog/zig-out/
 *.so
+lib/zog/.*.zig
 # Benchmark results
 /benchmarks/results/
 

@@ -422,6 +422,29 @@ defmodule Zog.ResourceGraphTest do
       ResourceGraph.destroy(graph)
     end
 
+    test "yen_k_shortest on ResourceGraph" do
+      edges = [
+        {1, 2, 1.0},
+        {1, 3, 2.0},
+        {2, 3, 1.0},
+        {2, 4, 3.0},
+        {3, 4, 1.0},
+        {3, 5, 4.0},
+        {4, 5, 1.0}
+      ]
+
+      builder =
+        Enum.reduce(edges, Zog.directed(), fn {u, v, w}, acc -> Zog.add_edge(acc, u, v, w) end)
+
+      graph = ResourceGraph.new(builder)
+
+      {:ok, paths} = ResourceGraph.yen_k_shortest(graph, 1, 5, 3)
+      assert length(paths) == 3
+      assert [{[1, 3, 4, 5], 4.0}, {[1, 2, 3, 4, 5], 4.0}, {[1, 2, 4, 5], 5.0}] = paths
+
+      ResourceGraph.destroy(graph)
+    end
+
     test "astar simple pathfinding" do
       builder =
         Zog.directed()
@@ -620,6 +643,14 @@ defmodule Zog.ResourceGraphTest do
       ResourceGraph.destroy(sub)
       ResourceGraph.destroy(graph)
       File.rm!(temp_edge_list)
+    end
+
+    test "raises File.Error when file does not exist" do
+      non_existent = "non_existent_file_#{System.unique_integer([:positive])}.txt"
+
+      assert_raise File.Error, fn ->
+        ResourceGraph.read_edgelist(non_existent)
+      end
     end
   end
 end

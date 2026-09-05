@@ -108,6 +108,7 @@ defmodule Zog.MixProject do
           Zog.HealthMetrics,
           Zog.IO,
           Zog.MST,
+          Zog.Matching,
           Zog.Metrics,
           Zog.Pathfinding,
           Zog.Property,

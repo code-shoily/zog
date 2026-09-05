@@ -55,11 +55,14 @@ defmodule Zog.ResourceGraph do
         eigenvector: [concurrency: :dirty_cpu],
         katz: [concurrency: :dirty_cpu],
         alpha_centrality: [concurrency: :dirty_cpu],
+        nif_hits: [concurrency: :dirty_cpu],
         louvain: [concurrency: :dirty_cpu],
         leiden: [concurrency: :dirty_cpu],
         leiden_hierarchical: [concurrency: :dirty_cpu],
         label_propagation: [concurrency: :dirty_cpu],
         modularity_f64: [concurrency: :dirty_cpu],
+        nif_walktrap: [concurrency: :dirty_cpu],
+        nif_walktrap_hierarchical: [concurrency: :dirty_cpu],
         nif_floyd_warshall: [concurrency: :dirty_cpu],
         nif_johnsons: [concurrency: :dirty_cpu],
         nif_dijkstra: [concurrency: :dirty_cpu],
@@ -77,6 +80,10 @@ defmodule Zog.ResourceGraph do
         nif_bellman_ford: [concurrency: :dirty_cpu],
         nif_astar: [concurrency: :dirty_cpu],
         nif_is_reachable: [concurrency: :dirty_cpu],
+        nif_yen_k_shortest: [concurrency: :dirty_cpu],
+        nif_has_eulerian_circuit: [concurrency: :dirty_cpu],
+        nif_has_eulerian_path: [concurrency: :dirty_cpu],
+        nif_eulerian_path: [concurrency: :dirty_cpu],
         nif_max_flow: [concurrency: :dirty_cpu],
         nif_push_relabel: [concurrency: :dirty_cpu],
         nif_global_min_cut: [concurrency: :dirty_cpu],
@@ -86,6 +93,9 @@ defmodule Zog.ResourceGraph do
         nif_subgraph: [concurrency: :dirty_cpu],
         nif_is_bipartite: [concurrency: :dirty_cpu],
         nif_maximum_bipartite_matching: [concurrency: :dirty_cpu],
+        nif_hungarian: [concurrency: :dirty_cpu],
+        nif_blossom_maximum_matching: [concurrency: :dirty_cpu],
+        nif_weisfeiler_lehman_hash: [concurrency: :dirty_cpu],
         nif_topological_sort: [concurrency: :dirty_cpu],
         nif_is_acyclic: [concurrency: :dirty_cpu],
         nif_health_metrics: [concurrency: :dirty_cpu],
@@ -296,6 +306,31 @@ defmodule Zog.ResourceGraph do
         return extractScores(mutable_result, nodeCapacity(res));
     }
 
+    pub fn nif_hits(res: GraphRes, max_iterations: usize, tolerance: f64) !beam.term {
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.centrality.hits(allocator, g, max_iterations, tolerance),
+            .hash_graph => |g| try zog.centrality.hits(allocator, g, max_iterations, tolerance),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit();
+
+        const V = nodeCapacity(res);
+
+        const hubs = try allocator.alloc(f64, V);
+        defer allocator.free(hubs);
+        const auths = try allocator.alloc(f64, V);
+        defer allocator.free(auths);
+
+        for (0..V) |i| {
+            const u: u32 = @intCast(i);
+            hubs[i] = mutable_result.hubs.get(u) orelse 0.0;
+            auths[i] = mutable_result.authorities.get(u) orelse 0.0;
+        }
+
+        return beam.make(.{ .ok, hubs, auths }, .{});
+    }
+
     pub fn louvain(res: GraphRes, min_modularity_gain: f64, max_iterations: usize, seed: u64) ![]usize {
         const allocator = beam.allocator;
         const opts: zog.community.louvain.LouvainOptions = .{
@@ -398,6 +433,46 @@ defmodule Zog.ResourceGraph do
         };
     }
 
+    pub fn nif_walktrap(res: GraphRes, walk_length: usize, has_target: bool, target_communities: usize) ![]usize {
+        const allocator = beam.allocator;
+        const opts = zog.community.walktrap.WalktrapOptions{
+            .walk_length = walk_length,
+            .target_communities = if (has_target) target_communities else null,
+        };
+        return switch (res.unpack()) {
+            .soa => |g| try zog.community.walktrap.detect(allocator, g, opts, zog.utils.identityF64),
+            .hash_graph => |g| try zog.community.walktrap.detect(allocator, g, opts, zog.utils.identityF64),
+        };
+    }
+
+    pub fn nif_walktrap_hierarchical(res: GraphRes, walk_length: usize) ![][]usize {
+        const allocator = beam.allocator;
+        const opts = zog.community.walktrap.WalktrapOptions{
+            .walk_length = walk_length,
+        };
+        var levels = switch (res.unpack()) {
+            .soa => |g| try zog.community.walktrap.detectHierarchical(allocator, g, opts, zog.utils.identityF64),
+            .hash_graph => |g| try zog.community.walktrap.detectHierarchical(allocator, g, opts, zog.utils.identityF64),
+        };
+        defer {
+            for (levels.items) |l| allocator.free(l);
+            levels.deinit(allocator);
+        }
+
+        const node_count = nodeCapacity(res);
+        const outer = try allocator.alloc([]usize, levels.items.len);
+        errdefer allocator.free(outer);
+
+        for (levels.items, 0..) |level, i| {
+            const level_copy = try allocator.alloc(usize, node_count);
+            errdefer allocator.free(level_copy);
+            @memcpy(level_copy, level);
+            outer[i] = level_copy;
+        }
+
+        return outer;
+    }
+
     fn extractMatrix(result: anytype, node_count: usize) !beam.term {
         var matrix = try beam.allocator.alloc(f64, node_count * node_count);
         defer beam.allocator.free(matrix);
@@ -463,6 +538,74 @@ defmodule Zog.ResourceGraph do
             return beam.make(.{.ok, .{path_slice, path_res.weight}}, .{});
         } else {
             return beam.make(.{.@"error", .no_path}, .{});
+        }
+    }
+
+    pub fn nif_yen_k_shortest(res: GraphRes, start_node: u32, goal_node: u32, k: usize) !beam.term {
+        const allocator = beam.allocator;
+        const opt_res_or_err = switch (res.unpack()) {
+            .soa => |g| zog.pathfinding.yenKShortest(allocator, g, start_node, goal_node, k),
+            .hash_graph => |g| zog.pathfinding.yenKShortest(allocator, g, start_node, goal_node, k),
+        };
+        const opt_res = opt_res_or_err catch |err| {
+            return err;
+        };
+
+        if (opt_res) |paths| {
+            defer {
+                for (paths) |*p| p.deinit(allocator);
+                allocator.free(paths);
+            }
+
+            const PathTuple = struct {
+                nodes: []u32,
+                weight: f64,
+            };
+
+            const tuples = try allocator.alloc(PathTuple, paths.len);
+            defer allocator.free(tuples);
+
+            for (paths, 0..) |p, i| {
+                const path_slice = try allocator.alloc(u32, p.nodes.items.len);
+                @memcpy(path_slice, p.nodes.items);
+                tuples[i] = .{ .nodes = path_slice, .weight = p.weight };
+            }
+
+            return beam.make(.{.ok, tuples}, .{});
+        } else {
+            return beam.make(.{.@"error", .no_path}, .{});
+        }
+    }
+
+    pub fn nif_has_eulerian_circuit(res: GraphRes, is_directed: bool) !bool {
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.property.hasEulerianCircuit(allocator, g, is_directed),
+            .hash_graph => |g| try zog.property.hasEulerianCircuit(allocator, g, is_directed),
+        };
+    }
+
+    pub fn nif_has_eulerian_path(res: GraphRes, is_directed: bool) !bool {
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.property.hasEulerianPath(allocator, g, is_directed),
+            .hash_graph => |g| try zog.property.hasEulerianPath(allocator, g, is_directed),
+        };
+    }
+
+    pub fn nif_eulerian_path(res: GraphRes, is_directed: bool, is_circuit_only: bool) !beam.term {
+        const allocator = beam.allocator;
+        const opt_res = switch (res.unpack()) {
+            .soa => |g| try zog.property.eulerianPathOrCircuit(allocator, g, is_directed, is_circuit_only),
+            .hash_graph => |g| try zog.property.eulerianPathOrCircuit(allocator, g, is_directed, is_circuit_only),
+        };
+
+        if (opt_res) |slice| {
+            defer allocator.free(slice);
+            return beam.make(.{.ok, slice}, .{});
+        } else {
+            const err_atom: beam.term = if (is_circuit_only) beam.make(.no_eulerian_circuit, .{}) else beam.make(.no_eulerian_path, .{});
+            return beam.make(.{.@"error", err_atom}, .{});
         }
     }
 
@@ -675,6 +818,42 @@ defmodule Zog.ResourceGraph do
             },
             .not_bipartite => return beam.make(.not_bipartite, .{}),
         }
+    }
+
+    pub fn nif_hungarian(res: GraphRes, is_max: bool) !beam.term {
+        const allocator = beam.allocator;
+        const opt: zog.connectivity.Optimization = if (is_max) .max else .min;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.connectivity.hungarian(allocator, g, opt),
+            .hash_graph => |g| try zog.connectivity.hungarian(allocator, g, opt),
+        };
+        switch (result) {
+            .matching => |m| {
+                defer allocator.free(m.pairs);
+                return beam.make(.{.ok, .{ m.cost, m.pairs }}, .{});
+            },
+            .not_bipartite => return beam.make(.{.@"error", .not_bipartite}, .{}),
+        }
+    }
+
+    pub fn nif_blossom_maximum_matching(res: GraphRes) !beam.term {
+        const allocator = beam.allocator;
+        const pairs = switch (res.unpack()) {
+            .soa => |g| try zog.matching.blossomMaximumMatching(allocator, g),
+            .hash_graph => |g| try zog.matching.blossomMaximumMatching(allocator, g),
+        };
+        defer allocator.free(pairs);
+        return beam.make(pairs, .{});
+    }
+
+    pub fn nif_weisfeiler_lehman_hash(res: GraphRes, iterations: usize) !beam.term {
+        const allocator = beam.allocator;
+        const hash = switch (res.unpack()) {
+            .soa => |g| try zog.property.weisfeilerLehmanHash(allocator, g, iterations, null),
+            .hash_graph => |g| try zog.property.weisfeilerLehmanHash(allocator, g, iterations, null),
+        };
+        const res_bin = try allocator.dupe(u8, &hash);
+        return beam.make(res_bin, .{});
     }
 
     pub fn nif_is_acyclic(res: GraphRes) !bool {
@@ -1478,9 +1657,24 @@ defmodule Zog.ResourceGraph do
       integer_labels = Keyword.get(opts, :integer_labels, false)
       path_str = Path.expand(path)
 
-      case nif_read_edgelist(path_str, directed, backend, integer_labels) do
-        {:ok, resource, labels} ->
-          build_from_labels(resource, labels, directed)
+      try do
+        case nif_read_edgelist(path_str, directed, backend, integer_labels) do
+          {:ok, resource, labels} ->
+            build_from_labels(resource, labels, directed)
+
+          {:error, reason} ->
+            raise File.Error, action: "read", path: path_str, reason: reason
+        end
+      rescue
+        e in ErlangError ->
+          reason =
+            case e.original do
+              :FileNotFound -> :enoent
+              :enoent -> :enoent
+              other -> other
+            end
+
+          reraise File.Error, [action: "read", path: path_str, reason: reason], __STACKTRACE__
       end
     end
 
@@ -1500,9 +1694,24 @@ defmodule Zog.ResourceGraph do
       integer_labels = Keyword.get(opts, :integer_labels, false)
       path_str = Path.expand(path)
 
-      case nif_read_adjlist(path_str, directed, backend, integer_labels) do
-        {:ok, resource, labels} ->
-          build_from_labels(resource, labels, directed)
+      try do
+        case nif_read_adjlist(path_str, directed, backend, integer_labels) do
+          {:ok, resource, labels} ->
+            build_from_labels(resource, labels, directed)
+
+          {:error, reason} ->
+            raise File.Error, action: "read", path: path_str, reason: reason
+        end
+      rescue
+        e in ErlangError ->
+          reason =
+            case e.original do
+              :FileNotFound -> :enoent
+              :enoent -> :enoent
+              other -> other
+            end
+
+          reraise File.Error, [action: "read", path: path_str, reason: reason], __STACKTRACE__
       end
     end
 
@@ -1522,9 +1731,24 @@ defmodule Zog.ResourceGraph do
       integer_labels = Keyword.get(opts, :integer_labels, false)
       path_str = Path.expand(path)
 
-      case nif_read_tgf(path_str, directed, backend, integer_labels) do
-        {:ok, resource, labels} ->
-          build_from_labels(resource, labels, directed)
+      try do
+        case nif_read_tgf(path_str, directed, backend, integer_labels) do
+          {:ok, resource, labels} ->
+            build_from_labels(resource, labels, directed)
+
+          {:error, reason} ->
+            raise File.Error, action: "read", path: path_str, reason: reason
+        end
+      rescue
+        e in ErlangError ->
+          reason =
+            case e.original do
+              :FileNotFound -> :enoent
+              :enoent -> :enoent
+              other -> other
+            end
+
+          reraise File.Error, [action: "read", path: path_str, reason: reason], __STACKTRACE__
       end
     end
 
@@ -1765,6 +1989,42 @@ defmodule Zog.ResourceGraph do
     end
 
     @doc """
+    Calculates HITS hub and authority scores for a `ResourceGraph`.
+
+    Returns `%{hubs: %{label => score}, authorities: %{label => score}}`.
+
+    ## Options
+
+      * `:max_iterations` - Maximum power iterations (default: 100).
+      * `:tolerance` - Convergence threshold for L2 norm (default: 1.0e-6).
+    """
+    @spec hits(t(), keyword()) :: %{
+            hubs: %{SoA.label() => float()},
+            authorities: %{SoA.label() => float()}
+          }
+    def hits(%{resource: res, builder: builder}, opts \\ []) do
+      max_iterations = Keyword.get(opts, :max_iterations, 100)
+      tolerance = Keyword.get(opts, :tolerance, 1.0e-6)
+
+      {:ok, hubs_list, auths_list} = nif_hits(res, max_iterations, tolerance)
+
+      labels = SoA.all_labels(builder)
+      labels_tuple = List.to_tuple(labels)
+
+      hubs =
+        hubs_list
+        |> Enum.with_index()
+        |> Map.new(fn {score, idx} -> {elem(labels_tuple, idx), score} end)
+
+      authorities =
+        auths_list
+        |> Enum.with_index()
+        |> Map.new(fn {score, idx} -> {elem(labels_tuple, idx), score} end)
+
+      %{hubs: hubs, authorities: authorities}
+    end
+
+    @doc """
     Louvain community detection.
 
     ## Options
@@ -1892,6 +2152,71 @@ defmodule Zog.ResourceGraph do
     end
 
     @doc """
+    Walktrap community detection.
+
+    ## Options
+
+      * `:walk_length` - Length of random walks (default: 4)
+      * `:target_communities` - Target number of communities (default: nil)
+      * `:raw` - If true, returns a Result with node indices instead of labels.
+    """
+    def walktrap(%{resource: res, builder: builder}, opts \\ []) do
+      walk_length = Keyword.get(opts, :walk_length, 4)
+      target = Keyword.get(opts, :target_communities)
+      raw = Keyword.get(opts, :raw, false)
+
+      {has_target, target_val} =
+        case target do
+          nil ->
+            {false, 0}
+
+          t when is_integer(t) and t >= 1 ->
+            {true, t}
+
+          other ->
+            raise ArgumentError,
+                  "expected target_communities to be nil or integer >= 1, got: #{inspect(other)}"
+        end
+
+      assignments = nif_walktrap(res, walk_length, has_target, target_val)
+
+      if raw do
+        assignments
+        |> Enum.with_index()
+        |> Map.new(fn {comm, idx} -> {idx, comm} end)
+        |> Community.Result.new()
+      else
+        mapped = map_assignments(builder, assignments)
+        Community.Result.new(mapped)
+      end
+    end
+
+    @doc """
+    Hierarchical Walktrap community detection.
+    """
+    def walktrap_hierarchical(%{resource: res, builder: builder}, opts \\ []) do
+      walk_length = Keyword.get(opts, :walk_length, 4)
+      raw = Keyword.get(opts, :raw, false)
+
+      levels_arrays = nif_walktrap_hierarchical(res, walk_length)
+
+      levels =
+        Enum.map(levels_arrays, fn assignments ->
+          if raw do
+            assignments
+            |> Enum.with_index()
+            |> Map.new(fn {comm, idx} -> {idx, comm} end)
+            |> Community.Result.new()
+          else
+            mapped = map_assignments(builder, assignments)
+            Community.Result.new(mapped)
+          end
+        end)
+
+      Community.Dendrogram.new(levels, [])
+    end
+
+    @doc """
     Floyd-Warshall all-pairs shortest paths.
     """
     @spec floyd_warshall(t()) :: {:ok, [[float()]]} | {:error, :negative_cycle}
@@ -1966,6 +2291,113 @@ defmodule Zog.ResourceGraph do
           {:error, :no_path} ->
             {:error, :no_path}
         end
+      end
+    end
+
+    @doc """
+    Computes the k shortest loopless paths and their weights between two nodes using Yen's algorithm directly on the native graph resource.
+    """
+    @spec yen_k_shortest(t(), SoA.label(), SoA.label(), pos_integer(), keyword()) ::
+            {:ok, [{[SoA.label()], float()}]} | {:error, :no_path}
+    def yen_k_shortest(%{resource: res, builder: builder}, start_label, goal_label, k, opts \\ [])
+        when is_integer(k) and k >= 1 do
+      raw = Keyword.get(opts, :raw, false)
+      start_id = if raw, do: start_label, else: Map.get(builder.label_to_id, start_label)
+      goal_id = if raw, do: goal_label, else: Map.get(builder.label_to_id, goal_label)
+
+      if is_nil(start_id) or is_nil(goal_id) do
+        {:error, :no_path}
+      else
+        case nif_yen_k_shortest(res, start_id, goal_id, k) do
+          {:ok, raw_paths} ->
+            paths =
+              Enum.map(raw_paths, fn %{nodes: path_ids, weight: weight} ->
+                path_nodes =
+                  if raw do
+                    path_ids
+                  else
+                    Enum.map(path_ids, &SoA.id_to_label(builder, &1))
+                  end
+
+                {path_nodes, weight}
+              end)
+
+            {:ok, paths}
+
+          {:error, :no_path} ->
+            {:error, :no_path}
+        end
+      end
+    end
+
+    @doc """
+    Alias for `yen_k_shortest/5`.
+    """
+    def k_shortest_paths(
+          %{resource: res, builder: builder},
+          start_label,
+          goal_label,
+          k,
+          opts \\ []
+        ),
+        do: yen_k_shortest(%{resource: res, builder: builder}, start_label, goal_label, k, opts)
+
+    @doc """
+    Checks if the native graph contains an Eulerian circuit.
+    """
+    @spec has_eulerian_circuit?(t()) :: boolean()
+    def has_eulerian_circuit?(%{resource: res, builder: builder}) do
+      is_directed = builder.kind == :directed
+      nif_has_eulerian_circuit(res, is_directed)
+    end
+
+    @doc """
+    Checks if the native graph contains an Eulerian path.
+    """
+    @spec has_eulerian_path?(t()) :: boolean()
+    def has_eulerian_path?(%{resource: res, builder: builder}) do
+      is_directed = builder.kind == :directed
+      nif_has_eulerian_path(res, is_directed)
+    end
+
+    @doc """
+    Finds an Eulerian circuit in the native graph.
+    """
+    @spec eulerian_circuit(t(), keyword()) ::
+            {:ok, [SoA.label()]} | {:error, :no_eulerian_circuit}
+    def eulerian_circuit(%{resource: res, builder: builder}, opts \\ []) do
+      raw? = Keyword.get(opts, :raw, false)
+      is_directed = builder.kind == :directed
+
+      case nif_eulerian_path(res, is_directed, true) do
+        {:ok, path_ids} ->
+          path_nodes =
+            if raw?, do: path_ids, else: Enum.map(path_ids, &SoA.id_to_label(builder, &1))
+
+          {:ok, path_nodes}
+
+        {:error, :no_eulerian_circuit} ->
+          {:error, :no_eulerian_circuit}
+      end
+    end
+
+    @doc """
+    Finds an Eulerian path in the native graph.
+    """
+    @spec eulerian_path(t(), keyword()) :: {:ok, [SoA.label()]} | {:error, :no_eulerian_path}
+    def eulerian_path(%{resource: res, builder: builder}, opts \\ []) do
+      raw? = Keyword.get(opts, :raw, false)
+      is_directed = builder.kind == :directed
+
+      case nif_eulerian_path(res, is_directed, false) do
+        {:ok, path_ids} ->
+          path_nodes =
+            if raw?, do: path_ids, else: Enum.map(path_ids, &SoA.id_to_label(builder, &1))
+
+          {:ok, path_nodes}
+
+        {:error, :no_eulerian_path} ->
+          {:error, :no_eulerian_path}
       end
     end
 
@@ -2296,11 +2728,86 @@ defmodule Zog.ResourceGraph do
 
         pairs ->
           matched =
-            Enum.map(pairs, fn {u_id, v_id} ->
-              {SoA.id_to_label(builder, u_id), SoA.id_to_label(builder, v_id)}
+            Enum.map(pairs, fn
+              %{u: u_id, v: v_id} ->
+                {SoA.id_to_label(builder, u_id), SoA.id_to_label(builder, v_id)}
+
+              {u_id, v_id} ->
+                {SoA.id_to_label(builder, u_id), SoA.id_to_label(builder, v_id)}
             end)
 
           {:ok, matched}
+      end
+    end
+
+    @doc """
+    Calculates weighted bipartite matching using the O(V³) Hungarian (Kuhn-Munkres) algorithm.
+
+    Returns `{cost, matching}` where `matching` is a map of `{u => v, v => u}`.
+    Raises `ArgumentError` if the graph is not bipartite.
+
+    ## Options
+
+      * `:optimization` - `:min` (default) or `:max`.
+    """
+    @spec hungarian(t(), keyword()) :: {float(), %{SoA.label() => SoA.label()}}
+    def hungarian(%{resource: res, builder: builder}, opts \\ []) do
+      optimization = Keyword.get(opts, :optimization, :min)
+      is_max = optimization == :max
+
+      case nif_hungarian(res, is_max) do
+        {:ok, {cost, pairs}} ->
+          matching =
+            Enum.reduce(pairs, %{}, fn %{u: u_id, v: v_id}, acc ->
+              u_label = SoA.id_to_label(builder, u_id)
+              v_label = SoA.id_to_label(builder, v_id)
+              acc |> Map.put(u_label, v_label) |> Map.put(v_label, u_label)
+            end)
+
+          {cost, matching}
+
+        {:error, :not_bipartite} ->
+          raise ArgumentError, "hungarian/2 requires a bipartite graph"
+      end
+    end
+
+    @doc """
+    Computes maximum cardinality matching on general (non-bipartite) graphs using Edmonds' Blossom algorithm.
+
+    Returns `matching` map `%{u => v, v => u}`.
+    """
+    @spec blossom_maximum_matching(t(), keyword()) :: %{SoA.label() => SoA.label()}
+    def blossom_maximum_matching(%{resource: res, builder: builder}, _opts \\ []) do
+      pairs = nif_blossom_maximum_matching(res)
+
+      Enum.reduce(pairs, %{}, fn
+        %{u: u_id, v: v_id}, acc ->
+          u_label = SoA.id_to_label(builder, u_id)
+          v_label = SoA.id_to_label(builder, v_id)
+          acc |> Map.put(u_label, v_label) |> Map.put(v_label, u_label)
+
+        {u_id, v_id}, acc ->
+          u_label = SoA.id_to_label(builder, u_id)
+          v_label = SoA.id_to_label(builder, v_id)
+          acc |> Map.put(u_label, v_label) |> Map.put(v_label, u_label)
+      end)
+    end
+
+    @doc """
+    Calculates the Weisfeiler-Lehman structural graph hash for a `ResourceGraph`.
+
+    Returns a 32-character hexadecimal MD5 hash string.
+    """
+    @spec hash(t(), keyword()) :: String.t()
+    def hash(%{resource: res, builder: builder}, opts \\ []) do
+      iterations = Keyword.get(opts, :iterations, 3)
+      node_label_fn = Keyword.get(opts, :node_label_fn)
+
+      if node_label_fn do
+        Zog.Property.hash(builder, opts)
+      else
+        nif_weisfeiler_lehman_hash(res, iterations)
+        |> to_string()
       end
     end
 
@@ -2792,6 +3299,8 @@ defmodule Zog.ResourceGraph do
           :leiden_hierarchical,
           :label_propagation,
           :modularity,
+          :walktrap,
+          :walktrap_hierarchical,
           :floyd_warshall,
           :johnsons,
           :density,
@@ -2861,6 +3370,22 @@ defmodule Zog.ResourceGraph do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
+    def has_eulerian_circuit?(_graph) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def has_eulerian_path?(_graph) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def eulerian_circuit(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def eulerian_path(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
     def topological_sort(_graph, _opts \\ []) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
@@ -2894,6 +3419,14 @@ defmodule Zog.ResourceGraph do
     end
 
     def dijkstra(_graph, _start_label, _goal_label, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def yen_k_shortest(_graph, _start_label, _goal_label, _k, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def k_shortest_paths(_graph, _start_label, _goal_label, _k, _opts \\ []) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 

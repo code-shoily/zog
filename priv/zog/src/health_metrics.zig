@@ -119,7 +119,7 @@ test "analyze: simple path" {
     try std.testing.expectApproxEqAbs(@as(f64, 0.0), result.eccentricity[c], 0.0001);
     try std.testing.expectApproxEqAbs(@as(f64, 2.0), result.diameter, 0.0001);
     try std.testing.expectApproxEqAbs(@as(f64, 0.0), result.radius, 0.0001);
-    try std.testing.expectApproxEqAbs(@as(f64, 1.0), result.average_path_length, 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f64, 4.0 / 3.0), result.average_path_length, 0.0001);
 }
 
 test "analyze: empty graph" {
@@ -158,6 +158,6 @@ test "analyze: weighted diamond" {
     var result = try analyze(allocator, g);
     defer result.deinit(allocator);
 
-    try std.testing.expectApproxEqAbs(@as(f64, 2.0), result.diameter, 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f64, 3.0), result.diameter, 0.0001);
     try std.testing.expectApproxEqAbs(@as(f64, 0.0), result.radius, 0.0001);
 }

@@ -16,11 +16,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `Zog.HealthMetrics` module for network health metrics:
   - `analyze/1`, `eccentricity/1`, `diameter/1`, `radius/1`, and `average_path_length/1`.
 - Added `Zog.ResourceGraph.health_metrics/2`, `eccentricity/2`, `diameter/1`, `radius/1`, and `average_path_length/1` for native resource-backed graphs.
-- Added native Zig implementations in `priv/zog/src/traversal.zig` and `priv/zog/src/health_metrics.zig`.
+- Added `Zog.Matching` module for general graph matching algorithms:
+  - Edmonds' Blossom maximum weight matching (`maximum_weight_matching/2`, `blossom_maximum_matching/2`).
+  - Hungarian (Kuhn-Munkres) minimum weight full bipartite matching (`minimum_weight_full_matching/2`, `hungarian/2`).
+- Added `Zog.Community.Walktrap` module and `Zog.Community.walktrap/2` / `walktrap_hierarchical/2` for native Walktrap community detection with Lance-Williams recurrence updates.
+- Added HITS (Hyperlink-Induced Topic Search) hubs and authorities centrality algorithm (`hits/2`) in `Zog.Centrality`.
+- Added Yen's $K$-Shortest Paths algorithm (`yen_k_shortest/5`) in `Zog.Pathfinding`.
+- Added Weisfeiler-Leman Graph Hash & Fingerprinting algorithm (`graph_hash/2`) in `Zog.Property`.
+- Added Hierholzer's Eulerian Circuit (`eulerian_circuit/2`) & Eulerian Path (`eulerian_path/2`) detection, along with `has_eulerian_circuit?/1` and `has_eulerian_path?/1` in `Zog.Property`.
+- Added native resource-graph wrappers in `Zog.ResourceGraph` for Blossom matching, Hungarian matching, Walktrap community detection, HITS centrality, Yen's K-Shortest paths, Graph Hash, and Eulerian circuit/path analysis.
+- Added native Zig implementations in `priv/zog/src/matching.zig`, `priv/zog/src/community/walktrap.zig`, `priv/zog/src/traversal.zig`, and `priv/zog/src/health_metrics.zig`.
 - Added benchmarks comparing v0.4.0 algorithms against YogEx:
   - `benchmarks/native_vs_elixir_topological_sort.exs`
   - `benchmarks/native_vs_elixir_acyclicity.exs`
   - `benchmarks/native_vs_elixir_health_metrics.exs`
+  - `benchmarks/native_vs_elixir_blossom.exs`
+  - `benchmarks/native_vs_elixir_hungarian.exs`
+  - `benchmarks/native_vs_elixir_walktrap.exs`
+  - `benchmarks/native_vs_elixir_hits.exs`
+  - `benchmarks/native_vs_elixir_yen.exs`
+  - `benchmarks/native_vs_elixir_graph_hash.exs`
+  - `benchmarks/native_vs_elixir_eulerian.exs`
 
 ### Changed
 

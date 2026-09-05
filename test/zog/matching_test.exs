@@ -6,6 +6,8 @@ defmodule Zog.MatchingTest do
 
   @moduletag :zigler
 
+  doctest Zog.Matching
+
   describe "Zog.Matching.hungarian/2" do
     test "min cost matching on a simple bipartite graph" do
       builder =

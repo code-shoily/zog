@@ -233,4 +233,71 @@ defmodule Zog.CentralityTest do
       assert is_float(scores["C"])
     end
   end
+
+  describe "hits/2" do
+    test "hub and authority score identification" do
+      # a -> b, a -> c, b -> c, d -> a, d -> b
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("a", "b", 1.0)
+        |> Zog.add_edge("a", "c", 1.0)
+        |> Zog.add_edge("b", "c", 1.0)
+        |> Zog.add_edge("d", "a", 1.0)
+        |> Zog.add_edge("d", "b", 1.0)
+
+      %{hubs: hubs, authorities: auths} = Centrality.hits(builder)
+
+      # a is a strong hub (points to b and c)
+      assert hubs["a"] > hubs["d"]
+      # b is a top authority (pointed to by a and d)
+      assert auths["b"] > auths["a"]
+    end
+
+    test "ResourceGraph parity with SoA" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge(:a, :b, 1.0)
+        |> Zog.add_edge(:a, :c, 1.0)
+        |> Zog.add_edge(:b, :c, 1.0)
+        |> Zog.add_edge(:d, :a, 1.0)
+        |> Zog.add_edge(:d, :b, 1.0)
+
+      res_graph = Zog.ResourceGraph.new(builder)
+
+      try do
+        soa_hits = Centrality.hits(builder)
+        res_hits = Zog.ResourceGraph.hits(res_graph)
+
+        assert res_hits == soa_hits
+      after
+        Zog.ResourceGraph.destroy(res_graph)
+      end
+    end
+
+    test "parity with Yog.Centrality.hits/2" do
+      graph =
+        Yog.directed()
+        |> Yog.add_node(:a)
+        |> Yog.add_node(:b)
+        |> Yog.add_node(:c)
+        |> Yog.add_node(:d)
+        |> Yog.add_edges!([
+          {:a, :b, 1},
+          {:a, :c, 1},
+          {:b, :c, 1},
+          {:d, :a, 1},
+          {:d, :b, 1}
+        ])
+
+      builder = Zog.from_graph(graph)
+
+      yog_hits = Yog.Centrality.hits(graph)
+      zog_hits = Centrality.hits(builder)
+
+      Enum.each([:a, :b, :c, :d], fn node ->
+        assert_in_delta zog_hits.hubs[node], yog_hits.hubs[node], 1.0e-5
+        assert_in_delta zog_hits.authorities[node], yog_hits.authorities[node], 1.0e-5
+      end)
+    end
+  end
 end

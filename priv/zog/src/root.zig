@@ -25,10 +25,12 @@ pub const community = struct {
     pub const louvain = @import("community/louvain.zig");
     pub const leiden = @import("community/leiden.zig");
     pub const label_propagation = @import("community/label_propagation.zig");
+    pub const walktrap = @import("community/walktrap.zig");
 };
 
 pub const traversal = @import("traversal.zig");
 pub const health_metrics = @import("health_metrics.zig");
+pub const matching = @import("matching.zig");
 
 test {
     std.testing.refAllDecls(@This());
@@ -49,6 +51,8 @@ test {
     _ = @import("community/louvain.zig");
     _ = @import("community/leiden.zig");
     _ = @import("community/label_propagation.zig");
+    _ = @import("community/walktrap.zig");
     _ = @import("traversal.zig");
     _ = @import("health_metrics.zig");
+    _ = @import("matching.zig");
 }

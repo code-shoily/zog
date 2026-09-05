@@ -280,4 +280,67 @@ defmodule Zog.PathfindingTest do
       assert Pathfinding.reachable?(builder, "A", "B") == false
     end
   end
+
+  describe "yen_k_shortest/4" do
+    test "k=1 returns Dijkstra shortest path" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge(1, 2, 1.0)
+        |> Zog.add_edge(2, 3, 1.0)
+
+      assert {:ok, [{[1, 2, 3], 2.0}]} = Pathfinding.yen_k_shortest(builder, 1, 3, 1)
+    end
+
+    test "Yen 3-shortest paths example" do
+      edges = [
+        {1, 2, 1.0},
+        {1, 3, 2.0},
+        {2, 3, 1.0},
+        {2, 4, 3.0},
+        {3, 4, 1.0},
+        {3, 5, 4.0},
+        {4, 5, 1.0}
+      ]
+
+      builder =
+        Enum.reduce(edges, Zog.directed(), fn {u, v, w}, acc -> Zog.add_edge(acc, u, v, w) end)
+
+      {:ok, paths} = Pathfinding.yen_k_shortest(builder, 1, 5, 3)
+      assert length(paths) == 3
+
+      assert [{[1, 3, 4, 5], 4.0}, {[1, 2, 3, 4, 5], 4.0}, {[1, 2, 4, 5], 5.0}] = paths
+    end
+
+    test "parity with Yog.Pathfinding.Yen.k_shortest_paths" do
+      edges = [
+        {1, 2, 1.0},
+        {1, 3, 2.0},
+        {2, 3, 1.0},
+        {2, 4, 3.0},
+        {3, 4, 1.0},
+        {3, 5, 4.0},
+        {4, 5, 1.0}
+      ]
+
+      yog_g = Yog.from_edges(:directed, edges)
+
+      zog_g =
+        Enum.reduce(edges, Zog.directed(), fn {u, v, w}, acc -> Zog.add_edge(acc, u, v, w) end)
+
+      {:ok, yog_paths} = Yog.Pathfinding.Yen.k_shortest_paths(yog_g, 1, 5, 3)
+      {:ok, zog_paths} = Pathfinding.yen_k_shortest(zog_g, 1, 5, 3)
+
+      assert length(yog_paths) == length(zog_paths)
+
+      for {yog_p, {zog_nodes, zog_w}} <- Enum.zip(yog_paths, zog_paths) do
+        assert yog_p.nodes == zog_nodes
+        assert_in_delta yog_p.weight, zog_w, 1.0e-4
+      end
+    end
+
+    test "unreachable goal returns :error" do
+      builder = Zog.directed() |> Zog.add_node(1) |> Zog.add_node(2)
+      assert Pathfinding.yen_k_shortest(builder, 1, 2, 3) == {:error, :no_path}
+    end
+  end
 end

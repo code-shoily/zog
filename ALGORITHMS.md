@@ -15,7 +15,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Johnson's** | `Yog.Pathfinding.Johnson` | All-pairs shortest paths in sparse graphs | ✅ **Implemented** | Native Zig via `Zog.Pathfinding.johnsons/1`. |
 | **Bidirectional Dijkstra** | `Yog.Pathfinding.Bidirectional` | Faster single-pair shortest path | ❌ **Missing** | *WIP/Roadmap* — planned for a future native pathfinding update. |
 | **Bidirectional BFS** | `Yog.Pathfinding.Bidirectional` | Unweighted shortest path | ❌ **Missing** | *WIP/Roadmap* — planned for a future native pathfinding update. |
-| **Yen's K-Shortest** | `Yog.Pathfinding.Yen` | k shortest loopless paths | ❌ **Missing** | *Deferred* — low priority, can be implemented if there is demand. |
+| **Yen's K-Shortest** | `Yog.Pathfinding.Yen` | k shortest loopless paths | ✅ **Implemented** | Native Zig via `Zog.Pathfinding.yen_k_shortest/4` and `Zog.ResourceGraph.yen_k_shortest/5`. |
 | **Widest Path** | `Yog.Pathfinding` | Maximum bottleneck capacity path | ❌ **Missing** | *Deferred* — low priority. |
 | **Unweighted SSSP** | `Yog.Pathfinding` | BFS shortest path (no heap) | ❌ **Missing** | *Deliberately Omitted* — standard Dijkstra handles this efficiently; separate unweighted SSSP is unneeded. |
 | **Brandes SSSP** | `Yog.Pathfinding.Brandes` | Single-source dependency accumulation | ❌ **Missing** | *Omitted* — internally used within Betweenness Centrality, not exposed as a public API. |
@@ -57,8 +57,8 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | Algorithm | YogEx Module | Purpose | Zog Status | Notes / Details |
 | :--- | :--- | :--- | :--- | :--- |
 | **Hopcroft-Karp** | `Yog.Matching` | Maximum bipartite matching | ✅ **Implemented** | Native Zig via `Zog.Connectivity.maximum_bipartite_matching/1` and `Zog.ResourceGraph.maximum_bipartite_matching/2`. |
-| **Hungarian** | `Yog.Matching` | Weighted bipartite matching | ❌ **Missing** | *WIP/Roadmap* — planned for v0.3.0. |
-| **Blossom** | `Yog.Matching` | Maximum matching in general graphs | ❌ **Missing** | *WIP/Roadmap* — planned for v0.3.0. |
+| **Hungarian** | `Yog.Matching` | Weighted bipartite matching | ✅ **Implemented** | Native Zig via `Zog.Matching.hungarian/2` and `Zog.ResourceGraph.hungarian/2`. |
+| **Blossom** | `Yog.Matching` | Maximum matching in general graphs | ✅ **Implemented** | Native Zig via `Zog.Matching.blossom_maximum_matching/2` and `Zog.ResourceGraph.blossom_maximum_matching/2`. |
 
 ---
 
@@ -87,7 +87,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Harmonic Centrality** | `Yog.Centrality` | Distance-based (handles infinite) | ✅ **Implemented** | Native Zig via `Zog.Centrality.harmonic_centrality_f64/1`. |
 | **Betweenness Centrality** | `Yog.Centrality` | Bridge/gatekeeper detection | ✅ **Implemented** | Native Zig via `Zog.Centrality.betweenness_unweighted/1` and `Zog.Centrality.betweenness_f64/1`. |
 | **PageRank** | `Yog.Centrality` | Link-quality importance | ✅ **Implemented** | Native Zig via `Zog.Centrality.pagerank/2`. |
-| **HITS** | `Yog.Centrality` | Hub and authority scores | ❌ **Missing** | *Deferred* — low priority. |
+| **HITS** | `Yog.Centrality` | Hub and authority scores | ✅ **Implemented** | Native Zig via `Zog.Centrality.hits/2` and `Zog.ResourceGraph.hits/2`. |
 | **Eigenvector Centrality** | `Yog.Centrality` | Influence from neighbors | ✅ **Implemented** | Native Zig via `Zog.Centrality.eigenvector/2`. |
 | **Katz Centrality** | `Yog.Centrality` | Attenuated influence propagation | ✅ **Implemented** | Native Zig via `Zog.Centrality.katz/2`. |
 | **Alpha Centrality** | `Yog.Centrality` | External influence model | ✅ **Implemented** | Native Zig via `Zog.Centrality.alpha_centrality/2`. |
@@ -165,8 +165,8 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Max Bipartite Matching** | `Yog.Property.Bipartite` | Maximum matching | ✅ **Implemented** | Native Zig via `Zog.Connectivity.maximum_bipartite_matching/1` and `Zog.ResourceGraph.maximum_bipartite_matching/2` (Hopcroft-Karp). |
 | **Stable Marriage** | `Yog.Property.Bipartite` | Gale-Shapley stable matching | ❌ **Missing** | *Won't Have* — outside core graph project scope. |
 | **Acyclicity Test** | `Yog.Property.Cyclicity` | Cycle detection | ✅ **Implemented** | Native Zig via `Zog.Traversal.acyclic?/1` and `Zog.ResourceGraph.acyclic?/1`. |
-| **Eulerian Circuit** | `Yog.Property.Eulerian` | Eulerian cycle existence | ❌ **Missing** | *Deferred* — low priority. |
-| **Eulerian Path** | `Yog.Property.Eulerian` | Eulerian path existence | ❌ **Missing** | *Deferred* — low priority. |
+| **Eulerian Circuit** | `Yog.Property.Eulerian` | Eulerian cycle existence | ✅ **Implemented** | Native Zig via `Zog.Property.has_eulerian_circuit?/1` and `eulerian_circuit/2`. |
+| **Eulerian Path** | `Yog.Property.Eulerian` | Eulerian path existence | ✅ **Implemented** | Native Zig via `Zog.Property.has_eulerian_path?/1` and `eulerian_path/2`. |
 | **Bron-Kerbosch** | `Yog.Property.Clique` | All maximal cliques | ✅ **Implemented** | Native Zig via `Zog.Property.all_maximal_cliques/1`. |
 | **Max Clique** | `Yog.Property.Clique` | Largest clique | ✅ **Implemented** | `Zog.Property.max_clique/1` (filtered from Bron-Kerbosch). |
 | **Complete Graph** | `Yog.Property.Structure` | Kₙ detection | ❌ **Missing** | *Deferred* — low priority. |
@@ -179,8 +179,8 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Chordality Test** | `Yog.Property.Structure` | Chordal graph verification | ❌ **Missing** | *Won't Have* — outside core project scope. |
 | **Graph Coloring** | `Yog.Property.Coloring` | Greedy and exact coloring | ✅ **Implemented** | Native Zig via `Zog.Property.coloring_dsatur/1` and `Zog.Property.coloring_exact/2`. |
 | **Tree Decomposition** | `Yog.Property.TreeDecomposition` | Validity check/construction | ❌ **Missing** | *Won't Have* — outside core project scope. |
-| **Isomorphism** | `Yog.Property` | Weisfeiler-Lehman equality | ❌ **Missing** | *Deferred* — low priority. |
-| **Graph Hash** | `Yog.Property` | Structural fingerprint | ❌ **Missing** | *Deferred* — low priority. |
+| **Isomorphism** | `Yog.Property` | Weisfeiler-Lehman equality | ✅ **Implemented** | Native Zig via `Zog.Property.isomorphic?/3`. |
+| **Graph Hash** | `Yog.Property` | Structural fingerprint | ✅ **Implemented** | Native Zig via `Zog.Property.hash/2` and `Zog.ResourceGraph.hash/2` (Weisfeiler-Lehman). |
 
 ---
 

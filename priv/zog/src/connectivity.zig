@@ -651,7 +651,190 @@ test "isBipartite: disconnected — one bipartite + one odd cycle" {
 
 /// A single matched edge in a bipartite matching, represented as `{u, v}`
 /// where `u` is from the left partition and `v` is from the right partition.
-pub const MatchedEdge = struct { u32, u32 };
+pub const MatchedEdge = struct { u: u32, v: u32 };
+
+// =============================================================================
+// Hungarian Algorithm (Kuhn-Munkres) for Weighted Bipartite Matching
+// =============================================================================
+
+/// Optimization mode for Hungarian matching.
+pub const Optimization = enum {
+    min,
+    max,
+};
+
+/// Result returned by `hungarian`.
+pub const HungarianResult = union(enum) {
+    matching: struct {
+        cost: f64,
+        pairs: []MatchedEdge,
+    },
+    not_bipartite: void,
+};
+
+/// Computes minimum or maximum weight bipartite matching using the O(N³) Kuhn-Munkres algorithm.
+pub fn hungarian(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    optimization: Optimization,
+) !HungarianResult {
+    const V = graph.nodeCount();
+
+    const bipartite_result = try isBipartite(allocator, graph);
+    const colors = switch (bipartite_result) {
+        .not_bipartite => return .not_bipartite,
+        .bipartite => |c| c,
+    };
+    defer allocator.free(colors);
+
+    if (V == 0) {
+        const pairs = try allocator.alloc(MatchedEdge, 0);
+        return .{ .matching = .{ .cost = 0.0, .pairs = pairs } };
+    }
+
+    var left_nodes = std.ArrayList(u32).empty;
+    defer left_nodes.deinit(allocator);
+    var right_nodes = std.ArrayList(u32).empty;
+    defer right_nodes.deinit(allocator);
+
+    var node_it = graph.nodeIds();
+    while (node_it.next()) |u| {
+        if (colors[u] == 0) {
+            try left_nodes.append(allocator, u);
+        } else {
+            try right_nodes.append(allocator, u);
+        }
+    }
+
+    const n = left_nodes.items.len;
+    const m = right_nodes.items.len;
+    const k = @max(n, m);
+
+    if (k == 0) {
+        const pairs = try allocator.alloc(MatchedEdge, 0);
+        return .{ .matching = .{ .cost = 0.0, .pairs = pairs } };
+    }
+
+    const left_idx = try allocator.alloc(usize, V);
+    defer allocator.free(left_idx);
+    const right_idx = try allocator.alloc(usize, V);
+    defer allocator.free(right_idx);
+
+    for (left_nodes.items, 0..) |u, idx| left_idx[u] = idx;
+    for (right_nodes.items, 0..) |v, idx| right_idx[v] = idx;
+
+    const matrix = try allocator.alloc(f64, k * k);
+    defer allocator.free(matrix);
+    @memset(matrix, 0.0);
+
+    var succ_node_it = graph.nodeIds();
+    while (succ_node_it.next()) |u| {
+        var succ_it = graph.successors(u);
+        while (succ_it.next()) |edge| {
+            const v = edge.to;
+            const w = edge.data;
+            var l_u: usize = undefined;
+            var r_v: usize = undefined;
+            if (colors[u] == 0 and colors[v] == 1) {
+                l_u = left_idx[u];
+                r_v = right_idx[v];
+            } else if (colors[u] == 1 and colors[v] == 0) {
+                l_u = left_idx[v];
+                r_v = right_idx[u];
+            } else continue;
+
+            const val = if (optimization == .max) -w else w;
+            matrix[l_u * k + r_v] = val;
+        }
+    }
+
+    const u_pot = try allocator.alloc(f64, k + 1);
+    defer allocator.free(u_pot);
+    @memset(u_pot, 0.0);
+
+    const v_pot = try allocator.alloc(f64, k + 1);
+    defer allocator.free(v_pot);
+    @memset(v_pot, 0.0);
+
+    const p = try allocator.alloc(usize, k + 1);
+    defer allocator.free(p);
+    @memset(p, 0);
+
+    const way = try allocator.alloc(usize, k + 1);
+    defer allocator.free(way);
+    @memset(way, 0);
+
+    const minv = try allocator.alloc(f64, k + 1);
+    defer allocator.free(minv);
+
+    const used = try allocator.alloc(bool, k + 1);
+    defer allocator.free(used);
+
+    for (1..k + 1) |i| {
+        p[0] = i;
+        var j0: usize = 0;
+        @memset(minv, std.math.inf(f64));
+        @memset(used, false);
+
+        while (true) {
+            used[j0] = true;
+            const row_i0 = p[j0];
+            var delta: f64 = std.math.inf(f64);
+            var j1: usize = 0;
+
+            for (1..k + 1) |j| {
+                if (!used[j]) {
+                    const cur = matrix[(row_i0 - 1) * k + (j - 1)] - u_pot[row_i0] - v_pot[j];
+                    if (cur < minv[j]) {
+                        minv[j] = cur;
+                        way[j] = j0;
+                    }
+                    if (minv[j] < delta) {
+                        delta = minv[j];
+                        j1 = j;
+                    }
+                }
+            }
+
+            for (0..k + 1) |j| {
+                if (used[j]) {
+                    u_pot[p[j]] += delta;
+                    v_pot[j] -= delta;
+                } else {
+                    minv[j] -= delta;
+                }
+            }
+
+            j0 = j1;
+            if (p[j0] == 0) break;
+        }
+
+        while (true) {
+            const j1 = way[j0];
+            p[j0] = p[j1];
+            j0 = j1;
+            if (j0 == 0) break;
+        }
+    }
+
+    const raw_cost = -v_pot[0];
+    const total_cost = if (optimization == .max) -raw_cost else raw_cost;
+
+    var matched_pairs = std.ArrayList(MatchedEdge).empty;
+    defer matched_pairs.deinit(allocator);
+
+    for (1..k + 1) |j| {
+        const i = p[j];
+        if (i > 0 and i <= n and j <= m) {
+            const real_u = left_nodes.items[i - 1];
+            const real_v = right_nodes.items[j - 1];
+            try matched_pairs.append(allocator, .{ .u = real_u, .v = real_v });
+        }
+    }
+
+    const pairs_slice = try matched_pairs.toOwnedSlice(allocator);
+    return .{ .matching = .{ .cost = total_cost, .pairs = pairs_slice } };
+}
 
 /// Result returned by `maximumBipartiteMatching`.
 pub const BipartiteMatchingResult = union(enum) {
@@ -771,7 +954,7 @@ pub fn maximumBipartiteMatching(allocator: std.mem.Allocator, graph: anytype) !B
     var idx: usize = 0;
     for (0..V) |u| {
         if (colors[u] == 0 and pairU[u] != NIL) {
-            pairs[idx] = .{ @intCast(u), pairU[u] };
+            pairs[idx] = .{ .u = @intCast(u), .v = pairU[u] };
             idx += 1;
         }
     }
@@ -889,4 +1072,33 @@ test "weaklyConnectedComponents: multiple components" {
     try std.testing.expectEqual(wccs[0], wccs[1]);
     try std.testing.expectEqual(wccs[2], wccs[3]);
     try std.testing.expect(wccs[0] != wccs[2]);
+}
+
+test "hungarian: simple weighted bipartite graph" {
+    const allocator = std.testing.allocator;
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+
+    var g = AG(void, f64).init(allocator);
+    defer g.deinit();
+
+    // Bipartite graph: left (0, 1), right (2, 3)
+    const n0 = try g.addNode({});
+    const n1 = try g.addNode({});
+    const n2 = try g.addNode({});
+    const n3 = try g.addNode({});
+
+    _ = try g.addEdge(n0, n2, 10.0);
+    _ = try g.addEdge(n0, n3, 19.0);
+    _ = try g.addEdge(n1, n2, 15.0);
+    _ = try g.addEdge(n1, n3, 14.0);
+
+    const min_res = try hungarian(allocator, g, .min);
+    switch (min_res) {
+        .matching => |m| {
+            defer allocator.free(m.pairs);
+            try std.testing.expectApproxEqAbs(@as(f64, 24.0), m.cost, 0.0001);
+            try std.testing.expectEqual(@as(usize, 2), m.pairs.len);
+        },
+        .not_bipartite => return error.TestUnexpectedResult,
+    }
 }

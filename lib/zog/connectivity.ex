@@ -15,7 +15,9 @@ defmodule Zog.Connectivity do
         nif_strongly_connected_components: [concurrency: :dirty_cpu],
         nif_weakly_connected_components: [concurrency: :dirty_cpu],
         nif_is_bipartite: [concurrency: :dirty_cpu],
-        nif_maximum_bipartite_matching: [concurrency: :dirty_cpu]
+        nif_maximum_bipartite_matching: [concurrency: :dirty_cpu],
+        nif_hungarian: [concurrency: :dirty_cpu],
+        nif_blossom_maximum_matching: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -95,6 +97,32 @@ defmodule Zog.Connectivity do
             },
             .not_bipartite => return beam.make(.not_bipartite, .{}),
         }
+    }
+
+    pub fn nif_hungarian(node_count: usize, from: []u32, to: []u32, weight: []f64, is_max: bool) !beam.term {
+        const allocator = beam.allocator;
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        const opt: zog.connectivity.Optimization = if (is_max) .max else .min;
+        const result = try zog.connectivity.hungarian(allocator, g, opt);
+        switch (result) {
+            .matching => |m| {
+                defer allocator.free(m.pairs);
+                return beam.make(.{.ok, .{ m.cost, m.pairs }}, .{});
+            },
+            .not_bipartite => return beam.make(.{.@"error", .not_bipartite}, .{}),
+        }
+    }
+
+    pub fn nif_blossom_maximum_matching(node_count: usize, from: []u32, to: []u32, weight: []f64) !beam.term {
+        const allocator = beam.allocator;
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        const pairs = try zog.matching.blossomMaximumMatching(allocator, g);
+        defer allocator.free(pairs);
+        return beam.make(pairs, .{});
     }
 
     pub fn nif_analyze_connectivity(node_count: usize, from: []u32, to: []u32, weight: []f64) !beam.term {
@@ -362,12 +390,77 @@ defmodule Zog.Connectivity do
           labels_tuple = List.to_tuple(labels)
 
           matched =
-            Enum.map(pairs, fn {u_id, v_id} ->
-              {elem(labels_tuple, u_id), elem(labels_tuple, v_id)}
+            Enum.map(pairs, fn
+              %{u: u_id, v: v_id} -> {elem(labels_tuple, u_id), elem(labels_tuple, v_id)}
+              {u_id, v_id} -> {elem(labels_tuple, u_id), elem(labels_tuple, v_id)}
             end)
 
           {:ok, matched}
       end
+    end
+
+    @doc """
+    Calculates weighted bipartite matching using the O(V³) Hungarian (Kuhn-Munkres) algorithm.
+
+    Returns `{cost, matching}` where `matching` is a map of `{u => v, v => u}`.
+    Raises `ArgumentError` if the graph is not bipartite.
+
+    ## Options
+
+      * `:optimization` - `:min` (default) or `:max`.
+    """
+    @spec hungarian(SoA.t(), keyword()) :: {float(), %{SoA.label() => SoA.label()}}
+    def hungarian(%SoA{} = builder, opts \\ []) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
+
+      optimization = Keyword.get(opts, :optimization, :min)
+      is_max = optimization == :max
+
+      case nif_hungarian(node_count, from, to, weights, is_max) do
+        {:ok, {cost, pairs}} ->
+          labels = SoA.all_labels(builder)
+          labels_tuple = List.to_tuple(labels)
+
+          matching =
+            Enum.reduce(pairs, %{}, fn %{u: u_id, v: v_id}, acc ->
+              u_label = elem(labels_tuple, u_id)
+              v_label = elem(labels_tuple, v_id)
+              acc |> Map.put(u_label, v_label) |> Map.put(v_label, u_label)
+            end)
+
+          {cost, matching}
+
+        {:error, :not_bipartite} ->
+          raise ArgumentError, "hungarian/2 requires a bipartite graph"
+      end
+    end
+
+    @doc """
+    Computes maximum cardinality matching on general (non-bipartite) graphs using Edmonds' Blossom algorithm.
+
+    Returns `matching` map `%{u => v, v => u}`.
+    """
+    @spec blossom_maximum_matching(SoA.t()) :: %{SoA.label() => SoA.label()}
+    def blossom_maximum_matching(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
+
+      pairs = nif_blossom_maximum_matching(node_count, from, to, weights)
+      labels = SoA.all_labels(builder)
+      labels_tuple = List.to_tuple(labels)
+
+      Enum.reduce(pairs, %{}, fn
+        %{u: u_id, v: v_id}, acc ->
+          u_label = elem(labels_tuple, u_id)
+          v_label = elem(labels_tuple, v_id)
+          acc |> Map.put(u_label, v_label) |> Map.put(v_label, u_label)
+
+        {u_id, v_id}, acc ->
+          u_label = elem(labels_tuple, u_id)
+          v_label = elem(labels_tuple, v_id)
+          acc |> Map.put(u_label, v_label) |> Map.put(v_label, u_label)
+      end)
     end
 
     defp group_by_components(labels, assignments) do

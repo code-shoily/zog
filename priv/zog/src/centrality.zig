@@ -1078,7 +1078,10 @@ pub fn eigenvector(
     defer new_scores.deinit();
 
     for (nodes.items, 0..) |node, i| {
-        try curr_scores.put(node, 1.0 + @as(f64, @floatFromInt(i)) / 1000.0);
+        const id_u32: u32 = if (NodeId == u32) node else @intCast(i);
+        const hash_val = id_u32 *% 2654435761;
+        const perturbation = @as(f64, @floatFromInt(hash_val % 1_000_000)) / 1_000_000_000.0;
+        try curr_scores.put(node, 1.0 + perturbation);
     }
 
     var iteration: usize = 0;
@@ -1536,4 +1539,162 @@ test "alpha centrality on simple graph" {
 
     // Node 2 accumulates the most.
     try std.testing.expect(result.get(2) >= result.get(0));
+}
+
+pub fn HitsResult(comptime NodeId: type) type {
+    return struct {
+        hubs: std.AutoHashMap(NodeId, f64),
+        authorities: std.AutoHashMap(NodeId, f64),
+
+        pub fn deinit(self: *@This()) void {
+            self.hubs.deinit();
+            self.authorities.deinit();
+        }
+    };
+}
+
+/// Computes HITS hub and authority centrality scores.
+pub fn hits(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    max_iterations: usize,
+    tolerance: f64,
+) !HitsResult(utils.NodeId(@TypeOf(graph))) {
+    const NodeId = utils.NodeId(@TypeOf(graph));
+
+    var nodes = try utils.collectNodes(allocator, graph);
+    defer nodes.deinit(allocator);
+    const n = nodes.items.len;
+
+    var hub_scores = std.AutoHashMap(NodeId, f64).init(allocator);
+    errdefer hub_scores.deinit();
+    var auth_scores = std.AutoHashMap(NodeId, f64).init(allocator);
+    errdefer auth_scores.deinit();
+
+    if (n == 0) {
+        return .{ .hubs = hub_scores, .authorities = auth_scores };
+    }
+
+    const initial = 1.0 / @sqrt(@as(f64, @floatFromInt(n)));
+
+    for (nodes.items) |node| {
+        try hub_scores.put(node, initial);
+        try auth_scores.put(node, initial);
+    }
+
+    var in_neighbors = try utils.buildInNeighbors(allocator, graph, nodes.items);
+    defer utils.freeInNeighbors(allocator, &in_neighbors);
+
+    var out_neighbors = try utils.buildOutNeighbors(allocator, graph, nodes.items);
+    defer utils.freeOutNeighbors(allocator, &out_neighbors);
+
+    var new_auth = std.AutoHashMap(NodeId, f64).init(allocator);
+    defer new_auth.deinit();
+    var new_hub = std.AutoHashMap(NodeId, f64).init(allocator);
+    defer new_hub.deinit();
+
+    var iteration: usize = 0;
+    while (iteration < max_iterations) : (iteration += 1) {
+        // 1. Update authorities: sum of hub scores of predecessors
+        for (nodes.items) |node| {
+            var sum: f64 = 0.0;
+            if (in_neighbors.get(node)) |preds| {
+                for (preds.items) |pred| {
+                    sum += hub_scores.get(pred) orelse 0.0;
+                }
+            }
+            try new_auth.put(node, sum);
+        }
+
+        // 2. Update hubs: sum of new authority scores of successors
+        for (nodes.items) |node| {
+            var sum: f64 = 0.0;
+            if (out_neighbors.get(node)) |succs| {
+                for (succs.items) |succ| {
+                    sum += new_auth.get(succ) orelse 0.0;
+                }
+            }
+            try new_hub.put(node, sum);
+        }
+
+        // 3. Compute L2 norm for authorities and hubs
+        var auth_l2: f64 = 0.0;
+        var hub_l2: f64 = 0.0;
+        for (nodes.items) |node| {
+            const a_val = new_auth.get(node) orelse 0.0;
+            auth_l2 += a_val * a_val;
+            const h_val = new_hub.get(node) orelse 0.0;
+            hub_l2 += h_val * h_val;
+        }
+        auth_l2 = @sqrt(auth_l2);
+        hub_l2 = @sqrt(hub_l2);
+
+        // Normalize
+        for (nodes.items) |node| {
+            const a_val = new_auth.get(node) orelse 0.0;
+            if (auth_l2 > 0.0) {
+                try new_auth.put(node, a_val / auth_l2);
+            }
+            const h_val = new_hub.get(node) orelse 0.0;
+            if (hub_l2 > 0.0) {
+                try new_hub.put(node, h_val / hub_l2);
+            }
+        }
+
+        // 4. Compute L2 norm difference from previous iteration
+        var auth_diff_sq: f64 = 0.0;
+        var hub_diff_sq: f64 = 0.0;
+        for (nodes.items) |node| {
+            const prev_a = auth_scores.get(node) orelse 0.0;
+            const curr_a = new_auth.get(node) orelse 0.0;
+            const da = curr_a - prev_a;
+            auth_diff_sq += da * da;
+
+            const prev_h = hub_scores.get(node) orelse 0.0;
+            const curr_h = new_hub.get(node) orelse 0.0;
+            const dh = curr_h - prev_h;
+            hub_diff_sq += dh * dh;
+        }
+        const auth_diff = @sqrt(auth_diff_sq);
+        const hub_diff = @sqrt(hub_diff_sq);
+
+        for (nodes.items) |node| {
+            try auth_scores.put(node, new_auth.get(node) orelse 0.0);
+            try hub_scores.put(node, new_hub.get(node) orelse 0.0);
+        }
+
+        if (auth_diff < tolerance and hub_diff < tolerance) {
+            break;
+        }
+    }
+
+    return .{ .hubs = hub_scores, .authorities = auth_scores };
+}
+
+test "hits on simple directed graph" {
+    const allocator = std.testing.allocator;
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+    var g = AG(void, void).init(allocator);
+    defer g.deinit();
+
+    // 0: hub, 1: authority, 2: authority
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+
+    _ = try g.addEdge(0, 1, {});
+    _ = try g.addEdge(0, 2, {});
+
+    var res = try hits(allocator, g, 100, 0.0001);
+    defer res.deinit();
+
+    // Node 0 has highest hub score
+    const h0 = res.hubs.get(0) orelse 0.0;
+    const h1 = res.hubs.get(1) orelse 0.0;
+    try std.testing.expect(h0 > h1);
+
+    // Nodes 1 and 2 have higher authority scores than node 0
+    const a0 = res.authorities.get(0) orelse 0.0;
+    const a1 = res.authorities.get(1) orelse 0.0;
+    try std.testing.expect(a1 > a0);
 }

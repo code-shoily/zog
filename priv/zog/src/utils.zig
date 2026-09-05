@@ -84,4 +84,29 @@ pub fn freeInNeighbors(
     in_neighbors.deinit();
 }
 
+/// Builds a mapping of NodeId -> list of out-neighbors (successors) for the given nodes in the graph.
+pub fn buildOutNeighbors(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    nodes: []const NodeId(@TypeOf(graph)),
+) !std.AutoHashMap(NodeId(@TypeOf(graph)), NodeList(@TypeOf(graph))) {
+    const NId = NodeId(@TypeOf(graph));
+    var out_neighbors = std.AutoHashMap(NId, NodeList(@TypeOf(graph))).init(allocator);
+    errdefer freeInNeighbors(allocator, &out_neighbors);
+
+    for (nodes) |node| {
+        var gop = try out_neighbors.getOrPut(node);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = NodeList(@TypeOf(graph)).empty;
+        }
+        var sit = graph.successors(node);
+        while (sit.next()) |edge| {
+            try gop.value_ptr.append(allocator, edge.to);
+        }
+    }
+    return out_neighbors;
+}
+
+pub const freeOutNeighbors = freeInNeighbors;
+
 
