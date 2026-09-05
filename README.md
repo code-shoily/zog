@@ -77,7 +77,7 @@ Add `zog` to your list of dependencies in `mix.exs`. Since compiling Zig NIFs re
 ```elixir
 def deps do
   [
-    {:zog, "~> 0.1.0"},
+    {:zog, "~> 0.4.0"},
     {:zigler, "~> 0.16.0", runtime: false}
   ]
 end
@@ -89,7 +89,7 @@ If you plan to use `Zog` alongside `YogEx` for seamless bridging, include both:
 def deps do
   [
     {:yog_ex, "~> 0.99.0"},
-    {:zog, "~> 0.1.0"},
+    {:zog, "~> 0.4.0"},
     {:zigler, "~> 0.16.0", runtime: false}
   ]
 end

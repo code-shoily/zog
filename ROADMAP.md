@@ -2,8 +2,8 @@
 
 Roadmap and release planning for Zog's native Elixir/Zig graph algorithms.
 
-## Current Status (v0.3.0)
-Zog v0.3.0 implements high-performance native implementations of core graph algorithms including Pathfinding (Dijkstra, A*, Bellman-Ford, Floyd-Warshall, Johnson's), Flow (Edmonds-Karp, Push-Relabel, Stoer-Wagner), MST (Kruskal's), Connectivity (Tarjan's SCC, Bridges, Articulation, K-core, Weakly Connected Components, **Bipartite Check / Partition**), Centrality (PageRank, Betweenness, Closeness, Harmonic, Eigenvector, Katz, Alpha), Community Detection (Louvain, Leiden, Label Propagation), general Metrics (Density, Triangles, Assortativity, Clustering Coefficient, Approximate Neighborhood Function / Effective Diameter), and **Graph Transformations (Subgraph Extraction)**.
+## Current Status (v0.4.0)
+Zog v0.4.0 implements high-performance native implementations of core graph algorithms including Pathfinding (Dijkstra, A*, Bellman-Ford, Floyd-Warshall, Johnson's, Yen's K-Shortest), Flow (Edmonds-Karp, Push-Relabel, Stoer-Wagner), MST (Kruskal's), Matching (Hopcroft-Karp, Hungarian, Blossom), Connectivity (Tarjan's SCC, Bridges, Articulation, K-core, Weakly Connected Components, Bipartite Check / Partition), Centrality (PageRank, Betweenness, Closeness, Harmonic, Eigenvector, Katz, Alpha, HITS), Community Detection (Louvain, Leiden, Label Propagation, Walktrap), Graph Properties & Isomorphism (VF2 Isomorphism, Weisfeiler-Leman Graph Hash, Structural Predicates, Eulerian Circuit/Path), Traversals & Health Metrics (Topological Sort, Acyclicity, Diameter, Radius, Eccentricity, Average Path Length), SIMD vectorization, and multi-threaded parallel execution.
 
 ---
 
