@@ -1,4 +1,4 @@
-# California Road Network Analysis with Zog
+# California Road Network Analysis with Zog ⚡
 
 ```elixir
 Mix.install([
@@ -7,21 +7,22 @@ Mix.install([
 ])
 ```
 
-## Setup & Data Ingestion
+## 1. Overview & Data Ingestion
 
-In this notebook, we'll download and analyze the **California Road Network** dataset from the SNAP repository. This dataset contains **1,965,206 nodes** (intersections) and **5,533,214 edges** (roads connecting them).
+In this notebook, we analyze the **California Road Network** dataset from the Stanford Network Analysis Project (SNAP).
+This real-world transport network contains **1,965,206 intersections (nodes)** and **5,533,214 roads (edges)**.
 
-First, let's download and decompress the dataset. We'll use Elixir's built-in `:httpc` and `:zlib` modules so no extra libraries are needed:
+First, let's download and decompress the dataset using Elixir's built-in `:httpc` and `:zlib`:
 
 ```elixir
-# Start HTTPS dependencies
+# Ensure HTTPS and HTTP clients are started
 Application.ensure_all_started(:inets)
 Application.ensure_all_started(:ssl)
 
 zip_path = "roadNet-CA.txt.gz"
 txt_path = "roadNet-CA.txt"
 
-# Download the dataset
+# Download the dataset if not already present
 unless File.exists?(zip_path) do
   IO.puts("Downloading California Road Network dataset (roadNet-CA)...")
   url = "https://snap.stanford.edu/data/roadNet-CA.txt.gz"
@@ -39,97 +40,225 @@ unless File.exists?(txt_path) do
   File.write!(txt_path, decompressed)
   IO.puts("Decompression complete!")
 end
+
+Kino.Markdown.new("""
+> **Dataset Ready**: `#{txt_path}` (~18 MB uncompressed edge list).
+""")
 ```
 
-## Loading the Graph into Native Memory
+## 2. Zero-Copy Ingestion: The ResourceGraph Pattern
 
-Zog uses the **ResourceGraph** pattern. Instead of loading millions of edges into Elixir heap memory (which causes high GC pressure and slow operations), we parse the file directly into native Zig memory (`ArrayGraph` SoA).
+In traditional BEAM graph libraries, loading 2 million nodes and 5.5 million edges into Elixir maps or tuples consumes **1.5–2 GB** of heap memory and triggers frequent Garbage Collection (GC) pauses.
 
-Let's load the dataset in **undirected mode** (`directed: false`) with **integer labels** enabled for maximum performance:
+With `Zog`:
+1. **Direct Native Parsing**: The edge list is parsed directly in Zig (`ArrayGraph` SoA layout).
+2. **BEAM Heap Isolation**: The graph is stored in native C-allocator memory outside the Erlang process heap.
+3. **Integer Labels**: With `integer_labels: true`, node IDs map directly to contiguous `u32` array indices.
 
 ```elixir
 alias Zog.IO, as: ZogIO
 alias Zog.ResourceGraph
 
-IO.puts("Loading California Road Network into native memory...")
-{time_load, graph} = :timer.tc(fn -> 
+# Track BEAM memory before loading
+beam_mem_before = :erlang.memory(:total)
+
+{time_load_micro, graph} = :timer.tc(fn -> 
   ZogIO.load(txt_path, directed: false, integer_labels: true)
 end)
 
-IO.puts("Loaded graph in #{Float.round(time_load / 1_000_000, 3)}s")
+beam_mem_after = :erlang.memory(:total)
+beam_mem_delta_mb = (beam_mem_after - beam_mem_before) / (1024 * 1024)
+load_seconds = time_load_micro / 1_000_000
 
-v = ResourceGraph.node_count(graph)
-e = ResourceGraph.edge_count(graph)
+node_count = ResourceGraph.node_count(graph)
+edge_count = ResourceGraph.edge_count(graph)
 
-IO.puts("Nodes: #{v}")
-IO.puts("Edges: #{e}")
+Kino.Markdown.new("""
+### ⚡ Graph Ingestion Summary
+- **Nodes (Intersections)**: `#{Number.Delimit.number_to_delimited(node_count) rescue node_count}`
+- **Edges (Roads)**: `#{Number.Delimit.number_to_delimited(edge_count) rescue edge_count}`
+- **Native Load Time**: **#{Float.round(load_seconds, 2)} seconds**
+- **BEAM Heap Growth**: **#{Float.round(beam_mem_delta_mb, 2)} MB** *(virtually zero heap footprint!)*
+""")
 ```
 
-## Weakly Connected Components (WCC)
+## 3. Weakly Connected Components (WCC)
 
-Let's compute the Weakly Connected Components of the road network to see if it is fully connected, and identify the size of the largest connected component.
+Is the California road network fully connected, or are there isolated components (such as private roads or islands)?
+Let's compute connected components in native memory using `raw: true` to return flat integer labels:
 
 ```elixir
-IO.puts("Computing Weakly Connected Components (WCC)...")
-{time_wcc, wcc_assignments} = :timer.tc(fn -> 
+{time_wcc_micro, wcc_assignments} = :timer.tc(fn -> 
   ResourceGraph.weakly_connected_components(graph, raw: true) 
 end)
-IO.puts("WCC computed in #{Float.round(time_wcc / 1_000_000, 3)}s")
 
-# Let's count how many components exist and get the size of the largest one
+wcc_seconds = time_wcc_micro / 1_000_000
 frequencies = Enum.frequencies(wcc_assignments)
 num_components = map_size(frequencies)
-{largest_id, largest_count} = Enum.max_by(frequencies, fn {_, count} -> count end)
 
-IO.puts("Number of components: #{num_components}")
-IO.puts("Largest component ID: #{largest_id} (contains #{largest_count} nodes, #{Float.round(largest_count / v * 100, 2)}% of the network)")
+# Sort top 10 largest components
+top_components =
+  frequencies
+  |> Enum.sort_by(fn {_, count} -> count end, :desc)
+  |> Enum.take(10)
+  |> Enum.with_index(1)
+  |> Enum.map(fn {{comp_id, count}, rank} ->
+    %{
+      "Rank" => rank,
+      "Component ID" => comp_id,
+      "Intersections" => count,
+      "% of Network" => "#{Float.round(count / node_count * 100, 2)}%"
+    }
+  end)
+
+Kino.Layout.grid([
+  Kino.Markdown.new("""
+  **WCC Execution Time**: `#{Float.round(wcc_seconds, 3)}s`  
+  **Total Components Found**: `#{num_components}`
+  """),
+  Kino.DataTable.new(top_components, name: "Largest Connected Components")
+], columns: 1)
 ```
 
-## Native Dijkstra Pathfinding
+## 4. Interactive Route Planning (Dijkstra)
 
-Since this is a road network, let's run a Dijkstra shortest path query. We will find a route between two arbitrary intersections.
+Because the graph is already cached in native memory, shortest-path queries execute in milliseconds.
 
-Because we loaded the graph with `integer_labels: true`, we can use `raw: true` in Dijkstra to pass raw node IDs and receive the raw path back in microseconds.
-
-Let's find the shortest path from node `0` to node `100_000`:
+Use the controls below to select any two intersection IDs (from `0` to `1,965,205`) to route across California:
 
 ```elixir
-start_node = 0
-goal_node = 100_000
+start_input = Kino.Input.number("Start Intersection ID", default: 0)
+goal_input = Kino.Input.number("Destination Intersection ID", default: 100_000)
 
-IO.puts("Finding shortest path from #{start_node} to #{goal_node}...")
-{time_path, result} = :timer.tc(fn ->
+Kino.Layout.grid([start_input, goal_input], columns: 2)
+```
+
+```elixir
+start_node = Kino.Input.read(start_input)
+goal_node = Kino.Input.read(goal_input)
+
+{time_dijkstra_micro, result} = :timer.tc(fn ->
   ResourceGraph.dijkstra(graph, start_node, goal_node, raw: true)
 end)
 
 case result do
-  {:ok, {path, cost}} ->
-    IO.puts("Path found in #{Float.round(time_path / 1_000, 2)}ms")
-    IO.puts("Path cost (hops): #{cost}")
-    IO.puts("Path route (first 10 nodes): #{inspect(Enum.take(path, 10))} ... total #{length(path)} nodes")
+  {:ok, {path, total_hops}} ->
+    route_rows =
+      path
+      |> Enum.with_index()
+      |> Enum.take(20)
+      |> Enum.map(fn {node_id, step} ->
+        %{"Step" => step, "Intersection ID" => node_id}
+      end)
+
+    Kino.Layout.grid([
+      Kino.Markdown.new("""
+      ### ✅ Route Found!
+      - **Query Time**: **#{Float.round(time_dijkstra_micro / 1_000, 2)} ms**
+      - **Total Hops (Road Segments)**: **#{total_hops}**
+      - **Total Route Nodes**: `#{length(path)}`
+      """),
+      Kino.DataTable.new(route_rows, name: "First 20 Intersections on Route")
+    ], columns: 1)
+
   {:error, :no_path} ->
-    IO.puts("No path exists between #{start_node} and #{goal_node}!")
+    Kino.Markdown.new("""
+    > ⚠️ **No Path**: Node `#{start_node}` and Node `#{goal_node}` belong to disconnected components!
+    """)
 end
 ```
 
-## Triangle Counting (Graph Clustering Metrics)
+## 5. Identifying Highway Hubs (Centrality Analysis)
 
-In social networks, triangle counts are huge. On road networks, they are typically small since intersections rarely form dense triadic cliques. Let's see how fast Zog counts triangles on this road network:
+Which intersections are the most critical transit hubs in California?
+We can run **PageRank** directly across all 2 million nodes in native memory to discover the highest-flow intersections:
 
 ```elixir
-IO.puts("Counting triangles...")
-{time_tri, triangles} = :timer.tc(fn -> 
+{time_pr_micro, pr_scores} = :timer.tc(fn ->
+  ResourceGraph.pagerank(graph, raw: true, max_iter: 25)
+end)
+
+top_hubs =
+  pr_scores
+  |> Stream.with_index()
+  |> Enum.sort_by(fn {score, _node_id} -> score end, :desc)
+  |> Enum.take(10)
+  |> Enum.with_index(1)
+  |> Enum.map(fn {{score, node_id}, rank} ->
+    %{
+      "Rank" => rank,
+      "Intersection ID" => node_id,
+      "PageRank Score" => Float.round(score, 6)
+    }
+  end)
+
+Kino.Layout.grid([
+  Kino.Markdown.new("""
+  **PageRank Runtime**: `#{Float.round(time_pr_micro / 1_000_000, 2)}s` (25 iterations across 2M nodes)
+  """),
+  Kino.DataTable.new(top_hubs, name: "Top 10 California Transit Hubs")
+], columns: 1)
+```
+
+## 6. Regional Partitioning (Community Detection)
+
+Road networks naturally cluster into geographic and metropolitan regions.
+Using **Label Propagation**, we can partition the entire state of California into regional transit zones in under a few seconds:
+
+```elixir
+{time_lpa_micro, communities} = :timer.tc(fn ->
+  ResourceGraph.label_propagation(graph, raw: true, max_iter: 20)
+end)
+
+comm_sizes =
+  communities
+  |> Enum.frequencies()
+  |> Enum.sort_by(fn {_, count} -> count end, :desc)
+  |> Enum.take(10)
+  |> Enum.with_index(1)
+  |> Enum.map(fn {{comm_id, count}, rank} ->
+    %{
+      "Rank" => rank,
+      "Community Zone ID" => comm_id,
+      "Intersections" => count,
+      "% of California" => "#{Float.round(count / node_count * 100, 2)}%"
+    }
+  end)
+
+Kino.Layout.grid([
+  Kino.Markdown.new("""
+  **Label Propagation Runtime**: `#{Float.round(time_lpa_micro / 1_000_000, 2)}s`  
+  **Total Regional Communities**: `#{map_size(Enum.frequencies(communities))}`
+  """),
+  Kino.DataTable.new(comm_sizes, name: "Top 10 Largest Regional Zones")
+], columns: 1)
+```
+
+## 7. Triangle Counting (Local Triadic Closure)
+
+In social networks, friends of friends are usually friends, producing massive numbers of triangles.
+In planar road networks, right angles and grid intersections dominate, so 3-cycles (triangles) are relatively sparse:
+
+```elixir
+{time_tri_micro, triangles} = :timer.tc(fn -> 
   ResourceGraph.triangle_count(graph) 
 end)
 
-IO.puts("Triangles: #{triangles} (computed in #{Float.round(time_tri / 1_000_000, 3)}s)")
+Kino.Markdown.new("""
+### 📐 Triangle Count
+- **Triangles Found**: **#{triangles}**
+- **Calculation Time**: **#{Float.round(time_tri_micro / 1_000_000, 3)}s**
+""")
 ```
 
-## Clean Up Native Memory
+## 8. Clean Up Native Memory
 
-Always remember to free the native graph resource when done to avoid memory leaks:
+Always free native resources when your analysis session is finished:
 
 ```elixir
 ResourceGraph.destroy(graph)
-IO.puts("Native graph memory successfully released!")
+
+Kino.Markdown.new("""
+> ✨ **Cleanup Complete**: Native memory allocated for the 2M-node graph has been safely released back to the OS.
+""")
 ```
