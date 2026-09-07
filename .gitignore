@@ -46,3 +46,5 @@ lib/zog/.*.zig
 # Livebook datasets
 /livebooks/*.txt
 /livebooks/*.txt.gz
+*.txt
+*.txt.gz
