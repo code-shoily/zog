@@ -3,7 +3,7 @@
 Roadmap and release planning for Zog's native Elixir/Zig graph algorithms.
 
 ## Current Status (v0.5.0)
-Zog v0.5.0 implements high-performance native implementations of core graph algorithms including Pathfinding (Dijkstra, A*, Bellman-Ford, Floyd-Warshall, Johnson's, Yen's K-Shortest), Flow & Cuts (Edmonds-Karp, Dinic's, Push-Relabel, Stoer-Wagner, Gomory-Hu Tree, s-t Min-Cut, Min-Cost Flow), MST (Kruskal's), Matching (Hopcroft-Karp, Hungarian, Blossom), Connectivity (Tarjan's SCC, Bridges, Articulation, K-core, Weakly Connected Components, Bipartite Check / Partition), Centrality (PageRank, Betweenness, Closeness, Harmonic, Eigenvector, Katz, Alpha, HITS), Community Detection (Louvain, Leiden, Label Propagation, Walktrap, Fluid Communities, Local Community, Girvan-Newman, Clique Percolation, Infomap), Metrics (Transitivity, Clustering Coefficients, Triangles, Modularity), Graph Properties & Isomorphism (VF2 Isomorphism, Weisfeiler-Leman Graph Hash, Structural Predicates, Eulerian Circuit/Path), Traversals & Health Metrics (Topological Sort, Acyclicity, Diameter, Radius, Eccentricity, Average Path Length), SIMD vectorization, and multi-threaded parallel execution.
+Zog v0.5.0 implements high-performance native implementations of core graph algorithms including Pathfinding (Dijkstra, A*, Bellman-Ford, Floyd-Warshall, Johnson's, Yen's K-Shortest), Flow & Cuts (Edmonds-Karp, Dinic's, Push-Relabel, Stoer-Wagner, Gomory-Hu Tree, s-t Min-Cut, Min-Cost Flow), MST (Kruskal's), Matching (Hopcroft-Karp, Hungarian, Blossom), Connectivity (Tarjan's SCC, Bridges, Articulation, K-core, Weakly Connected Components, Bow-Tie Macro-Decomposition, Bipartite Check / Partition), Centrality (PageRank, Betweenness, Closeness, Harmonic, Eigenvector, Katz, Alpha, HITS), Community Detection (Louvain, Leiden, Label Propagation, Walktrap, Fluid Communities, Local Community, Girvan-Newman, Clique Percolation, Infomap), Metrics (Transitivity, Clustering Coefficients, Triangles, Modularity), Graph Properties & Isomorphism (VF2 Isomorphism, Weisfeiler-Leman Graph Hash, Structural Predicates, Eulerian Circuit/Path), Traversals & Health Metrics (Topological Sort, Acyclicity, Diameter, Radius, Eccentricity, Average Path Length), SIMD vectorization, and multi-threaded parallel execution.
 
 ---
 
@@ -71,6 +71,28 @@ Focuses on complete algorithmic parity with Yog for network flow algorithms and 
   - [x] Infomap (`infomap/2` - Map Equation minimization with weighted PageRank teleportation)
 - **Community & Network Metrics**
   - [x] Global Transitivity / Clustering Coefficient (`transitivity/1`)
+  - [x] Bow-Tie Macro-Decomposition (`bow_tie_decomposition/1` - Broder et al., 2000 SCC/IN/OUT/Tubes/Tendrils/Disconnected)
+
+---
+
+### 📅 v0.6.0: Native Graph Layouts & Large Graph Rendering
+Focuses on full native parity with Yog's 2D layout suite, native Barnes-Hut quadtree force simulation, large graph projection algorithms, and high-performance binary coordinate streaming for WebGL/Livebook visualization.
+
+- **Yog Layout Parity (Native Zig Engines)**
+  - [ ] Spring / Force-Directed (`layout_spring/2` - Fruchterman-Reingold model with `:iterations`, `:k`, `:initial_temp`, `:fixed`, `:initial_pos`)
+  - [ ] Barnes-Hut Simulation (`barnes_hut: true, theta: 0.5` - $O(V \log V)$ contiguous arena quadtree spatial approximation)
+  - [ ] Circular Layout (`layout_circular/2` - uniform angular distribution on circle)
+  - [ ] Tutte Embedding (`layout_tutte/3` - Gauss-Seidel barycentric relaxation for planar graphs)
+  - [ ] Shell Layout (`layout_shell/3` - concentric rings placement, integrating with $k$-core decomposition)
+  - [ ] Multipartite Layout (`layout_multipartite/3` - parallel layered coordinate assignment)
+  - [ ] Random & Grid Placement (`layout_random/2`, `layout_grid/2`)
+- **Large-Graph Acceleration & Scaling**
+  - [ ] Pivot-MDS / High-Dimensional Embedding (HDE) (sub-100ms classical multidimensional scaling from $k$ pivot nodes)
+  - [ ] Multi-Level Coarsening (coarsening via native Louvain/Leiden super-nodes, macro-positioning, and local force refinement)
+  - [ ] Parallel & SIMD Acceleration (`std.Thread` multi-core force evaluation, `@Vector(4, f32)` vectorized particle interactions)
+- **Binary Streaming & Frontend Integration**
+  - [ ] Packed binary coordinate output (`raw: true` returning compact `<<x::float-32, y::float-32>>` buffers)
+  - [ ] Zero-copy IPC for WebGL / WebGPU renderers in Livebook (Cosmograph / Sigma.js / Regl)
 
 ---
 
