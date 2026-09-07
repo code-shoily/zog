@@ -61,10 +61,10 @@ pub fn detect(
         }
     }
 
-    // Assignments map: node -> community ID
-    var assignments = std.AutoHashMap(NodeId, usize).init(allocator);
-    errdefer assignments.deinit();
-    try assignments.ensureTotalCapacity(@intCast(n));
+    // Direct array for node assignments during propagation: O(1) array access without hash table
+    var node_comms = try allocator.alloc(?usize, n);
+    defer allocator.free(node_comms);
+    @memset(node_comms, null);
 
     // Community sizes array
     const max_possible_comms = k + n;
@@ -74,11 +74,17 @@ pub fn detect(
 
     for (0..k) |i| {
         const seed_node = shuffled_nodes[i];
-        try assignments.put(seed_node, i);
+        node_comms[seed_node] = i;
         sizes[i] = 1;
     }
 
     var propagation_seed: u64 = options.seed + 1;
+
+    var ties = std.ArrayList(usize).empty;
+    defer ties.deinit(allocator);
+
+    var unique_candidates = std.ArrayList(usize).empty;
+    defer unique_candidates.deinit(allocator);
 
     // Propagation loop
     var iter: usize = 0;
@@ -86,7 +92,7 @@ pub fn detect(
         var changed = false;
 
         for (shuffled_nodes) |node| {
-            const current_com = assignments.get(node);
+            const current_com = node_comms[node];
 
             // can_leave_community: if current_com == null -> true; else sizes[current_com] > 1
             const can_leave = if (current_com) |com| sizes[com] > 1 else true;
@@ -95,13 +101,12 @@ pub fn detect(
             // Find maximum density community among neighbors
             var best_c: ?usize = null;
             var max_d: f64 = -1.0;
-            var ties = std.ArrayList(usize).empty;
-            defer ties.deinit(allocator);
+            ties.clearRetainingCapacity();
 
             var sit = graph.successors(node);
             while (sit.next()) |edge| {
                 const neighbor = edge.to;
-                if (assignments.get(neighbor)) |neighbor_com| {
+                if (node_comms[neighbor]) |neighbor_com| {
                     const sz = sizes[neighbor_com];
                     if (sz > 0) {
                         const density = edge.data / @as(f64, @floatFromInt(sz));
@@ -121,9 +126,7 @@ pub fn detect(
             if (best_c) |bc| {
                 var chosen: usize = bc;
                 if (ties.items.len > 1) {
-                    var unique_candidates = std.ArrayList(usize).empty;
-                    defer unique_candidates.deinit(allocator);
-
+                    unique_candidates.clearRetainingCapacity();
                     try unique_candidates.append(allocator, bc);
                     for (ties.items) |candidate| {
                         var already = false;
@@ -151,7 +154,7 @@ pub fn detect(
                         sizes[cc] -= 1;
                     }
                     sizes[chosen] += 1;
-                    try assignments.put(node, chosen);
+                    node_comms[node] = chosen;
                     changed = true;
                 }
             }
@@ -163,30 +166,34 @@ pub fn detect(
     // Assign unassigned nodes to new unique communities
     var next_comm = k;
     for (nodes.items) |node| {
-        if (!assignments.contains(node)) {
-            try assignments.put(node, next_comm);
+        if (node_comms[node] == null) {
+            node_comms[node] = next_comm;
             sizes[next_comm] = 1;
             next_comm += 1;
         }
     }
 
     // Renumber active communities to contiguous IDs 0, 1, 2, ...
-    var comm_mapping = std.AutoHashMap(usize, usize).init(allocator);
-    defer comm_mapping.deinit();
+    var comm_mapping = try allocator.alloc(usize, next_comm);
+    defer allocator.free(comm_mapping);
 
     var active_count: usize = 0;
     for (0..next_comm) |cid| {
         if (sizes[cid] > 0) {
-            try comm_mapping.put(cid, active_count);
+            comm_mapping[cid] = active_count;
             active_count += 1;
+        } else {
+            comm_mapping[cid] = 0;
         }
     }
 
-    var it = assignments.iterator();
-    while (it.next()) |entry| {
-        if (comm_mapping.get(entry.value_ptr.*)) |new_id| {
-            entry.value_ptr.* = new_id;
-        }
+    var assignments = std.AutoHashMap(NodeId, usize).init(allocator);
+    errdefer assignments.deinit();
+    try assignments.ensureTotalCapacity(@intCast(n));
+
+    for (nodes.items) |node| {
+        const comm_id = node_comms[node].?;
+        try assignments.put(node, comm_mapping[comm_id]);
     }
 
     return .{
