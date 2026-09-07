@@ -77,7 +77,7 @@ Add `zog` to your list of dependencies in `mix.exs`. Since compiling Zig NIFs re
 ```elixir
 def deps do
   [
-    {:zog, "~> 0.4.0"},
+    {:zog, "~> 0.5.0"},
     {:zigler, "~> 0.16.0", runtime: false}
   ]
 end
@@ -89,7 +89,7 @@ If you plan to use `Zog` alongside `YogEx` for seamless bridging, include both:
 def deps do
   [
     {:yog_ex, "~> 0.99.0"},
-    {:zog, "~> 0.4.0"},
+    {:zog, "~> 0.5.0"},
     {:zigler, "~> 0.16.0", runtime: false}
   ]
 end
@@ -172,8 +172,9 @@ restored_yog_graph = Zog.to_graph(zog_soa)
 
 For large networks, native computation avoids overhead and runs at bare-metal speed (measured with `MIX_ENV=prod` to enable release optimizations):
 * **Floyd-Warshall / Johnson's Pathfinding**: **7x - 54x+ faster** than pure Elixir (e.g. Floyd-Warshall is **54x+ faster** on dense graphs).
-* **Leiden / Louvain Community Detection**: **10x - 21x+ faster**.
-* **Stoer-Wagner Min Cut / Max Flow**: **4x - 7x+ faster**.
+* **Community Detection (Infomap, CPM, Girvan-Newman, Leiden, Louvain)**: **10x - 35x+ faster** (e.g. Infomap is **35x faster**, CPM is **31x faster**, Girvan-Newman is **24x faster**).
+* **Flow & Cuts (Dinic, Push-Relabel, Gomory-Hu, Stoer-Wagner)**: **4x - 12x+ faster**.
+* **Exact Graph Matching (Blossom, Hungarian)**: **5x - 15x+ faster**.
 * **Exact Graph Coloring (Bron-Kerbosch / DSatur)**: **7x - 27x+ faster**.
 
 To run the full benchmark suite on your local machine:

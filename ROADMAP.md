@@ -2,8 +2,8 @@
 
 Roadmap and release planning for Zog's native Elixir/Zig graph algorithms.
 
-## Current Status (v0.4.0)
-Zog v0.4.0 implements high-performance native implementations of core graph algorithms including Pathfinding (Dijkstra, A*, Bellman-Ford, Floyd-Warshall, Johnson's, Yen's K-Shortest), Flow (Edmonds-Karp, Push-Relabel, Stoer-Wagner), MST (Kruskal's), Matching (Hopcroft-Karp, Hungarian, Blossom), Connectivity (Tarjan's SCC, Bridges, Articulation, K-core, Weakly Connected Components, Bipartite Check / Partition), Centrality (PageRank, Betweenness, Closeness, Harmonic, Eigenvector, Katz, Alpha, HITS), Community Detection (Louvain, Leiden, Label Propagation, Walktrap), Graph Properties & Isomorphism (VF2 Isomorphism, Weisfeiler-Leman Graph Hash, Structural Predicates, Eulerian Circuit/Path), Traversals & Health Metrics (Topological Sort, Acyclicity, Diameter, Radius, Eccentricity, Average Path Length), SIMD vectorization, and multi-threaded parallel execution.
+## Current Status (v0.5.0)
+Zog v0.5.0 implements high-performance native implementations of core graph algorithms including Pathfinding (Dijkstra, A*, Bellman-Ford, Floyd-Warshall, Johnson's, Yen's K-Shortest), Flow & Cuts (Edmonds-Karp, Dinic's, Push-Relabel, Stoer-Wagner, Gomory-Hu Tree, s-t Min-Cut, Min-Cost Flow), MST (Kruskal's), Matching (Hopcroft-Karp, Hungarian, Blossom), Connectivity (Tarjan's SCC, Bridges, Articulation, K-core, Weakly Connected Components, Bipartite Check / Partition), Centrality (PageRank, Betweenness, Closeness, Harmonic, Eigenvector, Katz, Alpha, HITS), Community Detection (Louvain, Leiden, Label Propagation, Walktrap, Fluid Communities, Local Community, Girvan-Newman, Clique Percolation, Infomap), Metrics (Transitivity, Clustering Coefficients, Triangles, Modularity), Graph Properties & Isomorphism (VF2 Isomorphism, Weisfeiler-Leman Graph Hash, Structural Predicates, Eulerian Circuit/Path), Traversals & Health Metrics (Topological Sort, Acyclicity, Diameter, Radius, Eccentricity, Average Path Length), SIMD vectorization, and multi-threaded parallel execution.
 
 ---
 
@@ -55,8 +55,8 @@ Focuses on Directed Acyclic Graph (DAG) sorting/checks, structural health metric
 
 ---
 
-### 📅 v0.5.0: Flow Algorithms Parity, Community Detection Parity & Multigraph Support
-Focuses on complete algorithmic parity with Yog for network flow algorithms and cuts, the complete community detection suite, global community transitivity, and multigraph support.
+### 📅 v0.5.0: Flow Algorithms Parity & Complete Community Detection Suite
+Focuses on complete algorithmic parity with Yog for network flow algorithms and cuts, the complete community detection suite, and global community transitivity.
 
 - **Network Flow & Cuts Parity**
   - [x] Dinic's Algorithm (`max_flow/4` with `[algorithm: :dinic]`)
@@ -71,20 +71,13 @@ Focuses on complete algorithmic parity with Yog for network flow algorithms and 
   - [x] Infomap (`infomap/2` - Map Equation minimization with weighted PageRank teleportation)
 - **Community & Network Metrics**
   - [x] Global Transitivity / Clustering Coefficient (`transitivity/1`)
-- **Multigraph Core**
-  - [ ] Multi-edge storage (extending `SoA` and NIF boundary for edge key mappings)
-  - [ ] Edge-specific deletion (removing a specific parallel edge by ID)
-  - [ ] Collapse multigraph to simple graph (`to_simple_graph`)
-- **Multigraph Traversals & Eulerian Paths**
-  - [ ] Eulerian Circuit / Path (Hierholzer with edge IDs)
-  - [ ] Edge-ID aware BFS / DFS / Fold Walk
-  - [ ] Multigraph Cycle Check & Topological Sort
 
 ---
 
 ## 📋 Future Backlog (Deferred & On-Demand)
 These features are not scheduled for immediate releases and will be implemented based on community demand or specific needs.
 
+- **Multigraphs**: Deliberately deferred / out of scope for native core. Workflows needing multigraphs (such as Choreo state machines and message routing) run with sub-microsecond latency in pure Elixir/Yog, or can be collapsed to simple graphs via Yog's `to_simple_graph/2` before calling native analytical algorithms.
 - **Pathfinding**: Bidirectional Dijkstra, Bidirectional BFS, Widest Path, All-Pairs Unweighted.
 - **Spanning Tree**: Minimum Spanning Arborescence (Edmonds' Directed MST).
 - **Connectivity**: Reachability Exact.
