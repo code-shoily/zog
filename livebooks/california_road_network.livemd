@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  # {:zog, "~> 0.5.0"},
+  # {:zog, "~> 0.6.0"},
   {:zog, path: Path.expand("~/repos/elixir/zog")},
   {:kino, "~> 0.12"}
 ])
@@ -13,34 +13,10 @@ Mix.install([
 In this notebook, we analyze the **California Road Network** dataset from the Stanford Network Analysis Project (SNAP).
 This real-world transport network contains **1,965,206 intersections (nodes)** and **5,533,214 roads (edges)**.
 
-First, let's download and decompress the dataset using Elixir's built-in `:httpc` and `:zlib`:
+First, let's download and decompress the dataset:
 
 ```elixir
-# Ensure HTTPS and HTTP clients are started
-Application.ensure_all_started(:inets)
-Application.ensure_all_started(:ssl)
-
-zip_path = "roadNet-CA.txt.gz"
-txt_path = "roadNet-CA.txt"
-
-# Download the dataset if not already present
-unless File.exists?(zip_path) do
-  IO.puts("Downloading California Road Network dataset (roadNet-CA)...")
-  url = "https://snap.stanford.edu/data/roadNet-CA.txt.gz"
-  {:ok, {{_version, 200, _reason}, _headers, body}} = 
-    :httpc.request(:get, {String.to_charlist(url), []}, [], [{:body_format, :binary}])
-  File.write!(zip_path, body)
-  IO.puts("Download complete!")
-end
-
-# Decompress
-unless File.exists?(txt_path) do
-  IO.puts("Decompressing roadNet-CA.txt.gz...")
-  compressed = File.read!(zip_path)
-  decompressed = :zlib.gunzip(compressed)
-  File.write!(txt_path, decompressed)
-  IO.puts("Decompression complete!")
-end
+{:ok, txt_path} = Zog.Dataset.fetch_snap(:ca_roads)
 
 Kino.Markdown.new("""
 > **Dataset Ready**: `#{txt_path}` (~18 MB uncompressed edge list).

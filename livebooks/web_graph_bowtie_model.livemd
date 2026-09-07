@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  # {:zog, "~> 0.5.0"},
+  # {:zog, "~> 0.6.0"},
   {:zog, path: Path.expand("~/repos/elixir/zog")},
   {:kino, "~> 0.12"}
 ])
@@ -40,59 +40,13 @@ In this notebook, we analyze the **Stanford University Web Graph** (`web-Stanfor
 
 ## 2. Ingestion & Zero-Copy Native Allocation
 
-Let's download and decompress `web-Stanford.txt.gz`:
+Let's download, decompress, and remap `web-Stanford.txt.gz` using `Zog.Dataset`:
 
 ```elixir
-Application.ensure_all_started(:inets)
-Application.ensure_all_started(:ssl)
-
-zip_path = "web-Stanford.txt.gz"
-txt_path = "web-Stanford.txt"
-
-# Download the dataset if not present
-unless File.exists?(zip_path) do
-  IO.puts("Downloading SNAP Stanford web graph dataset...")
-  url = "https://snap.stanford.edu/data/web-Stanford.txt.gz"
-
-  {:ok, {{_version, 200, _reason}, _headers, body}} =
-    :httpc.request(:get, {String.to_charlist(url), []}, [], body_format: :binary)
-
-  File.write!(zip_path, body)
-  IO.puts("Download complete!")
-end
-
-# Decompress
-unless File.exists?(txt_path) do
-  IO.puts("Decompressing web-Stanford.txt.gz...")
-  compressed = File.read!(zip_path)
-  decompressed = :zlib.gunzip(compressed)
-  File.write!(txt_path, decompressed)
-  IO.puts("Decompression complete!")
-end
-
-remapped_path = "web-Stanford.zero_based.txt"
-
-unless File.exists?(remapped_path) do
-  IO.puts("Remapping one-based SNAP page IDs to dense zero-based native IDs...")
-
-  txt_path
-  |> File.stream!([], :line)
-  |> Stream.reject(fn line -> String.starts_with?(String.trim_leading(line), "#") end)
-  |> Stream.map(fn line ->
-    case String.split(line) do
-      [from, to | _] -> "#{String.to_integer(from) - 1} #{String.to_integer(to) - 1}\n"
-      _ -> ""
-    end
-  end)
-  |> Stream.into(File.stream!(remapped_path))
-  |> Stream.run()
-
-  IO.puts("Remapping complete!")
-end
+{:ok, remapped_path} = Zog.Dataset.fetch_snap(:stanford_web)
 
 Kino.Markdown.new("""
-> **Dataset Ready**: `#{txt_path}` (~32 MB uncompressed directed edge list).  
-> **Native Ingestion File**: `#{remapped_path}` with dense zero-based IDs.
+> **Dataset Ready**: `#{remapped_path}` with dense zero-based IDs (~32 MB uncompressed directed edge list).
 """)
 ```
 

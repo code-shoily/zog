@@ -5,10 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-09-07
+
+### Added
+
+- Added `Zog.Dataset` and `Zog.Dataset.SNAP` dataset management system:
+  - Automated downloading, `:zlib.gunzip` decompression, local filesystem caching (`~/.cache/zog/datasets/`), and native ingestion.
+  - Built-in registry for standard SNAP benchmarks: `:facebook`, `:enron`, `:ca_roads`, `:stanford_web`, and `:wiki_vote`.
+  - Supports custom dataset downloads and optional zero-based index remapping.
+  - High-level helpers: `fetch/2`, `fetch!/2`, `load/2`, `load!/2`, `from_snap/2`, `cache_dir/0`, and `clear_cache/1`.
+- Added `Zog.Kino` interactive graph layout visualization module:
+  - Implemented `Kino.Render` protocol for automatic, seamless rendering of `%Zog.Kino.View{}` in Livebook cells.
+  - Canvas 2D engine with interactive zoom (scroll wheel), pan (drag), edge toggling, edge opacity slider, node radius slider, and community color palettes.
+  - WebGL hardware-accelerated engine with GLSL vertex and fragment shaders for ultra-scale networks (up to millions of elements at 60 FPS).
+  - 32-bit element index buffer (`OES_element_index_uint`) support in WebGL for graphs exceeding 65,536 vertices.
+  - Direct packed binary coordinate buffer streaming (`<<x::float-32, y::float-32>>`) into GPU VBOs without intermediate Elixir map conversion.
+  - Highlights support for labeling specific nodes with search markers.
+- Added comprehensive test suites: `test/dataset_test.exs` and `test/kino_test.exs`.
 
 ### Changed
 
+- Updated all 5 runnable Livebooks (`california_road_network.livemd`, `enron_email_network.livemd`, `facebook_community_analysis.livemd`, `graph_layouts_and_visualization.livemd`, `web_graph_bowtie_model.livemd`):
+  - Replaced ~860 lines of duplicate download, decompression, and canvas boilerplate with `Zog.Dataset` and `Zog.Kino.render/3`.
+  - Upgraded livebook dependencies to `{:zog, "~> 0.6.0"}`.
 - `Zog.Flow.max_flow/4`, `Zog.Flow.s_t_min_cut/4`, `Zog.ResourceGraph.max_flow/4`, and `Zog.ResourceGraph.s_t_min_cut/4` now accept the documented `algorithm: :dinic | :push_relabel | :edmonds_karp` option style in addition to the positional algorithm atom.
 - `pagerank/2` and `label_propagation/2` accept `max_iter:` as a backwards-compatible alias for `max_iterations:`.
 - Documented that direct file-loaded `ResourceGraph`s keep topology in native memory and use a lightweight Elixir-side builder for label mapping.
@@ -18,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Replaced exact $O(V \cdot (V + E))$ APSP sweep in Enron email network verification table with $O(m \cdot (V + E))$ Approximate Neighborhood Function (ANF) effective diameter, resolving benchmark slowdown on 36,692 nodes.
+- Fixed `BadMapError` in `Zog.Kino` when handling packed binary layout coordinates (`format: :binary`) by implementing direct binary streaming and tail-recursive unpacking.
+- Fixed WebGL shader pipeline element type resolution (`indexType`) for GPU line index buffers.
 - `Zog.ResourceGraph.s_t_min_cut/4` now returns cut edges for directly loaded native graphs instead of relying on the lightweight Elixir-side builder edge list.
 - `Zog.Layout.MultiLevel.layout/2` now falls back to native spring layout for direct file-loaded resources whose lightweight builders do not retain edges.
 

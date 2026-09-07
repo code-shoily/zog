@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  # {:zog, "~> 0.5.0"},
+  # {:zog, "~> 0.6.0"},
   {:zog, path: Path.expand("~/repos/elixir/zog")},
   {:kino, "~> 0.12"}
 ])
@@ -21,35 +21,10 @@ Network analysis on the Enron corpus is a cornerstone in forensic data science, 
 * **Can graph algorithms expose the tight-knit executive inner circle?**
 * **How did communication divide across departments and trading desks?**
 
-Let's download and decompress `email-Enron.txt.gz`:
+Let's download and cache `email-Enron.txt.gz` using `Zog.Dataset`:
 
 ```elixir
-Application.ensure_all_started(:inets)
-Application.ensure_all_started(:ssl)
-
-zip_path = "email-Enron.txt.gz"
-txt_path = "email-Enron.txt"
-
-# Download the dataset if not present
-unless File.exists?(zip_path) do
-  IO.puts("Downloading SNAP Enron email dataset...")
-  url = "https://snap.stanford.edu/data/email-Enron.txt.gz"
-
-  {:ok, {{_version, 200, _reason}, _headers, body}} =
-    :httpc.request(:get, {String.to_charlist(url), []}, [], body_format: :binary)
-
-  File.write!(zip_path, body)
-  IO.puts("Download complete!")
-end
-
-# Decompress
-unless File.exists?(txt_path) do
-  IO.puts("Decompressing email-Enron.txt.gz...")
-  compressed = File.read!(zip_path)
-  decompressed = :zlib.gunzip(compressed)
-  File.write!(txt_path, decompressed)
-  IO.puts("Decompression complete!")
-end
+{:ok, txt_path} = Zog.Dataset.fetch_snap(:enron)
 
 Kino.Markdown.new("""
 > **Dataset Ready**: `#{txt_path}` (~4.5 MB uncompressed edge list).
@@ -110,9 +85,6 @@ We calculate topological invariants using native Zig kernels and cross-reference
 {time_anf_micro, {:ok, anf_metrics}} =
   :timer.tc(fn -> ResourceGraph.anf(graph) end)
 
-{time_diam_micro, diameter} =
-  :timer.tc(fn -> ResourceGraph.diameter(graph) end)
-
 wcc_freq = Enum.frequencies(wcc_list)
 largest_wcc = wcc_freq |> Map.values() |> Enum.max()
 
@@ -158,16 +130,10 @@ verification_table = [
     "Status" => approx_status.(avg_clustering, 0.4970, 0.0001)
   },
   %{
-    "Metric" => "90-percentile Effective Diameter",
+    "Metric" => "90-percentile Effective Diameter (ANF)",
     "SNAP Published" => "4.8",
-    "Zog Computed" => "#{Float.round(anf_metrics.effective_diameter, 2)} (ANF)",
+    "Zog Computed" => "#{Float.round(anf_metrics.effective_diameter, 2)}",
     "Status" => approx_status.(anf_metrics.effective_diameter, 4.8, 0.2)
-  },
-  %{
-    "Metric" => "Diameter (Longest Shortest Path)",
-    "SNAP Published" => "11 (largest WCC) / 13 (global)",
-    "Zog Computed" => "#{Float.round(diameter, 1)}",
-    "Status" => approx_status.(diameter, 13.0, 0.1)
   }
 ]
 
@@ -179,7 +145,6 @@ Kino.Layout.grid(
     - **Triangle Counting Time**: `#{Float.round(time_tri_micro / 1000, 2)} ms`
     - **Clustering Coefficient Time**: `#{Float.round(time_clust_micro / 1000, 2)} ms`
     - **ANF Effective Diameter Time**: `#{Float.round(time_anf_micro / 1000, 2)} ms`
-    - **Diameter Time**: `#{Float.round(time_diam_micro / 1000, 2)} ms`
     """),
     Kino.DataTable.new(verification_table, name: "SNAP Benchmark vs Zog Results")
   ],

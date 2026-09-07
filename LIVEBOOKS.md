@@ -6,8 +6,8 @@ Each notebook currently includes two dependency styles in its `Mix.install/1` ce
 
 ```elixir
 Mix.install([
-  # Use the commented Hex dependency when running a published release (~> 0.5.0, or ~> 0.6.0 for layout features).
-  # {:zog, "~> 0.5.0"},
+  # Use the commented Hex dependency when running a published release (~> 0.6.0).
+  # {:zog, "~> 0.6.0"},
 
   # Use the path dependency while developing this repository locally.
   {:zog, path: Path.expand("~/repos/elixir/zog")},

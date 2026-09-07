@@ -2,8 +2,8 @@
 
 Roadmap and release planning for Zog's native Elixir/Zig graph algorithms.
 
-## Current Status (v0.5.0)
-Zog v0.5.0 implements high-performance native implementations of core graph algorithms including Pathfinding (Dijkstra, A*, Bellman-Ford, Floyd-Warshall, Johnson's, Yen's K-Shortest), Flow & Cuts (Edmonds-Karp, Dinic's, Push-Relabel, Stoer-Wagner, Gomory-Hu Tree, s-t Min-Cut, Min-Cost Flow), MST (Kruskal's), Matching (Hopcroft-Karp, Hungarian, Blossom), Connectivity (Tarjan's SCC, Bridges, Articulation, K-core, Weakly Connected Components, Bow-Tie Macro-Decomposition, Bipartite Check / Partition), Centrality (PageRank, Betweenness, Closeness, Harmonic, Eigenvector, Katz, Alpha, HITS), Community Detection (Louvain, Leiden, Label Propagation, Walktrap, Fluid Communities, Local Community, Girvan-Newman, Clique Percolation, Infomap), Metrics (Transitivity, Clustering Coefficients, Triangles, Modularity), Graph Properties & Isomorphism (VF2 Isomorphism, Weisfeiler-Leman Graph Hash, Structural Predicates, Eulerian Circuit/Path), Traversals & Health Metrics (Topological Sort, Acyclicity, Diameter, Radius, Eccentricity, Average Path Length), SIMD vectorization, and multi-threaded parallel execution.
+## Current Status (v0.6.0)
+Zog v0.6.0 introduces native 2D graph layout engines (Spring, Barnes-Hut quadtree, Pivot-MDS, Multi-Level Coarsening, Tutte, Circular, Shell, Multipartite), `Zog.Kino` interactive Canvas 2D and hardware-accelerated WebGL rendering (with `Kino.Render` protocol support), and `Zog.Dataset` automated benchmark dataset caching and ingestion. This builds upon v0.5.0's comprehensive suite of native graph algorithms including Pathfinding, Flow & Cuts, MST, Matching, Connectivity, Centrality, Community Detection, Metrics, Graph Properties & Isomorphism, Traversals, and Network Health Metrics.
 
 ---
 
@@ -93,6 +93,9 @@ Focuses on full native parity with Yog's 2D layout suite, native Barnes-Hut quad
 - **Binary Streaming & Frontend Integration**
   - [x] Packed binary coordinate output (`binary: true` / `format: :binary` returning compact `<<x::float-32, y::float-32>>` buffers)
   - [x] Zero-copy IPC for WebGL / WebGPU renderers in Livebook (GPU VBO shaders, Cosmograph / Sigma.js / Regl)
+  - [x] `Zog.Kino` interactive Canvas 2D and WebGL rendering with `Kino.Render` protocol, GPU VBO/EBO line rendering, zoom/pan controls, and color palette mapping
+  - [x] `Zog.Dataset` & `Zog.Dataset.SNAP` automated benchmark downloading, decompression, zero-based remapping, and local caching
+  - [x] Upgraded all 5 runnable Livebooks to eliminate ~860 lines of boilerplate fetching and visualization logic
 
 ---
 

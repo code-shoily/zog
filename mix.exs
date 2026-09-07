@@ -1,7 +1,7 @@
 defmodule Zog.MixProject do
   use Mix.Project
 
-  @version "0.5.0"
+  @version "0.6.0"
   @source_url "https://github.com/code-shoily/zog"
 
   def project do
@@ -55,7 +55,8 @@ defmodule Zog.MixProject do
       {:zigler, "~> 0.16.0", runtime: false},
       {:yog_ex, "~> 0.98"},
       {:libgraph, "~> 0.16", optional: true},
-      {:kino, "~> 0.12", optional: true}
+      {:kino, "~> 0.12", optional: true},
+      {:jason, "~> 1.4", optional: true}
     ]
   end
 
@@ -126,6 +127,11 @@ defmodule Zog.MixProject do
           Zog.Pathfinding,
           Zog.Property,
           Zog.Traversal
+        ],
+        "Datasets & Visualization": [
+          Zog.Dataset,
+          Zog.Dataset.SNAP,
+          Zog.Kino
         ]
       ]
     ]
