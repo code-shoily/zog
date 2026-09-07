@@ -26,6 +26,7 @@ graph LR
 ```
 
 ### The Six Bow-Tie Components:
+
 1. **SCC (Core)**: The central giant strongly connected component. Every page in the core can reach every other page via directed hyperlinks.
 2. **IN**: Pages that can reach the SCC along directed paths, but cannot be reached from it (e.g., new websites, specialized directories).
 3. **OUT**: Pages that can be reached from the SCC, but cannot reach back into it (e.g., corporate websites, leaf pages).
@@ -236,24 +237,6 @@ Kino.Layout.grid(
   columns: 1
 )
 ```
-
-### Visualizing the Stanford Bow-Tie:
-
-```elixir
-Kino.Markdown.new("""
-```mermaid
-graph LR
-    IN["IN Component\n(#{bowtie.in_count} pages / #{pct.(bowtie.in_count)})"] --> SCC["SCC Core\n(#{bowtie.scc_count} pages / #{pct.(bowtie.scc_count)})"]
-    SCC --> OUT["OUT Component\n(#{bowtie.out_count} pages / #{pct.(bowtie.out_count)})"]
-    IN --> TUBES["TUBES\n(#{bowtie.tubes_count} pages / #{pct.(bowtie.tubes_count)})"] --> OUT
-    IN -.-> T1["TENDRILS\n(#{bowtie.tendrils_count} pages / #{pct.(bowtie.tendrils_count)})"]
-    T2["TENDRILS"] -.-> OUT
-    DISC["DISCONNECTED\n(#{bowtie.disconnected_count - 1} pages / #{pct.(bowtie.disconnected_count - 1)})"]
-```
-""")
-```
-
----
 
 ## 5. Interactive Webpage Inspector
 
