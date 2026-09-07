@@ -553,7 +553,7 @@ IO.puts("Generating synthetic graph with #{large_n} nodes...")
 
 IO.puts("Running Pivot-MDS (k = 30 pivots) on #{large_n} nodes...")
 
-{t_pmds_large, _pos_large} =
+{t_pmds_large, pos_large} =
   :timer.tc(fn ->
     Zog.layout_pivot_mds(large_graph, pivots: 30, format: :binary, seed: 42)
   end)
@@ -729,4 +729,3 @@ Always release native allocations when done:
 ResourceGraph.destroy(graph)
 Kino.Markdown.new("✓ Native memory successfully freed.")
 ```
-
