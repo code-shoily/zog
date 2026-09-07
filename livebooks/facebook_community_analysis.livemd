@@ -291,7 +291,125 @@ Kino.Layout.grid(
 )
 ```
 
-## 7. Clean Native Memory
+## 7. 2D Social Circle Layout & Visualization 🎨
+
+Now that we have identified the community structures and bridge influencers, let's project the entire 4,039-user social graph into 2D space using **Multi-Level Coarsening** and **Pivot-MDS**.
+
+We can stream packed binary coordinates (`format: :binary`) directly into an interactive HTML5 Canvas with zero serialization overhead:
+
+```elixir
+# Compute multi-level layout (Louvain macro-clustering + Barnes-Hut local force refinement)
+canvas_w = 800
+canvas_h = 600
+
+{layout_time_micro, pos_map} =
+  :timer.tc(fn ->
+    ResourceGraph.layout_multi_level(graph,
+      width: canvas_w - 80,
+      height: canvas_h - 80,
+      center: {canvas_w / 2, canvas_h / 2},
+      refine_iterations: 20,
+      seed: 42
+    )
+  end)
+
+louvain_asgn = ResourceGraph.louvain(graph) |> extract_assignments.()
+
+# 16-color palette
+palette = [
+  "#4ade80", "#38bdf8", "#f43f5e", "#fbbf24", "#a855f7", "#ec4899",
+  "#2dd4bf", "#f97316", "#818cf8", "#34d399", "#60a5fa", "#f87171",
+  "#c084fc", "#e879f9", "#a3e635", "#fb923c"
+]
+
+# Pack coordinates and color index into binary buffer (10 bytes per node)
+packed_nodes =
+  for id <- 0..(node_count - 1), into: <<>> do
+    {x, y} = Map.get(pos_map, id, {canvas_w / 2, canvas_h / 2})
+    comm_id = Map.get(louvain_asgn, id, 0)
+    color_idx = rem(comm_id, length(palette))
+    <<x::float-32-little, y::float-32-little, color_idx::unsigned-16-little>>
+  end
+
+b64_nodes = Base.encode64(packed_nodes)
+palette_json = Jason.encode!(palette)
+top_bridge_id = top_influencers |> hd() |> Map.get("User ID")
+{bridge_x, bridge_y} = Map.get(pos_map, top_bridge_id, {canvas_w / 2, canvas_h / 2})
+
+canvas_id = "fb-canvas-#{System.unique_integer([:positive])}"
+
+html = """
+<div style="font-family: system-ui, sans-serif; background: #0f172a; border-radius: 12px; padding: 16px; color: #e2e8f0;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+    <div>
+      <span style="font-weight: 700; font-size: 16px;">Facebook Social Circles (#{node_count} Users)</span>
+      <span style="color: #94a3b8; margin-left: 8px;">Multi-Level Coarsening Layout</span>
+    </div>
+    <div style="font-size: 14px; background: #1e293b; padding: 4px 12px; border-radius: 6px; border: 1px solid #334155;">
+      ⚡ Layout computed in <strong style="color: #38bdf8;">#{Float.round(layout_time_micro / 1000, 2)} ms</strong>
+    </div>
+  </div>
+
+  <div style="position: relative; width: #{canvas_w}px; height: #{canvas_h}px; margin: 0 auto; background: #020617; border: 1px solid #1e293b; border-radius: 8px; overflow: hidden;">
+    <canvas id="#{canvas_id}" width="#{canvas_w}" height="#{canvas_h}"></canvas>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById("#{canvas_id}");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const palette = #{palette_json};
+
+  const binaryString = atob("#{b64_nodes}");
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  const dataView = new DataView(bytes.buffer);
+  const nodeCount = len / 10;
+
+  ctx.fillStyle = "#020617";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Draw users
+  for (let i = 0; i < nodeCount; i++) {
+    const offset = i * 10;
+    const x = dataView.getFloat32(offset, true);
+    const y = dataView.getFloat32(offset + 4, true);
+    const colorIdx = dataView.getUint16(offset + 8, true);
+
+    ctx.beginPath();
+    ctx.arc(x, y, 2.5, 0, 2 * Math.PI);
+    ctx.fillStyle = palette[colorIdx % palette.length];
+    ctx.fill();
+  }
+
+  // Highlight top bridge influencer (User 107)
+  const bx = #{bridge_x};
+  const by = #{bridge_y};
+  ctx.beginPath();
+  ctx.arc(bx, by, 7.0, 0, 2 * Math.PI);
+  ctx.fillStyle = "#ff0055";
+  ctx.fill();
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.font = "bold 12px sans-serif";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText("Hub User #{top_bridge_id}", bx + 10, by + 4);
+})();
+</script>
+"""
+
+Kino.HTML.new(html)
+```
+
+## 8. Clean Native Memory
 
 Always release native allocations when done:
 
@@ -299,3 +417,4 @@ Always release native allocations when done:
 ResourceGraph.destroy(graph)
 Kino.Markdown.new("✓ Native memory successfully freed.")
 ```
+

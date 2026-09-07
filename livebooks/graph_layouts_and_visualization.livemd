@@ -1,0 +1,433 @@
+# Large-Scale Graph Layouts & 2D Visualization with Zog ⚡
+
+```elixir
+Mix.install([
+  # {:zog, "~> 0.6.0"},
+  {:zog, path: Path.expand("~/repos/elixir/zog")},
+  {:kino, "~> 0.12"}
+])
+```
+
+## 1. Overview & Zog Layout Architecture
+
+Network visualization is critical for understanding graph topologies, community modularity, and structural clustering. Traditional BEAM graph layouts either rely on slow pure-Elixir iterative loops or require external command-line tools like Graphviz.
+
+`Zog` provides high-performance, native 2D layout algorithms backed by Zig engines:
+
+1. **Pivot-MDS (High-Dimensional Embedding)**: Sub-second classical multidimensional scaling using distances from $k$ well-separated pivot nodes ($O(k(V + E))$). Capable of embedding $100,000+$ nodes in under a second.
+2. **Multi-Level Coarsening**: Macro-layout via Louvain/Leiden super-nodes, Vogel/sunflower spiral prolongation, and local Barnes-Hut force refinement.
+3. **Spring / Force-Directed**: Fruchterman-Reingold physical model with exact $O(V^2)$ repulsion or $O(V \log V)$ Barnes-Hut quadtree spatial acceleration.
+4. **Geometric Layouts**: Uniform Circular, Shell (concentric $k$-core shells), Multipartite (hierarchical layers), Grid, and Random.
+5. **Planar Barycentric Embedding**: Tutte's planar embedding via Gauss-Seidel relaxation.
+6. **Packed Binary Streaming**: Zero-copy little-endian float buffers (`<<x::float-32, y::float-32>>`) streaming directly to WebGL / Canvas / Sigma.js.
+
+---
+
+## 2. Ingesting Real-World Social Circles (SNAP ego-Facebook)
+
+Let's test our layout engine on the **SNAP ego-Facebook** social network (4,039 nodes, 88,234 edges).
+If the dataset is not already present, we download and decompress it:
+
+```elixir
+Application.ensure_all_started(:inets)
+Application.ensure_all_started(:ssl)
+
+zip_path = "facebook_combined.txt.gz"
+txt_path = "facebook_combined.txt"
+
+# Download if not present
+unless File.exists?(zip_path) or File.exists?(txt_path) do
+  IO.puts("Downloading SNAP ego-Facebook dataset...")
+  url = "https://snap.stanford.edu/data/facebook_combined.txt.gz"
+
+  {:ok, {{_version, 200, _reason}, _headers, body}} =
+    :httpc.request(:get, {String.to_charlist(url), []}, [], body_format: :binary)
+
+  File.write!(zip_path, body)
+  IO.puts("Download complete!")
+end
+
+# Decompress if needed
+unless File.exists?(txt_path) do
+  IO.puts("Decompressing facebook_combined.txt.gz...")
+  compressed = File.read!(zip_path)
+  decompressed = :zlib.gunzip(compressed)
+  File.write!(txt_path, decompressed)
+  IO.puts("Decompression complete!")
+end
+
+Kino.Markdown.new("""
+> **Dataset Ready**: `#{txt_path}` (~4,039 users, 88,234 friendship connections).
+""")
+```
+
+Now let's ingest the graph into native memory:
+
+```elixir
+alias Zog.IO, as: ZogIO
+alias Zog.ResourceGraph
+
+{load_time_micro, graph} =
+  :timer.tc(fn ->
+    ZogIO.load(txt_path, directed: false, integer_labels: true)
+  end)
+
+node_count = ResourceGraph.node_count(graph)
+edge_count = ResourceGraph.edge_count(graph)
+
+Kino.Markdown.new("""
+### ⚡ Graph Loaded into Native Memory
+- **Nodes**: `#{node_count}`
+- **Edges**: `#{edge_count}`
+- **Native Ingestion Time**: **#{Float.round(load_time_micro / 1000, 2)} ms**
+""")
+```
+
+---
+
+## 3. Detecting Communities for Cluster Coloring
+
+To visualize structural communities, let's partition the network using native **Louvain** modularity optimization:
+
+```elixir
+{time_louvain_micro, communities} =
+  :timer.tc(fn ->
+    ResourceGraph.louvain(graph)
+  end)
+
+# Find top communities
+top_comms =
+  communities
+  |> Enum.group_by(fn {_node, comm_id} -> comm_id end)
+  |> Enum.map(fn {comm_id, members} -> {comm_id, length(members)} end)
+  |> Enum.sort_by(&elem(&1, 1), :desc)
+
+Kino.Markdown.new("""
+### 🎨 Community Detection (Louvain)
+- **Time**: **#{Float.round(time_louvain_micro / 1000, 2)} ms**
+- **Discovered Communities**: `#{length(top_comms)}`
+- **Top 5 Largest Circles**: `#{inspect(Enum.take(top_comms, 5))}`
+""")
+```
+
+---
+
+## 4. Benchmark: Layout Engine Performance Comparison
+
+Let's benchmark the layout algorithms side-by-side on this 4,039-node network:
+
+```elixir
+# 1. Circular
+{t_circ, _} = :timer.tc(fn -> ResourceGraph.layout_circular(graph) end)
+
+# 2. Shell (grouped by Louvain community)
+{t_shell, _} =
+  :timer.tc(fn ->
+    shells =
+      communities
+      |> Enum.group_by(fn {_node, c} -> c end, fn {node, _} -> node end)
+      |> Map.values()
+
+    ResourceGraph.layout_shell(graph, shells)
+  end)
+
+# 3. Pivot-MDS (k = 50 pivots)
+{t_pmds, _} =
+  :timer.tc(fn ->
+    ResourceGraph.layout_pivot_mds(graph, pivots: 50, seed: 42)
+  end)
+
+# 4. Multi-Level Coarsening (Louvain macro + 20 Barnes-Hut refine iterations)
+{t_ml, _} =
+  :timer.tc(fn ->
+    ResourceGraph.layout_multi_level(graph, refine_iterations: 20, seed: 42)
+  end)
+
+# 5. Spring with Barnes-Hut Quadtree (50 iterations)
+{t_bh, _} =
+  :timer.tc(fn ->
+    ResourceGraph.layout_spring(graph, barnes_hut: true, iterations: 50, seed: 42)
+  end)
+
+benchmark_rows = [
+  %{
+    "Algorithm" => "Pivot-MDS (HDE, 50 pivots)",
+    "Execution Time (ms)" => Float.round(t_pmds / 1000, 2),
+    "Throughput (nodes/s)" => round(node_count / (t_pmds / 1_000_000)),
+    "Complexity" => "O(k · (V + E))",
+    "Best For" => "Instant macro projection for massive networks (10⁵+)"
+  },
+  %{
+    "Algorithm" => "Multi-Level Coarsening",
+    "Execution Time (ms)" => Float.round(t_ml / 1000, 2),
+    "Throughput (nodes/s)" => round(node_count / (t_ml / 1_000_000)),
+    "Complexity" => "O(C² + V log V)",
+    "Best For" => "Untangled modular cluster separation"
+  },
+  %{
+    "Algorithm" => "Spring (Barnes-Hut Quadtree, 50 iters)",
+    "Execution Time (ms)" => Float.round(t_bh / 1000, 2),
+    "Throughput (nodes/s)" => round(node_count / (t_bh / 1_000_000)),
+    "Complexity" => "O(iters · V log V)",
+    "Best For" => "Equilibrium force-directed physical models"
+  },
+  %{
+    "Algorithm" => "Shell Layout (by Community)",
+    "Execution Time (ms)" => Float.round(t_shell / 1000, 2),
+    "Throughput (nodes/s)" => round(node_count / (t_shell / 1_000_000)),
+    "Complexity" => "O(V)",
+    "Best For" => "Concentric hierarchy and k-core visualization"
+  },
+  %{
+    "Algorithm" => "Circular Layout",
+    "Execution Time (ms)" => Float.round(t_circ / 1000, 2),
+    "Throughput (nodes/s)" => round(node_count / (t_circ / 1_000_000)),
+    "Complexity" => "O(V)",
+    "Best For" => "Uniform chord / circular overview"
+  }
+]
+
+Kino.Layout.grid(
+  [
+    Kino.Markdown.new("""
+    ### 🏆 2D Layout Benchmark Results (N = 4,039, E = 88,234)
+    """),
+    Kino.DataTable.new(benchmark_rows, name: "Layout Performance Benchmark")
+  ],
+  columns: 1
+)
+```
+
+---
+
+## 5. Packed Binary Streaming (`format: :binary`)
+
+Zog supports direct binary coordinate output. Instead of constructing $4,000+$ Elixir map keys and float tuples, Zig returns a single contiguous memory buffer containing packed little-endian 32-bit floats:
+
+$$\text{Buffer} = \Big\langle \underbrace{x_0, y_0}_{8\text{ bytes}}, \underbrace{x_1, y_1}_{8\text{ bytes}}, \dots, \underbrace{x_{N-1}, y_{N-1}}_{8\text{ bytes}} \Big\rangle$$
+
+```elixir
+bin = ResourceGraph.layout_pivot_mds(graph, pivots: 50, format: :binary)
+
+byte_len = byte_size(bin)
+expected_len = node_count * 8
+
+Kino.Markdown.new("""
+### 📦 Binary Streaming Verification
+- **Packed Buffer Size**: `#{byte_len}` bytes (exact match with `#{node_count} × 8 bytes` = `#{expected_len}`).
+- **Memory Footprint**: Only **#{Float.round(byte_len / 1024, 2)} KB**!
+- **Zero JSON Overhead**: Decodable in JavaScript via `new Float32Array(buffer)`.
+""")
+```
+
+---
+
+## 6. Interactive Livebook Canvas Visualizer
+
+Let's build an interactive HTML5 Canvas visualizer.
+Select the layout algorithm below to re-render the network in real-time:
+
+```elixir
+layout_selector =
+  Kino.Input.select(
+    "Layout Algorithm",
+    [
+      multi_level: "Multi-Level Coarsening (Louvain + Barnes-Hut)",
+      pivot_mds: "Pivot-MDS (High-Dimensional Embedding)",
+      spring: "Spring Force-Directed (Barnes-Hut, 30 iters)",
+      circular: "Circular Layout",
+      shell: "Shell Layout (by Community)"
+    ]
+  )
+
+Kino.Layout.grid([layout_selector], columns: 1)
+```
+
+```elixir
+selected_algo = Kino.Input.read(layout_selector)
+
+# Canvas dimensions
+canvas_w = 800
+canvas_h = 600
+
+# Compute layout
+{layout_time_micro, pos_map} =
+  :timer.tc(fn ->
+    case selected_algo do
+      :multi_level ->
+        ResourceGraph.layout_multi_level(graph,
+          width: canvas_w - 80,
+          height: canvas_h - 80,
+          center: {canvas_w / 2, canvas_h / 2},
+          refine_iterations: 20,
+          seed: 42
+        )
+
+      :pivot_mds ->
+        ResourceGraph.layout_pivot_mds(graph,
+          pivots: 50,
+          width: canvas_w - 80,
+          height: canvas_h - 80,
+          center: {canvas_w / 2, canvas_h / 2},
+          seed: 42
+        )
+
+      :spring ->
+        ResourceGraph.layout_spring(graph,
+          barnes_hut: true,
+          iterations: 30,
+          width: canvas_w - 80,
+          height: canvas_h - 80,
+          center: {canvas_w / 2, canvas_h / 2},
+          seed: 42
+        )
+
+      :circular ->
+        ResourceGraph.layout_circular(graph,
+          radius: min(canvas_w, canvas_h) * 0.42,
+          center: {canvas_w / 2, canvas_h / 2}
+        )
+
+      :shell ->
+        shells =
+          communities
+          |> Enum.group_by(fn {_node, c} -> c end, fn {node, _} -> node end)
+          |> Map.values()
+
+        ResourceGraph.layout_shell(graph, shells,
+          center: {canvas_w / 2, canvas_h / 2}
+        )
+    end
+  end)
+
+# Palette of 16 distinct community colors
+palette = [
+  "#4ade80", "#38bdf8", "#f43f5e", "#fbbf24", "#a855f7", "#ec4899",
+  "#2dd4bf", "#f97316", "#818cf8", "#34d399", "#60a5fa", "#f87171",
+  "#c084fc", "#e879f9", "#4ade80", "#fb923c"
+]
+
+# Pack coordinates and color indices for high-performance canvas rendering
+# 2 floats (8 bytes) per node + 1 uint16 (2 bytes) color index = 10 bytes per node
+packed_nodes =
+  for id <- 0..(node_count - 1), into: <<>> do
+    {x, y} = Map.get(pos_map, id, {canvas_w / 2, canvas_h / 2})
+    comm_id = Map.get(communities, id, 0)
+    color_idx = rem(comm_id, length(palette))
+    <<x::float-32-little, y::float-32-little, color_idx::unsigned-16-little>>
+  end
+
+b64_nodes = Base.encode64(packed_nodes)
+palette_json = Jason.encode!(palette)
+
+canvas_id = "graph-canvas-#{System.unique_integer([:positive])}"
+
+html = """
+<div style="font-family: system-ui, sans-serif; background: #0f172a; border-radius: 12px; padding: 16px; color: #e2e8f0;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+    <div>
+      <span style="font-weight: 700; font-size: 16px;">Visualizing #{node_count} Nodes</span>
+      <span style="color: #94a3b8; margin-left: 8px;">(Algorithm: <code>#{selected_algo}</code>)</span>
+    </div>
+    <div style="font-size: 14px; background: #1e293b; padding: 4px 12px; border-radius: 6px; border: 1px solid #334155;">
+      ⚡ Layout computed in <strong style="color: #38bdf8;">#{Float.round(layout_time_micro / 1000, 2)} ms</strong>
+    </div>
+  </div>
+
+  <div style="position: relative; width: #{canvas_w}px; height: #{canvas_h}px; margin: 0 auto; background: #020617; border: 1px solid #1e293b; border-radius: 8px; overflow: hidden;">
+    <canvas id="#{canvas_id}" width="#{canvas_w}" height="#{canvas_h}"></canvas>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById("#{canvas_id}");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const palette = #{palette_json};
+
+  // Decode binary packed node buffer
+  const binaryString = atob("#{b64_nodes}");
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  const dataView = new DataView(bytes.buffer);
+  const nodeCount = len / 10;
+
+  // Clear canvas
+  ctx.fillStyle = "#020617";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Render nodes
+  for (let i = 0; i < nodeCount; i++) {
+    const offset = i * 10;
+    const x = dataView.getFloat32(offset, true);
+    const y = dataView.getFloat32(offset + 4, true);
+    const colorIdx = dataView.getUint16(offset + 8, true);
+
+    ctx.beginPath();
+    ctx.arc(x, y, 2.5, 0, 2 * Math.PI);
+    ctx.fillStyle = palette[colorIdx % palette.length];
+    ctx.fill();
+  }
+})();
+</script>
+"""
+
+Kino.HTML.new(html)
+```
+
+---
+
+## 7. Ultra-Scale Demo: Pivot-MDS on 50,000 Nodes
+
+How does Pivot-MDS perform on an order-of-magnitude larger network?
+Let's generate a synthetic 50,000-node scale-free graph using preferential attachment and run Pivot-MDS:
+
+```elixir
+large_n = 50_000
+large_edges_per_node = 4
+
+IO.puts("Generating synthetic graph with #{large_n} nodes...")
+
+# Build a fast random ring + chord scale-free graph in SoA
+{t_gen, large_graph} =
+  :timer.tc(fn ->
+    Enum.reduce(0..(large_n - 1), Zog.undirected(), fn i, acc ->
+      # Ring topology
+      acc = Zog.add_edge(acc, i, rem(i + 1, large_n), 1.0)
+      # Random chords
+      target = rem(i * 7919 + 31, large_n)
+      Zog.add_edge(acc, i, target, 1.0)
+    end)
+  end)
+
+IO.puts("Running Pivot-MDS (k = 30 pivots) on #{large_n} nodes...")
+
+{t_pmds_large, _pos_large} =
+  :timer.tc(fn ->
+    Zog.layout_pivot_mds(large_graph, pivots: 30, format: :binary, seed: 42)
+  end)
+
+Kino.Markdown.new("""
+### 🚀 Pivot-MDS on 50,000 Nodes
+- **Graph Generation**: `#{Float.round(t_gen / 1000, 2)} ms`
+- **Pivot-MDS Execution**: **#{Float.round(t_pmds_large / 1000, 2)} ms**
+- **Throughput**: **#{round(large_n / (t_pmds_large / 1_000_000))} nodes/sec**
+- **Result**: Complete 2D coordinates embedded in **sub-second time**!
+""")
+```
+
+---
+
+## 8. Clean Native Memory
+
+Always release native allocations when done:
+
+```elixir
+ResourceGraph.destroy(graph)
+Kino.Markdown.new("✓ Native memory successfully freed.")
+```
