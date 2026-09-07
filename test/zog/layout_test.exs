@@ -496,4 +496,72 @@ defmodule Zog.LayoutTest do
       ResourceGraph.destroy(res)
     end
   end
+
+  describe "pivot_mds layout" do
+    test "projection layout" do
+      g =
+        Zog.undirected()
+        |> Zog.add_node(1)
+        |> Zog.add_node(2)
+        |> Zog.add_edge(1, 2, 1.0)
+
+      pos = Layout.pivot_mds(g, pivots: 2, seed: 42)
+      assert Map.keys(pos) |> Enum.sort() == [1, 2]
+    end
+
+    test "binary buffer output" do
+      g = Zog.undirected() |> Zog.add_node("A") |> Zog.add_node("B")
+      bin = Layout.pivot_mds(g, binary: true, pivots: 2)
+      assert is_binary(bin)
+      assert byte_size(bin) == 16
+    end
+
+    test "delegations via Zog and ResourceGraph" do
+      g = Zog.undirected() |> Zog.add_node(1) |> Zog.add_node(2) |> Zog.add_edge(1, 2, 1.0)
+      pos = Zog.layout_pivot_mds(g, pivots: 2, seed: 77)
+      assert Map.keys(pos) |> Enum.sort() == [1, 2]
+
+      res = ResourceGraph.new(g)
+      assert ResourceGraph.layout_pivot_mds(res, pivots: 2, seed: 77) == pos
+      ResourceGraph.destroy(res)
+    end
+  end
+
+  describe "multi_level layout" do
+    test "macro layout and refinement" do
+      g =
+        Zog.undirected()
+        |> Zog.add_node(1)
+        |> Zog.add_node(2)
+        |> Zog.add_edge(1, 2, 1.0)
+
+      pos = Layout.multi_level(g, seed: 42)
+      assert Map.keys(pos) |> Enum.sort() == [1, 2]
+    end
+
+    test "binary buffer output" do
+      g = Zog.undirected() |> Zog.add_node("A") |> Zog.add_node("B")
+      bin = Layout.multi_level(g, binary: true)
+      assert is_binary(bin)
+      assert byte_size(bin) == 16
+    end
+
+    test "delegations via Zog and ResourceGraph" do
+      g = Zog.undirected() |> Zog.add_node(1) |> Zog.add_node(2) |> Zog.add_edge(1, 2, 1.0)
+      pos = Zog.layout_multi_level(g, seed: 77)
+      assert Map.keys(pos) |> Enum.sort() == [1, 2]
+
+      res = ResourceGraph.new(g)
+      pos_res = ResourceGraph.layout_multi_level(res, seed: 77)
+
+      for node <- [1, 2] do
+        {x1, y1} = pos_res[node]
+        {x2, y2} = pos[node]
+        assert_in_delta x1, x2, 1.0e-5
+        assert_in_delta y1, y2, 1.0e-5
+      end
+
+      ResourceGraph.destroy(res)
+    end
+  end
 end

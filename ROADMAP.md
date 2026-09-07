@@ -87,8 +87,8 @@ Focuses on full native parity with Yog's 2D layout suite, native Barnes-Hut quad
   - [x] Multipartite Layout (`layout_multipartite/3` - parallel layered coordinate assignment)
   - [x] Random & Grid Placement (`layout_random/2`, `layout_grid/2`)
 - **Large-Graph Acceleration & Scaling**
-  - [ ] Pivot-MDS / High-Dimensional Embedding (HDE) (sub-100ms classical multidimensional scaling from $k$ pivot nodes)
-  - [ ] Multi-Level Coarsening (coarsening via native Louvain/Leiden super-nodes, macro-positioning, and local force refinement)
+  - [x] Pivot-MDS / High-Dimensional Embedding (HDE) (sub-100ms classical multidimensional scaling from $k$ pivot nodes)
+  - [x] Multi-Level Coarsening (coarsening via native Louvain/Leiden super-nodes, macro-positioning, and local force refinement)
   - [ ] Parallel & SIMD Acceleration (`std.Thread` multi-core force evaluation, `@Vector(4, f32)` vectorized particle interactions)
 - **Binary Streaming & Frontend Integration**
   - [x] Packed binary coordinate output (`binary: true` / `format: :binary` returning compact `<<x::float-32, y::float-32>>` buffers)

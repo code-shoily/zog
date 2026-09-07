@@ -123,7 +123,9 @@ defmodule Zog.ResourceGraph do
         nif_node_count: [],
         nif_edge_count: [],
         nif_layout_spring: [concurrency: :dirty_cpu],
-        nif_layout_spring_res: [concurrency: :dirty_cpu]
+        nif_layout_spring_res: [concurrency: :dirty_cpu],
+        nif_layout_pivot_mds: [concurrency: :dirty_cpu],
+        nif_layout_pivot_mds_res: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -2047,6 +2049,126 @@ defmodule Zog.ResourceGraph do
                     use_weight,
                     barnes_hut,
                     theta,
+                    seed,
+                    binary_output,
+                );
+            },
+        }
+    }
+
+    pub fn nif_layout_pivot_mds(
+        node_count: usize,
+        from: []u32,
+        to: []u32,
+        pivots: usize,
+        width: f64,
+        height: f64,
+        cx: f64,
+        cy: f64,
+        seed: u64,
+        binary_output: bool,
+    ) !beam.term {
+        const allocator = beam.allocator;
+        const result = try zog.layout.pivot_mds.layoutPivotMds(allocator, node_count, from, to, .{
+            .pivots = pivots,
+            .width = width,
+            .height = height,
+            .cx = cx,
+            .cy = cy,
+            .seed = seed,
+        });
+        defer allocator.free(result.x);
+        defer allocator.free(result.y);
+
+        if (binary_output) {
+            var bin_buf = try allocator.alloc(u8, node_count * 8);
+            errdefer allocator.free(bin_buf);
+            for (0..node_count) |i| {
+                const fx: f32 = @floatCast(result.x[i]);
+                const fy: f32 = @floatCast(result.y[i]);
+                const fx_bytes = std.mem.asBytes(&fx);
+                const fy_bytes = std.mem.asBytes(&fy);
+                @memcpy(bin_buf[i * 8 .. i * 8 + 4], fx_bytes);
+                @memcpy(bin_buf[i * 8 + 4 .. i * 8 + 8], fy_bytes);
+            }
+            return beam.make(bin_buf, .{});
+        } else {
+            const out_x = try allocator.alloc(f64, node_count);
+            errdefer allocator.free(out_x);
+            const out_y = try allocator.alloc(f64, node_count);
+            errdefer allocator.free(out_y);
+            @memcpy(out_x, result.x);
+            @memcpy(out_y, result.y);
+            return beam.make(.{ out_x, out_y }, .{});
+        }
+    }
+
+    pub fn nif_layout_pivot_mds_res(
+        res: GraphRes,
+        pivots: usize,
+        width: f64,
+        height: f64,
+        cx: f64,
+        cy: f64,
+        seed: u64,
+        binary_output: bool,
+    ) !beam.term {
+        const allocator = beam.allocator;
+        switch (res.unpack()) {
+            .soa => |g| {
+                const node_count = g.nodeCapacity();
+                const edge_count = g.edgeCount();
+                var from = try allocator.alloc(u32, edge_count);
+                defer allocator.free(from);
+                var to = try allocator.alloc(u32, edge_count);
+                defer allocator.free(to);
+
+                var it = g.allEdges();
+                var idx: usize = 0;
+                while (it.next()) |item| {
+                    from[idx] = item.from;
+                    to[idx] = item.to;
+                    idx += 1;
+                }
+
+                return nif_layout_pivot_mds(
+                    node_count,
+                    from[0..idx],
+                    to[0..idx],
+                    pivots,
+                    width,
+                    height,
+                    cx,
+                    cy,
+                    seed,
+                    binary_output,
+                );
+            },
+            .hash_graph => |g| {
+                const node_count = g.nodeCount();
+                const edge_count = g.edgeCount();
+                var from = try allocator.alloc(u32, edge_count);
+                defer allocator.free(from);
+                var to = try allocator.alloc(u32, edge_count);
+                defer allocator.free(to);
+
+                var it = g.allEdges();
+                var idx: usize = 0;
+                while (it.next()) |item| {
+                    from[idx] = item.from;
+                    to[idx] = item.to;
+                    idx += 1;
+                }
+
+                return nif_layout_pivot_mds(
+                    node_count,
+                    from[0..idx],
+                    to[0..idx],
+                    pivots,
+                    width,
+                    height,
+                    cx,
+                    cy,
                     seed,
                     binary_output,
                 );
@@ -4359,6 +4481,24 @@ defmodule Zog.ResourceGraph do
     def layout_spring(%{builder: _} = res_graph, opts \\ []) do
       Zog.Layout.spring(res_graph, opts)
     end
+
+    @doc """
+    Computes a native Pivot-MDS layout for the resource graph.
+    """
+    @spec layout_pivot_mds(t(), keyword()) ::
+            %{any() => {float(), float()}} | [{float(), float()}] | binary()
+    def layout_pivot_mds(%{builder: _} = res_graph, opts \\ []) do
+      Zog.Layout.pivot_mds(res_graph, opts)
+    end
+
+    @doc """
+    Computes a multi-level coarsening layout for the resource graph.
+    """
+    @spec layout_multi_level(t(), keyword()) ::
+            %{any() => {float(), float()}} | [{float(), float()}] | binary()
+    def layout_multi_level(%{builder: _} = res_graph, opts \\ []) do
+      Zog.Layout.multi_level(res_graph, opts)
+    end
   else
     @moduledoc """
     Native graph resource backed by Zog (Zig) via Zigler.
@@ -4618,6 +4758,14 @@ defmodule Zog.ResourceGraph do
     end
 
     def layout_spring(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def layout_pivot_mds(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def layout_multi_level(_graph, _opts \\ []) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
   end

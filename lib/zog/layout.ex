@@ -17,7 +17,9 @@ defmodule Zog.Layout do
 
   alias Zog.Layout.Circular
   alias Zog.Layout.Grid
+  alias Zog.Layout.MultiLevel
   alias Zog.Layout.Multipartite
+  alias Zog.Layout.PivotMDS
   alias Zog.Layout.Random
   alias Zog.Layout.Shell
   alias Zog.Layout.Spring
@@ -100,4 +102,18 @@ defmodule Zog.Layout do
   See `Zog.Layout.Spring.layout/2`.
   """
   defdelegate spring(graph, opts \\ []), to: Spring, as: :layout
+
+  @doc """
+  Positions nodes using native Pivot-MDS layout.
+
+  See `Zog.Layout.PivotMDS.layout/2`.
+  """
+  defdelegate pivot_mds(graph, opts \\ []), to: PivotMDS, as: :layout
+
+  @doc """
+  Positions nodes using multi-level coarsening and local force refinement.
+
+  See `Zog.Layout.MultiLevel.layout/2`.
+  """
+  defdelegate multi_level(graph, opts \\ []), to: MultiLevel, as: :layout
 end

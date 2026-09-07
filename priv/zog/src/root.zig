@@ -39,6 +39,7 @@ pub const health_metrics = @import("health_metrics.zig");
 pub const matching = @import("matching.zig");
 pub const layout = struct {
     pub const spring = @import("layout/spring.zig");
+    pub const pivot_mds = @import("layout/pivot_mds.zig");
 };
 
 test {
@@ -71,4 +72,5 @@ test {
     _ = @import("health_metrics.zig");
     _ = @import("matching.zig");
     _ = @import("layout/spring.zig");
+    _ = @import("layout/pivot_mds.zig");
 }

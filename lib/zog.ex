@@ -47,4 +47,6 @@ defmodule Zog do
   defdelegate layout_grid(graph, opts), to: Zog.Layout, as: :grid
   defdelegate layout_tutte(graph, boundary_nodes, opts \\ []), to: Zog.Layout, as: :tutte
   defdelegate layout_spring(graph, opts \\ []), to: Zog.Layout, as: :spring
+  defdelegate layout_pivot_mds(graph, opts \\ []), to: Zog.Layout, as: :pivot_mds
+  defdelegate layout_multi_level(graph, opts \\ []), to: Zog.Layout, as: :multi_level
 end
