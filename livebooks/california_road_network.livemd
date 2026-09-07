@@ -2,7 +2,8 @@
 
 ```elixir
 Mix.install([
-  {:zog, "~> 0.5.0"},
+  # {:zog, "~> 0.5.0"},
+  {:zog, path: Path.expand("~/repos/elixir/zog")},
   {:kino, "~> 0.12"}
 ])
 ```
@@ -51,6 +52,7 @@ Kino.Markdown.new("""
 In traditional BEAM graph libraries, loading 2 million nodes and 5.5 million edges into Elixir maps or tuples consumes **1.5–2 GB** of heap memory and triggers frequent Garbage Collection (GC) pauses.
 
 With `Zog`:
+
 1. **Direct Native Parsing**: The edge list is parsed directly in Zig (`ArrayGraph` SoA layout).
 2. **BEAM Heap Isolation**: The graph is stored in native C-allocator memory outside the Erlang process heap.
 3. **Integer Labels**: With `integer_labels: true`, node IDs map directly to contiguous `u32` array indices.
@@ -75,8 +77,8 @@ edge_count = ResourceGraph.edge_count(graph)
 
 Kino.Markdown.new("""
 ### ⚡ Graph Ingestion Summary
-- **Nodes (Intersections)**: `#{Number.Delimit.number_to_delimited(node_count) rescue node_count}`
-- **Edges (Roads)**: `#{Number.Delimit.number_to_delimited(edge_count) rescue edge_count}`
+- **Nodes (Intersections)**: `#{node_count}`
+- **Edges (Roads)**: `#{edge_count}`
 - **Native Load Time**: **#{Float.round(load_seconds, 2)} seconds**
 - **BEAM Heap Growth**: **#{Float.round(beam_mem_delta_mb, 2)} MB** *(virtually zero heap footprint!)*
 """)
