@@ -13,7 +13,7 @@ defmodule Zog.HealthMetrics do
   if Code.ensure_loaded?(Zig) do
     use Zig,
       otp_app: :zog,
-      optimize: {:env, if(Mix.env() == :prod, do: :fast, else: :debug)},
+      optimize: {:env, :fast},
       extra_modules: [zog: {"../../priv/zog/src/root.zig", []}],
       nifs: [
         nif_health_metrics: [concurrency: :dirty_cpu]
