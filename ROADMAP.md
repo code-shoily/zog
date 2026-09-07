@@ -79,19 +79,19 @@ Focuses on complete algorithmic parity with Yog for network flow algorithms and 
 Focuses on full native parity with Yog's 2D layout suite, native Barnes-Hut quadtree force simulation, large graph projection algorithms, and high-performance binary coordinate streaming for WebGL/Livebook visualization.
 
 - **Yog Layout Parity (Native Zig Engines)**
-  - [ ] Spring / Force-Directed (`layout_spring/2` - Fruchterman-Reingold model with `:iterations`, `:k`, `:initial_temp`, `:fixed`, `:initial_pos`)
-  - [ ] Barnes-Hut Simulation (`barnes_hut: true, theta: 0.5` - $O(V \log V)$ contiguous arena quadtree spatial approximation)
-  - [ ] Circular Layout (`layout_circular/2` - uniform angular distribution on circle)
-  - [ ] Tutte Embedding (`layout_tutte/3` - Gauss-Seidel barycentric relaxation for planar graphs)
-  - [ ] Shell Layout (`layout_shell/3` - concentric rings placement, integrating with $k$-core decomposition)
-  - [ ] Multipartite Layout (`layout_multipartite/3` - parallel layered coordinate assignment)
-  - [ ] Random & Grid Placement (`layout_random/2`, `layout_grid/2`)
+  - [x] Spring / Force-Directed (`layout_spring/2` - Fruchterman-Reingold model with `:iterations`, `:k`, `:initial_temp`, `:fixed`, `:initial_pos`)
+  - [x] Barnes-Hut Simulation (`barnes_hut: true, theta: 0.5` - $O(V \log V)$ contiguous arena quadtree spatial approximation)
+  - [x] Circular Layout (`layout_circular/2` - uniform angular distribution on circle)
+  - [x] Tutte Embedding (`layout_tutte/3` - Gauss-Seidel barycentric relaxation for planar graphs)
+  - [x] Shell Layout (`layout_shell/3` - concentric rings placement, integrating with $k$-core decomposition)
+  - [x] Multipartite Layout (`layout_multipartite/3` - parallel layered coordinate assignment)
+  - [x] Random & Grid Placement (`layout_random/2`, `layout_grid/2`)
 - **Large-Graph Acceleration & Scaling**
   - [ ] Pivot-MDS / High-Dimensional Embedding (HDE) (sub-100ms classical multidimensional scaling from $k$ pivot nodes)
   - [ ] Multi-Level Coarsening (coarsening via native Louvain/Leiden super-nodes, macro-positioning, and local force refinement)
   - [ ] Parallel & SIMD Acceleration (`std.Thread` multi-core force evaluation, `@Vector(4, f32)` vectorized particle interactions)
 - **Binary Streaming & Frontend Integration**
-  - [ ] Packed binary coordinate output (`raw: true` returning compact `<<x::float-32, y::float-32>>` buffers)
+  - [x] Packed binary coordinate output (`binary: true` / `format: :binary` returning compact `<<x::float-32, y::float-32>>` buffers)
   - [ ] Zero-copy IPC for WebGL / WebGPU renderers in Livebook (Cosmograph / Sigma.js / Regl)
 
 ---

@@ -37,6 +37,9 @@ pub const community = struct {
 pub const traversal = @import("traversal.zig");
 pub const health_metrics = @import("health_metrics.zig");
 pub const matching = @import("matching.zig");
+pub const layout = struct {
+    pub const spring = @import("layout/spring.zig");
+};
 
 test {
     std.testing.refAllDecls(@This());
@@ -67,4 +70,5 @@ test {
     _ = @import("traversal.zig");
     _ = @import("health_metrics.zig");
     _ = @import("matching.zig");
+    _ = @import("layout/spring.zig");
 }

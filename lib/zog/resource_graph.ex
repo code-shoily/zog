@@ -121,7 +121,9 @@ defmodule Zog.ResourceGraph do
         nif_health_metrics: [concurrency: :dirty_cpu],
         nif_node_degrees: [concurrency: :dirty_cpu],
         nif_node_count: [],
-        nif_edge_count: []
+        nif_edge_count: [],
+        nif_layout_spring: [concurrency: :dirty_cpu],
+        nif_layout_spring_res: [concurrency: :dirty_cpu]
       ]
 
     ~Z"""
@@ -1879,6 +1881,176 @@ defmodule Zog.ResourceGraph do
                 
                 return GraphRes.create(.{ .hash_graph = sub_g }, .{ .released = false });
             }
+        }
+    }
+
+    pub fn nif_layout_spring(
+        node_count: usize,
+        from: []u32,
+        to: []u32,
+        weights: []f64,
+        fixed_nodes: []u32,
+        initial_x: []f64,
+        initial_y: []f64,
+        width: f64,
+        height: f64,
+        cx: f64,
+        cy: f64,
+        iterations: usize,
+        k_opt: f64,
+        initial_temp: f64,
+        use_weight: bool,
+        barnes_hut: bool,
+        theta: f64,
+        seed: u64,
+        binary_output: bool,
+    ) !beam.term {
+        const allocator = beam.allocator;
+        const k_val: ?f64 = if (k_opt > 0.0) k_opt else null;
+        const init_x: ?[]const f64 = if (initial_x.len == node_count) initial_x else null;
+        const init_y: ?[]const f64 = if (initial_y.len == node_count) initial_y else null;
+
+        const result = try zog.layout.spring.layoutSpring(allocator, node_count, from, to, weights, fixed_nodes, init_x, init_y, .{
+            .width = width,
+            .height = height,
+            .cx = cx,
+            .cy = cy,
+            .iterations = iterations,
+            .k = k_val,
+            .initial_temp = initial_temp,
+            .use_weight = use_weight,
+            .barnes_hut = barnes_hut,
+            .theta = theta,
+            .seed = seed,
+        });
+        defer allocator.free(result.x);
+        defer allocator.free(result.y);
+
+        if (binary_output) {
+            var bin_buf = try allocator.alloc(u8, node_count * 8);
+            errdefer allocator.free(bin_buf);
+            for (0..node_count) |i| {
+                const fx: f32 = @floatCast(result.x[i]);
+                const fy: f32 = @floatCast(result.y[i]);
+                const fx_bytes = std.mem.asBytes(&fx);
+                const fy_bytes = std.mem.asBytes(&fy);
+                @memcpy(bin_buf[i * 8 .. i * 8 + 4], fx_bytes);
+                @memcpy(bin_buf[i * 8 + 4 .. i * 8 + 8], fy_bytes);
+            }
+            return beam.make(bin_buf, .{});
+        } else {
+            const out_x = try allocator.alloc(f64, node_count);
+            errdefer allocator.free(out_x);
+            const out_y = try allocator.alloc(f64, node_count);
+            errdefer allocator.free(out_y);
+            @memcpy(out_x, result.x);
+            @memcpy(out_y, result.y);
+            return beam.make(.{ out_x, out_y }, .{});
+        }
+    }
+
+    pub fn nif_layout_spring_res(
+        res: GraphRes,
+        fixed_nodes: []u32,
+        initial_x: []f64,
+        initial_y: []f64,
+        width: f64,
+        height: f64,
+        cx: f64,
+        cy: f64,
+        iterations: usize,
+        k_opt: f64,
+        initial_temp: f64,
+        use_weight: bool,
+        barnes_hut: bool,
+        theta: f64,
+        seed: u64,
+        binary_output: bool,
+    ) !beam.term {
+        const allocator = beam.allocator;
+        switch (res.unpack()) {
+            .soa => |g| {
+                const node_count = g.nodeCapacity();
+                const edge_count = g.edgeCount();
+                var from = try allocator.alloc(u32, edge_count);
+                defer allocator.free(from);
+                var to = try allocator.alloc(u32, edge_count);
+                defer allocator.free(to);
+                var weights = try allocator.alloc(f64, edge_count);
+                defer allocator.free(weights);
+
+                var it = g.allEdges();
+                var idx: usize = 0;
+                while (it.next()) |item| {
+                    from[idx] = item.from;
+                    to[idx] = item.to;
+                    weights[idx] = item.data;
+                    idx += 1;
+                }
+
+                return nif_layout_spring(
+                    node_count,
+                    from[0..idx],
+                    to[0..idx],
+                    weights[0..idx],
+                    fixed_nodes,
+                    initial_x,
+                    initial_y,
+                    width,
+                    height,
+                    cx,
+                    cy,
+                    iterations,
+                    k_opt,
+                    initial_temp,
+                    use_weight,
+                    barnes_hut,
+                    theta,
+                    seed,
+                    binary_output,
+                );
+            },
+            .hash_graph => |g| {
+                const node_count = g.nodeCount();
+                const edge_count = g.edgeCount();
+                var from = try allocator.alloc(u32, edge_count);
+                defer allocator.free(from);
+                var to = try allocator.alloc(u32, edge_count);
+                defer allocator.free(to);
+                var weights = try allocator.alloc(f64, edge_count);
+                defer allocator.free(weights);
+
+                var it = g.allEdges();
+                var idx: usize = 0;
+                while (it.next()) |item| {
+                    from[idx] = item.from;
+                    to[idx] = item.to;
+                    weights[idx] = item.data;
+                    idx += 1;
+                }
+
+                return nif_layout_spring(
+                    node_count,
+                    from[0..idx],
+                    to[0..idx],
+                    weights[0..idx],
+                    fixed_nodes,
+                    initial_x,
+                    initial_y,
+                    width,
+                    height,
+                    cx,
+                    cy,
+                    iterations,
+                    k_opt,
+                    initial_temp,
+                    use_weight,
+                    barnes_hut,
+                    theta,
+                    seed,
+                    binary_output,
+                );
+            },
         }
     }
     """
@@ -4127,6 +4299,66 @@ defmodule Zog.ResourceGraph do
       new_builder = Zog.Transform.contract(builder, label1, label2, opts)
       Zog.ResourceGraph.new(new_builder)
     end
+
+    @doc """
+    Computes a circular layout for the resource graph.
+    """
+    @spec layout_circular(t(), keyword()) :: %{any() => {float(), float()}} | [{float(), float()}]
+    def layout_circular(%{builder: _} = res_graph, opts \\ []) do
+      Zog.Layout.circular(res_graph, opts)
+    end
+
+    @doc """
+    Computes a shell layout for the resource graph.
+    """
+    @spec layout_shell(t(), [[any()]], keyword()) ::
+            %{any() => {float(), float()}} | [{float(), float()}]
+    def layout_shell(%{builder: _} = res_graph, shells, opts \\ []) do
+      Zog.Layout.shell(res_graph, shells, opts)
+    end
+
+    @doc """
+    Computes a multipartite layout for the resource graph.
+    """
+    @spec layout_multipartite(t(), [[any()]], keyword()) ::
+            %{any() => {float(), float()}} | [{float(), float()}]
+    def layout_multipartite(%{builder: _} = res_graph, layers, opts \\ []) do
+      Zog.Layout.multipartite(res_graph, layers, opts)
+    end
+
+    @doc """
+    Computes a random layout for the resource graph.
+    """
+    @spec layout_random(t(), keyword()) :: %{any() => {float(), float()}} | [{float(), float()}]
+    def layout_random(%{builder: _} = res_graph, opts \\ []) do
+      Zog.Layout.random(res_graph, opts)
+    end
+
+    @doc """
+    Computes a grid layout for the resource graph.
+    """
+    @spec layout_grid(t(), keyword()) :: %{any() => {float(), float()}} | [{float(), float()}]
+    def layout_grid(%{builder: _} = res_graph, opts) do
+      Zog.Layout.grid(res_graph, opts)
+    end
+
+    @doc """
+    Computes a Tutte barycentric layout for the resource graph.
+    """
+    @spec layout_tutte(t(), [any()], keyword()) ::
+            %{any() => {float(), float()}} | [{float(), float()}]
+    def layout_tutte(%{builder: _} = res_graph, boundary_nodes, opts \\ []) do
+      Zog.Layout.tutte(res_graph, boundary_nodes, opts)
+    end
+
+    @doc """
+    Computes a native force-directed spring layout for the resource graph.
+    """
+    @spec layout_spring(t(), keyword()) ::
+            %{any() => {float(), float()}} | [{float(), float()}] | binary()
+    def layout_spring(%{builder: _} = res_graph, opts \\ []) do
+      Zog.Layout.spring(res_graph, opts)
+    end
   else
     @moduledoc """
     Native graph resource backed by Zog (Zig) via Zigler.
@@ -4359,6 +4591,34 @@ defmodule Zog.ResourceGraph do
       def to_libgraph(_graph) do
         raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
       end
+    end
+
+    def layout_circular(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def layout_shell(_graph, _shells, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def layout_multipartite(_graph, _layers, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def layout_random(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def layout_grid(_graph, _opts) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def layout_tutte(_graph, _boundary_nodes, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def layout_spring(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
   end
 end

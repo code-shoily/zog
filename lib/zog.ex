@@ -38,4 +38,13 @@ defmodule Zog do
     defdelegate from_libgraph(libgraph), to: Zog.SoA
     defdelegate to_libgraph(builder), to: Zog.SoA
   end
+
+  # Layout delegations
+  defdelegate layout_circular(graph, opts \\ []), to: Zog.Layout, as: :circular
+  defdelegate layout_shell(graph, shells, opts \\ []), to: Zog.Layout, as: :shell
+  defdelegate layout_multipartite(graph, layers, opts \\ []), to: Zog.Layout, as: :multipartite
+  defdelegate layout_random(graph, opts \\ []), to: Zog.Layout, as: :random
+  defdelegate layout_grid(graph, opts), to: Zog.Layout, as: :grid
+  defdelegate layout_tutte(graph, boundary_nodes, opts \\ []), to: Zog.Layout, as: :tutte
+  defdelegate layout_spring(graph, opts \\ []), to: Zog.Layout, as: :spring
 end
