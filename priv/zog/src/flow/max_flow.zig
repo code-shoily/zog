@@ -237,7 +237,12 @@ pub fn edmondsKarp(
         const c = cap[e];
 
         const key = EKey{ .from = @as(NodeId, @intCast(u)), .to = @as(NodeId, @intCast(v)) };
-        try residual.put(key, c);
+        const gop = try residual.getOrPut(key);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = c;
+        } else {
+            gop.value_ptr.* = addFn(gop.value_ptr.*, c);
+        }
     }
 
     const all_nodes = try nodes_list.toOwnedSlice(allocator);
@@ -320,6 +325,235 @@ pub fn minCut(
     return .{
         .source_side = try source_side.toOwnedSlice(allocator),
         .sink_side = try sink_side.toOwnedSlice(allocator),
+    };
+}
+
+/// Finds the maximum flow using Dinic's algorithm.
+///
+/// Builds a level graph with BFS and pushes blocking flows with DFS
+/// using current-arc pointers.
+///
+/// **Time Complexity:** O(V²E) in general graphs, O(E√V) in unit networks.
+pub fn dinic(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    source: utils.NodeId(@TypeOf(graph)),
+    sink: utils.NodeId(@TypeOf(graph)),
+    comptime Flow: type,
+    zero: Flow,
+    addFn: fn (Flow, Flow) Flow,
+    subFn: fn (Flow, Flow) Flow,
+    compareFn: fn (Flow, Flow) std.math.Order,
+    minFn: fn (Flow, Flow) Flow,
+) !MaxFlowResult(utils.NodeId(@TypeOf(graph)), Flow) {
+    const NodeId = utils.NodeId(@TypeOf(graph));
+    const EKey = EdgeKey(NodeId);
+
+    // Collect all nodes.
+    var nodes_list = std.ArrayList(NodeId).empty;
+    errdefer nodes_list.deinit(allocator);
+    var node_it = graph.nodeIds();
+    while (node_it.next()) |node| try nodes_list.append(allocator, node);
+
+    // Early exit if source == sink.
+    if (std.meta.eql(source, sink)) {
+        const all_nodes = try nodes_list.toOwnedSlice(allocator);
+        const empty_residual = std.AutoHashMap(EKey, Flow).init(allocator);
+        return .{
+            .max_flow = zero,
+            .source = source,
+            .sink = sink,
+            .all_nodes = all_nodes,
+            .residual = empty_residual,
+        };
+    }
+
+    const V = nodes_list.items.len;
+
+    // Count edges in the input graph.
+    var edge_count: usize = 0;
+    var count_it = graph.allEdges();
+    while (count_it.next()) |_| edge_count += 1;
+
+    const num_caps = edge_count * 2;
+
+    // Pre-allocate CSR representation.
+    var head = try allocator.alloc(?u32, V);
+    @memset(head, null);
+    defer allocator.free(head);
+
+    var to_nodes = try allocator.alloc(u32, num_caps);
+    defer allocator.free(to_nodes);
+
+    var cap = try allocator.alloc(Flow, num_caps);
+    defer allocator.free(cap);
+
+    var next_edge = try allocator.alloc(?u32, num_caps);
+    defer allocator.free(next_edge);
+
+    // Ingest edges in pairs.
+    var e_idx: u32 = 0;
+    var add_edge_it = graph.allEdges();
+    while (add_edge_it.next()) |edge| {
+        const u = @as(u32, @intCast(edge.from));
+        const v = @as(u32, @intCast(edge.to));
+        const c = edge.data;
+
+        // Forward edge (u -> v)
+        to_nodes[e_idx] = v;
+        cap[e_idx] = c;
+        next_edge[e_idx] = head[u];
+        head[u] = e_idx;
+
+        // Backward edge (v -> u)
+        to_nodes[e_idx + 1] = u;
+        cap[e_idx + 1] = zero;
+        next_edge[e_idx + 1] = head[v];
+        head[v] = e_idx + 1;
+
+        e_idx += 2;
+    }
+
+    const src_idx = @as(u32, @intCast(source));
+    const snk_idx = @as(u32, @intCast(sink));
+
+    var level = try allocator.alloc(i32, V);
+    defer allocator.free(level);
+
+    var ptr = try allocator.alloc(?u32, V);
+    defer allocator.free(ptr);
+
+    var queue = try allocator.alloc(u32, V);
+    defer allocator.free(queue);
+
+    var path_nodes = try allocator.alloc(u32, V);
+    defer allocator.free(path_nodes);
+
+    var path_edges = try allocator.alloc(u32, V);
+    defer allocator.free(path_edges);
+
+    var total_flow = zero;
+
+    // Dinic's phases
+    while (true) {
+        // Phase 1: BFS to compute level graph
+        @memset(level, -1);
+        level[src_idx] = 0;
+
+        var q_head: usize = 0;
+        var q_tail: usize = 0;
+        queue[q_tail] = src_idx;
+        q_tail += 1;
+
+        while (q_head < q_tail) {
+            const u = queue[q_head];
+            q_head += 1;
+
+            var curr = head[u];
+            while (curr) |e| {
+                const v = to_nodes[e];
+                if (compareFn(cap[e], zero) == .gt and level[v] == -1) {
+                    level[v] = level[u] + 1;
+                    queue[q_tail] = v;
+                    q_tail += 1;
+                }
+                curr = next_edge[e];
+            }
+        }
+
+        // If sink not reachable, algorithm terminates
+        if (level[snk_idx] == -1) break;
+
+        // Phase 2: Find blocking flow using DFS with current-arc optimization
+        @memcpy(ptr, head);
+
+        var path_len: usize = 0;
+        path_nodes[0] = src_idx;
+
+        while (true) {
+            const u = path_nodes[path_len];
+            if (u == snk_idx) {
+                // Reached sink! Find bottleneck along path.
+                var bottleneck = cap[path_edges[0]];
+                for (1..path_len) |i| {
+                    bottleneck = minFn(bottleneck, cap[path_edges[i]]);
+                }
+
+                // Augment flow along path.
+                for (0..path_len) |i| {
+                    const e = path_edges[i];
+                    cap[e] = subFn(cap[e], bottleneck);
+                    cap[e ^ 1] = addFn(cap[e ^ 1], bottleneck);
+                }
+                total_flow = addFn(total_flow, bottleneck);
+
+                // Backtrack to the first edge that became saturated.
+                var backtrack_len: usize = 0;
+                for (0..path_len) |i| {
+                    if (compareFn(cap[path_edges[i]], zero) == .eq) {
+                        backtrack_len = i;
+                        break;
+                    }
+                }
+                path_len = backtrack_len;
+                continue;
+            }
+
+            // Try to advance from u.
+            var advanced = false;
+            while (ptr[u]) |e| {
+                const v = to_nodes[e];
+                if (level[u] + 1 == level[v] and compareFn(cap[e], zero) == .gt) {
+                    path_edges[path_len] = e;
+                    path_len += 1;
+                    path_nodes[path_len] = v;
+                    advanced = true;
+                    break;
+                }
+                ptr[u] = next_edge[e];
+            }
+
+            if (!advanced) {
+                // Dead end in this phase.
+                level[u] = -1;
+                if (path_len == 0) {
+                    // Source has no more admissible outgoing edges -> phase finished.
+                    break;
+                }
+                path_len -= 1;
+                const parent = path_nodes[path_len];
+                if (ptr[parent]) |e| {
+                    ptr[parent] = next_edge[e];
+                }
+            }
+        }
+    }
+
+    // Build residual hash map for result compatibility.
+    var residual = std.AutoHashMap(EKey, Flow).init(allocator);
+    errdefer residual.deinit();
+
+    for (0..num_caps) |e| {
+        const u = to_nodes[e ^ 1];
+        const v = to_nodes[e];
+        const c = cap[e];
+
+        const key = EKey{ .from = @as(NodeId, @intCast(u)), .to = @as(NodeId, @intCast(v)) };
+        const gop = try residual.getOrPut(key);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = c;
+        } else {
+            gop.value_ptr.* = addFn(gop.value_ptr.*, c);
+        }
+    }
+
+    const all_nodes = try nodes_list.toOwnedSlice(allocator);
+    return .{
+        .max_flow = total_flow,
+        .source = source,
+        .sink = sink,
+        .all_nodes = all_nodes,
+        .residual = residual,
     };
 }
 
@@ -613,7 +847,12 @@ pub fn pushRelabel(
         const c = cap[e];
 
         const key = EKey{ .from = @as(NodeId, @intCast(u)), .to = @as(NodeId, @intCast(v)) };
-        try residual.put(key, c);
+        const gop = try residual.getOrPut(key);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = c;
+        } else {
+            gop.value_ptr.* = addFn(gop.value_ptr.*, c);
+        }
     }
 
     const all_nodes = try nodes_list.toOwnedSlice(allocator);
@@ -668,6 +907,26 @@ pub fn pushRelabelF64(
     sink: utils.NodeId(@TypeOf(graph)),
 ) !MaxFlowResult(utils.NodeId(@TypeOf(graph)), f64) {
     return pushRelabel(allocator, graph, source, sink, f64, 0.0, utils.addF64, utils.subF64, utils.compareF64, minF64);
+}
+
+/// Finds maximum flow with **i32** capacities using Dinic's algorithm.
+pub fn dinicI32(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    source: utils.NodeId(@TypeOf(graph)),
+    sink: utils.NodeId(@TypeOf(graph)),
+) !MaxFlowResult(utils.NodeId(@TypeOf(graph)), i32) {
+    return dinic(allocator, graph, source, sink, i32, 0, addI32, subI32, compareI32, minI32);
+}
+
+/// Finds maximum flow with **f64** capacities using Dinic's algorithm.
+pub fn dinicF64(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+    source: utils.NodeId(@TypeOf(graph)),
+    sink: utils.NodeId(@TypeOf(graph)),
+) !MaxFlowResult(utils.NodeId(@TypeOf(graph)), f64) {
+    return dinic(allocator, graph, source, sink, f64, 0.0, utils.addF64, utils.subF64, utils.compareF64, minF64);
 }
 
 // =============================================================================
@@ -926,5 +1185,68 @@ test "Push-Relabel on trivial graph" {
     defer result.deinit(allocator);
 
     try std.testing.expectEqual(@as(i32, 5), result.max_flow);
+}
+
+test "Dinic on classic flow network (i32)" {
+    const allocator = std.testing.allocator;
+    const AG = @import("../models/array_graph.zig").ArrayGraph;
+
+    var g = AG(void, i32).init(allocator);
+    defer g.deinit();
+
+    var i: u32 = 0;
+    while (i < 6) : (i += 1) {
+        _ = try g.addNode({});
+    }
+
+    _ = try g.addEdge(0, 1, 16);
+    _ = try g.addEdge(0, 2, 13);
+    _ = try g.addEdge(1, 2, 10);
+    _ = try g.addEdge(1, 3, 12);
+    _ = try g.addEdge(2, 1, 4);
+    _ = try g.addEdge(2, 4, 14);
+    _ = try g.addEdge(3, 2, 9);
+    _ = try g.addEdge(3, 5, 20);
+    _ = try g.addEdge(4, 3, 7);
+    _ = try g.addEdge(4, 5, 4);
+
+    var result = try dinicI32(allocator, g, 0, 5);
+    defer result.deinit(allocator);
+
+    try std.testing.expectEqual(@as(i32, 23), result.max_flow);
+}
+
+test "Dinic min cut extraction (f64)" {
+    const allocator = std.testing.allocator;
+    const AG = @import("../models/array_graph.zig").ArrayGraph;
+
+    var g = AG(void, f64).init(allocator);
+    defer g.deinit();
+
+    var i: u32 = 0;
+    while (i < 6) : (i += 1) {
+        _ = try g.addNode({});
+    }
+
+    _ = try g.addEdge(0, 1, 16.0);
+    _ = try g.addEdge(0, 2, 13.0);
+    _ = try g.addEdge(1, 2, 10.0);
+    _ = try g.addEdge(1, 3, 12.0);
+    _ = try g.addEdge(2, 1, 4.0);
+    _ = try g.addEdge(2, 4, 14.0);
+    _ = try g.addEdge(3, 2, 9.0);
+    _ = try g.addEdge(3, 5, 20.0);
+    _ = try g.addEdge(4, 3, 7.0);
+    _ = try g.addEdge(4, 5, 4.0);
+
+    var result = try dinicF64(allocator, g, 0, 5);
+    defer result.deinit(allocator);
+
+    try std.testing.expectEqual(@as(f64, 23.0), result.max_flow);
+
+    var cut = try minCut(allocator, result, f64, 0.0, utils.compareF64);
+    defer cut.deinit(allocator);
+
+    try std.testing.expectEqual(@as(usize, 6), cut.source_side.len + cut.sink_side.len);
 }
 

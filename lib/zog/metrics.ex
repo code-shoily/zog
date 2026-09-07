@@ -12,6 +12,7 @@ defmodule Zog.Metrics do
       nifs: [
         density: [concurrency: :dirty_cpu],
         triangle_count: [concurrency: :dirty_cpu],
+        transitivity: [concurrency: :dirty_cpu],
         average_clustering_coefficient: [concurrency: :dirty_cpu],
         local_clustering_coefficient: [concurrency: :dirty_cpu],
         assortativity: [concurrency: :dirty_cpu],
@@ -56,6 +57,13 @@ defmodule Zog.Metrics do
         defer g.deinit();
 
         return try zog.community.metrics.countTriangles(beam.allocator, g);
+    }
+
+    pub fn transitivity(node_count: usize, from: []u32, to: []u32, weight: []f64) !f64 {
+        var g = try buildGraph(node_count, from, to, weight);
+        defer g.deinit();
+
+        return try zog.community.metrics.transitivity(beam.allocator, g);
     }
 
     pub fn average_clustering_coefficient(node_count: usize, from: []u32, to: []u32, weight: []f64) !f64 {
@@ -117,6 +125,38 @@ defmodule Zog.Metrics do
       node_count = SoA.node_count(builder)
       {from, to, weights} = SoA.to_edge_arrays(builder)
       triangle_count(node_count, from, to, weights)
+    end
+
+    @doc """
+    Computes the transitivity (global clustering coefficient) of the graph.
+
+    Transitivity is the ratio of 3 × number of triangles to the number of connected triples:
+    `T = 3 * triangles / triples`.
+
+    Returns `0.0` if the graph has no connected triples.
+
+    ## Examples
+
+        iex> builder =
+        ...>   Zog.undirected()
+        ...>   |> Zog.add_edge("A", "B", 1.0)
+        ...>   |> Zog.add_edge("B", "C", 1.0)
+        ...>   |> Zog.add_edge("C", "A", 1.0)
+        iex> Zog.Metrics.transitivity(builder)
+        1.0
+
+        iex> builder =
+        ...>   Zog.undirected()
+        ...>   |> Zog.add_edge("A", "B", 1.0)
+        ...>   |> Zog.add_edge("B", "C", 1.0)
+        iex> Zog.Metrics.transitivity(builder)
+        0.0
+    """
+    @spec transitivity(SoA.t()) :: float()
+    def transitivity(%SoA{} = builder) do
+      node_count = SoA.node_count(builder)
+      {from, to, weights} = SoA.to_edge_arrays(builder)
+      transitivity(node_count, from, to, weights)
     end
 
     @doc """
@@ -197,6 +237,7 @@ defmodule Zog.Metrics do
     for fun <- [
           :density,
           :triangle_count,
+          :transitivity,
           :average_clustering_coefficient,
           :local_clustering_coefficient,
           :assortativity

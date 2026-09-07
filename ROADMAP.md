@@ -24,8 +24,8 @@ Focuses on bipartite property detection, ego-graph extraction, and graph transfo
 
 ---
 
-### 📅 v0.4.0: DAG Analysis & Network Health
-Focuses on Directed Acyclic Graph (DAG) sorting/checks and structural health metrics.
+### 📅 v0.4.0: DAG Analysis, Network Health, Matching & Advanced Graph Properties
+Focuses on Directed Acyclic Graph (DAG) sorting/checks, structural health metrics, general graph matching, Walktrap community detection, VF2 isomorphism, and performance vectorization.
 
 - **DAG & Traversals**
   - [x] Topological Sort (DFS-based)
@@ -36,12 +36,35 @@ Focuses on Directed Acyclic Graph (DAG) sorting/checks and structural health met
   - [x] Radius (Minimum eccentricity)
   - [x] Eccentricity (Max distance from node)
   - [x] Average Path Length (APL)
+- **Matching & Pathfinding**
+  - [x] Edmonds' Blossom (Maximum Weight Matching in general graphs)
+  - [x] Hungarian / Kuhn-Munkres (Minimum Weight Full Bipartite Matching)
+  - [x] Yen's $K$-Shortest Paths (Loopless shortest paths)
+- **Centrality & Community**
+  - [x] HITS (Hubs and Authorities)
+  - [x] Walktrap Community Detection (Hierarchical random walks with Lance-Williams updates)
+- **Graph Properties & Isomorphism**
+  - [x] VF2 Graph Isomorphism (`isomorphic?/2`, `find_isomorphism/2`)
+  - [x] Weisfeiler-Leman Graph Hash & Structural Fingerprinting (`graph_hash/2`)
+  - [x] Structural Graph Predicates (`tree?/1`, `forest?/1`, `arborescence?/1`, `branching?/1`, `complete?/1`, `regular?/2`)
+  - [x] Eulerian Circuit & Path (Hierholzer for simple graphs)
+- **Hardware & Concurrency Optimizations**
+  - [x] `@Vector(4, f64)` SIMD vectorization for matrix operations and norm calculations
+  - [x] Multi-threaded parallel execution via `std.Thread` for Floyd-Warshall and Brandes Betweenness Centrality
+  - [x] Dirty CPU scheduler configuration (`[concurrency: :dirty_cpu]`) across heavy native NIFs
 
 ---
 
-### 📅 v0.5.0: Multigraph Support
-Focuses on parallel edges, edge keys, and edge-aware traversals.
+### 📅 v0.5.0: Flow Algorithms Parity, Community Metrics & Multigraph Support
+Focuses on complete algorithmic parity with Yog for network flow algorithms and cuts, global community transitivity, and multigraph support.
 
+- **Network Flow & Cuts Parity**
+  - [x] Dinic's Algorithm (`max_flow/4` with `[algorithm: :dinic]`)
+  - [x] Dedicated $s-t$ Min-Cut partition (`s_t_min_cut/4`) returning `{cut_value, source_side, sink_side, cut_edges}`
+  - [x] Gomory-Hu All-Pairs Min-Cut Tree (`gomory_hu_tree/1`) via Gusfield's algorithm & query (`min_cut_query/3`)
+  - [x] Min-Cost Flow via Successive Shortest Path (`min_cost_flow/4`) with node demands and edge costs/capacities
+- **Community & Network Metrics**
+  - [x] Global Transitivity / Clustering Coefficient (`transitivity/1`)
 - **Multigraph Core**
   - [ ] Multi-edge storage (extending `SoA` and NIF boundary for edge key mappings)
   - [ ] Edge-specific deletion (removing a specific parallel edge by ID)
@@ -56,13 +79,9 @@ Focuses on parallel edges, edge keys, and edge-aware traversals.
 ## 📋 Future Backlog (Deferred & On-Demand)
 These features are not scheduled for immediate releases and will be implemented based on community demand or specific needs.
 
-- **Pathfinding**: Bidirectional Dijkstra, Bidirectional BFS, Yen's K-Shortest, Widest Path, All-Pairs Unweighted.
-- **Network Flow**: Successive Shortest Path (Min-cost max-flow).
-- **Matching**: Hungarian Algorithm (Weighted Bipartite Matching), Blossom Algorithm (Maximum Matching in General Graphs).
+- **Pathfinding**: Bidirectional Dijkstra, Bidirectional BFS, Widest Path, All-Pairs Unweighted.
 - **Spanning Tree**: Minimum Spanning Arborescence (Edmonds' Directed MST).
-- **Connectivity**: Reachability Exact. (Weakly Connected Components and Bipartite Check/Partition have been implemented in v0.3.0)
-- **Centrality & Metrics**: HITS (Hubs and Authorities), Transitivity.
-- **Community Detection**: Walktrap, Infomap, Clique Percolation, Fluid Communities, Local Community.
-- **Transformations & Operations**: Node/Edge filter predicates.
-- **Graph Properties**: Complete Graph detection, Tree/Forest/Branching checks, Isomorphism, Graph Hash.
-- **Generators**: GNM random generator, Stochastic Block Models (SBM, DCSBM, HSBM), Random Regular, Geometric/Waxman generators.
+- **Connectivity**: Reachability Exact.
+- **Community Detection**: Infomap, Clique Percolation, Fluid Communities, Local Community.
+- **Transformations & Operations**: Node/Edge filter predicates, Transpose / Reverse.
+- **Generators**: GNM random generator, Classic graph generators ($K_n$, $K_{n,m}$, star, cycle, wheel, hypercube), Stochastic Block Models (SBM, DCSBM, HSBM), Random Regular, Geometric/Waxman generators.

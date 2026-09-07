@@ -1,9 +1,26 @@
 const std = @import("std");
 const utils = @import("../utils.zig");
+const max_flow = @import("max_flow.zig");
 
 // =============================================================================
-// Result Type
+// Result Types
 // =============================================================================
+
+/// Result of a Gomory-Hu tree computation.
+pub fn GomoryHuTreeResult(comptime NodeId: type, comptime Weight: type) type {
+    return struct {
+        const Self = @This();
+        from: []NodeId,
+        to: []NodeId,
+        weights: []Weight,
+
+        pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+            allocator.free(self.from);
+            allocator.free(self.to);
+            allocator.free(self.weights);
+        }
+    };
+}
 
 /// Result of a global minimum cut computation.
 pub fn GlobalMinCutResult(comptime NodeId: type, comptime Weight: type) type {
@@ -210,11 +227,127 @@ pub fn globalMinCutF64(
     return globalMinCut(allocator, graph, f64, 0.0, utils.addF64, utils.compareF64);
 }
 
+/// Builds a Gomory-Hu tree representing all-pairs min-cuts in an undirected graph
+/// using Gusfield's algorithm.
+///
+/// Requires exactly V-1 max-flow computations using Dinic's algorithm.
+pub fn gomoryHuTreeF64(
+    allocator: std.mem.Allocator,
+    graph: anytype,
+) !GomoryHuTreeResult(utils.NodeId(@TypeOf(graph)), f64) {
+    const NodeId = utils.NodeId(@TypeOf(graph));
 
+    var nodes = std.ArrayList(NodeId).empty;
+    defer nodes.deinit(allocator);
+    var it = graph.nodeIds();
+    while (it.next()) |node| try nodes.append(allocator, node);
+
+    const n = nodes.items.len;
+    if (n <= 1) {
+        return .{
+            .from = try allocator.alloc(NodeId, 0),
+            .to = try allocator.alloc(NodeId, 0),
+            .weights = try allocator.alloc(f64, 0),
+        };
+    }
+
+    // Gusfield's algorithm
+    var parent = try allocator.alloc(usize, n);
+    defer allocator.free(parent);
+    @memset(parent, 0);
+
+    var cut_weights = try allocator.alloc(f64, n);
+    defer allocator.free(cut_weights);
+    @memset(cut_weights, 0.0);
+
+    var in_source = std.AutoHashMap(NodeId, void).init(allocator);
+    defer in_source.deinit();
+
+    var i: usize = 1;
+    while (i < n) : (i += 1) {
+        const s = nodes.items[i];
+        const t = nodes.items[parent[i]];
+
+        var mf = try max_flow.dinicF64(allocator, graph, s, t);
+        defer mf.deinit(allocator);
+
+        var cut = try max_flow.minCut(allocator, mf, f64, 0.0, utils.compareF64);
+        defer cut.deinit(allocator);
+
+        cut_weights[i] = mf.max_flow;
+
+        in_source.clearRetainingCapacity();
+        for (cut.source_side) |v| {
+            try in_source.put(v, {});
+        }
+
+        var j = i + 1;
+        while (j < n) : (j += 1) {
+            if (parent[j] == parent[i] and in_source.contains(nodes.items[j])) {
+                parent[j] = i;
+            }
+        }
+    }
+
+    const edge_count = n - 1;
+    var from = try allocator.alloc(NodeId, edge_count);
+    errdefer allocator.free(from);
+    var to = try allocator.alloc(NodeId, edge_count);
+    errdefer allocator.free(to);
+    var weights = try allocator.alloc(f64, edge_count);
+    errdefer allocator.free(weights);
+
+    for (1..n) |idx| {
+        from[idx - 1] = nodes.items[idx];
+        to[idx - 1] = nodes.items[parent[idx]];
+        weights[idx - 1] = cut_weights[idx];
+    }
+
+    return .{
+        .from = from,
+        .to = to,
+        .weights = weights,
+    };
+}
 
 // =============================================================================
 // Tests
 // =============================================================================
+
+test "Gomory-Hu tree on 4-node graph" {
+    const allocator = std.testing.allocator;
+    const AG = @import("../models/array_graph.zig").ArrayGraph;
+
+    var g = AG(void, f64).init(allocator);
+    defer g.deinit();
+
+    var i: u32 = 0;
+    while (i < 4) : (i += 1) {
+        _ = try g.addNode({});
+    }
+
+    // Undirected graph:
+    // 0-1: 3
+    // 0-2: 4
+    // 1-2: 2
+    // 1-3: 5
+    // 2-3: 1
+    _ = try g.addEdge(0, 1, 3.0);
+    _ = try g.addEdge(1, 0, 3.0);
+    _ = try g.addEdge(0, 2, 4.0);
+    _ = try g.addEdge(2, 0, 4.0);
+    _ = try g.addEdge(1, 2, 2.0);
+    _ = try g.addEdge(2, 1, 2.0);
+    _ = try g.addEdge(1, 3, 5.0);
+    _ = try g.addEdge(3, 1, 5.0);
+    _ = try g.addEdge(2, 3, 1.0);
+    _ = try g.addEdge(3, 2, 1.0);
+
+    var tree = try gomoryHuTreeF64(allocator, g);
+    defer tree.deinit(allocator);
+
+    try std.testing.expectEqual(@as(usize, 3), tree.from.len);
+}
 
 test "Stoer-Wagner on path graph" {
     const allocator = std.testing.allocator;

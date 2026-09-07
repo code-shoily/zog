@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] (0.5.0)
+
+### Added
+
+- Added Dinic's Maximum Flow algorithm with iterative DFS and current-arc pointers in `priv/zog/src/flow/max_flow.zig`:
+  - Exposed via `[algorithm: :dinic]` option in `Zog.Flow.max_flow/4` and `Zog.ResourceGraph.max_flow/4`.
+  - Added native NIF `nif_dinic/3` on `Zog.ResourceGraph`.
+- Added dedicated $s-t$ Minimum Cut APIs:
+  - `Zog.Flow.s_t_min_cut/4` and `Zog.ResourceGraph.s_t_min_cut/4` returning `%{cut_value, source_side, sink_side, cut_edges}`.
+- Added Gomory-Hu All-Pairs Minimum Cut Tree & Bottleneck Queries:
+  - Implemented Gusfield's algorithm natively in `priv/zog/src/flow/min_cut.zig`, executing $V-1$ Dinic max-flow queries without graph contraction overhead.
+  - Added `Zog.Flow.gomory_hu_tree/1` and `Zog.ResourceGraph.gomory_hu_tree/1` returning undirected cut trees.
+  - Added `Zog.Flow.min_cut_query/3` and `Zog.ResourceGraph.min_cut_query/3` for bottleneck cut edge and side partition lookups.
+  - Added native NIF `nif_gomory_hu_tree/1` on `Zog.ResourceGraph`.
+- Added Min-Cost Flow via Successive Shortest Path in `priv/zog/src/flow/min_cost_flow.zig`:
+  - Native dual potential initialization via Bellman-Ford (with negative cycle detection).
+  - Shortest augmenting paths via Dijkstra with reduced non-negative costs using `std.PriorityQueue`.
+  - Added `Zog.Flow.min_cost_flow/4` and `Zog.ResourceGraph.min_cost_flow/4` with full algorithmic parity to `Yog.Flow.SuccessiveShortestPath`.
+- Added Global Transitivity metric:
+  - Native Zig implementation in `priv/zog/src/community/metrics.zig`.
+  - Added `Zog.Metrics.transitivity/1` and `Zog.ResourceGraph.transitivity/1`.
+
+### Changed
+
+- Updated `ALGORITHMS.md` and `ROADMAP.md` reflecting complete parity for flow and cut algorithms.
+- Fixed residual capacity accumulation across anti-parallel and parallel edges in `priv/zog/src/flow/max_flow.zig`.
+
 ## [0.4.0] - 2026-09-05
 
 ### Added

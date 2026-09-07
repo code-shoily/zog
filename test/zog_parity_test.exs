@@ -31,6 +31,13 @@ defmodule Zog.PBT.ZogParityTest do
           assert native_triangles == elixir_triangles
           assert res_triangles == elixir_triangles
 
+          # 2b. Transitivity
+          native_trans = Zog.Metrics.transitivity(builder)
+          res_trans = ResourceGraph.transitivity(res_graph)
+          elixir_trans = Yog.Community.Metrics.transitivity(graph)
+          assert_in_delta native_trans, elixir_trans, 1.0e-4
+          assert_in_delta res_trans, elixir_trans, 1.0e-4
+
           # 3. Average Clustering Coefficient
           native_avg_cc = Zog.Metrics.average_clustering_coefficient(builder)
           res_avg_cc = ResourceGraph.average_clustering_coefficient(res_graph)
@@ -260,6 +267,18 @@ defmodule Zog.PBT.ZogParityTest do
           assert_in_delta nat_pr.max_flow, el_dinic.max_flow, 1.0e-3
           assert_in_delta res_pr.max_flow, el_dinic.max_flow, 1.0e-3
 
+          nat_dinic = Zog.Flow.max_flow(builder, s, t, :dinic)
+          res_dinic = ResourceGraph.max_flow(res_graph, s, t, :dinic)
+
+          assert_in_delta nat_dinic.max_flow, el_dinic.max_flow, 1.0e-3
+          assert_in_delta res_dinic.max_flow, el_dinic.max_flow, 1.0e-3
+
+          nat_st_cut = Zog.Flow.s_t_min_cut(builder, s, t, :dinic)
+          res_st_cut = ResourceGraph.s_t_min_cut(res_graph, s, t, :dinic)
+
+          assert_in_delta nat_st_cut.cut_value, el_dinic.max_flow, 1.0e-3
+          assert_in_delta res_st_cut.cut_value, el_dinic.max_flow, 1.0e-3
+
           # 3. Global Min Cut Parity
           undirected_graph = Yog.to_undirected(graph, fn a, b -> a + b end)
 
@@ -278,6 +297,23 @@ defmodule Zog.PBT.ZogParityTest do
               all_nodes_count = map_size(undirected_graph.nodes)
               assert length(nat_cut.source_side) + length(nat_cut.sink_side) == all_nodes_count
               assert length(res_cut.source_side) + length(res_cut.sink_side) == all_nodes_count
+
+              # 4. Gomory-Hu Tree Parity
+              nat_gh = Zog.Flow.gomory_hu_tree(undir_builder)
+              res_gh = ResourceGraph.gomory_hu_tree(undir_res)
+
+              try do
+                {nat_q, _, _} = Zog.Flow.min_cut_query(nat_gh, s, t)
+                {res_q, _, _} = ResourceGraph.min_cut_query(res_gh, s, t)
+                assert_in_delta nat_q, res_q, 1.0e-3
+
+                el_gh = Yog.Flow.MinCut.gomory_hu_tree(undirected_graph)
+                {el_q, _, _} = Yog.Flow.MinCut.min_cut_query(el_gh, s, t)
+
+                assert_in_delta nat_q, el_q, 1.0e-3
+              after
+                ResourceGraph.destroy(res_gh)
+              end
             after
               ResourceGraph.destroy(undir_res)
             end

@@ -68,6 +68,7 @@ defmodule Zog.ResourceGraph do
         nif_dijkstra: [concurrency: :dirty_cpu],
         nif_density: [concurrency: :dirty_cpu],
         nif_triangle_count: [concurrency: :dirty_cpu],
+        nif_transitivity: [concurrency: :dirty_cpu],
         nif_average_clustering_coefficient: [concurrency: :dirty_cpu],
         nif_local_clustering_coefficient: [concurrency: :dirty_cpu],
         nif_assortativity: [concurrency: :dirty_cpu],
@@ -94,8 +95,10 @@ defmodule Zog.ResourceGraph do
         nif_isomorphic: [concurrency: :dirty_cpu],
         nif_find_isomorphism: [concurrency: :dirty_cpu],
         nif_max_flow: [concurrency: :dirty_cpu],
+        nif_dinic: [concurrency: :dirty_cpu],
         nif_push_relabel: [concurrency: :dirty_cpu],
         nif_global_min_cut: [concurrency: :dirty_cpu],
+        nif_gomory_hu_tree: [concurrency: :dirty_cpu],
         nif_read_edgelist: [concurrency: :dirty_io],
         nif_read_adjlist: [concurrency: :dirty_io],
         nif_read_tgf: [concurrency: :dirty_io],
@@ -780,6 +783,14 @@ defmodule Zog.ResourceGraph do
         };
     }
 
+    pub fn nif_transitivity(res: GraphRes) !f64 {
+        const allocator = beam.allocator;
+        return switch (res.unpack()) {
+            .soa => |g| try zog.community.metrics.transitivity(allocator, g),
+            .hash_graph => |g| try zog.community.metrics.transitivity(allocator, g),
+        };
+    }
+
     pub fn nif_average_clustering_coefficient(res: GraphRes) !f64 {
         const allocator = beam.allocator;
         return switch (res.unpack()) {
@@ -1193,6 +1204,37 @@ defmodule Zog.ResourceGraph do
         }, .{});
     }
 
+    pub fn nif_dinic(res: GraphRes, source: u32, sink: u32) !beam.term {
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.flow.max_flow.dinicF64(allocator, g, source, sink),
+            .hash_graph => |g| try zog.flow.max_flow.dinicF64(allocator, g, source, sink),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit(allocator);
+
+        var cut = try zog.flow.max_flow.minCut(allocator, mutable_result, f64, 0.0, zog.utils.compareF64);
+        defer cut.deinit(allocator);
+
+        const flow_res = try toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side);
+        defer {
+            allocator.free(flow_res.residual_from);
+            allocator.free(flow_res.residual_to);
+            allocator.free(flow_res.residual_cap);
+            allocator.free(flow_res.source_side);
+            allocator.free(flow_res.sink_side);
+        }
+
+        return beam.make(.{
+            .max_flow = flow_res.max_flow,
+            .residual_from = flow_res.residual_from,
+            .residual_to = flow_res.residual_to,
+            .residual_cap = flow_res.residual_cap,
+            .source_side = flow_res.source_side,
+            .sink_side = flow_res.sink_side,
+        }, .{});
+    }
+
     pub fn nif_global_min_cut(res: GraphRes) !beam.term {
         const allocator = beam.allocator;
         const result = switch (res.unpack()) {
@@ -1208,6 +1250,25 @@ defmodule Zog.ResourceGraph do
             .cut_value = result.weight,
             .source_side = result.group_a,
             .sink_side = result.group_b,
+        }, .{});
+    }
+
+    pub fn nif_gomory_hu_tree(res: GraphRes) !beam.term {
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.flow.min_cut.gomoryHuTreeF64(allocator, g),
+            .hash_graph => |g| try zog.flow.min_cut.gomoryHuTreeF64(allocator, g),
+        };
+        defer {
+            allocator.free(result.from);
+            allocator.free(result.to);
+            allocator.free(result.weights);
+        }
+
+        return beam.make(.{
+            .from = result.from,
+            .to = result.to,
+            .weights = result.weights,
         }, .{});
     }
 
@@ -2750,6 +2811,19 @@ defmodule Zog.ResourceGraph do
     end
 
     @doc """
+    Computes the transitivity (global clustering coefficient) of the graph.
+
+    Transitivity is the ratio of 3 × number of triangles to the number of connected triples:
+    `T = 3 * triangles / triples`.
+
+    Returns `0.0` if the graph has no connected triples.
+    """
+    @spec transitivity(t()) :: float()
+    def transitivity(%{resource: res}) do
+      nif_transitivity(res)
+    end
+
+    @doc """
     Average clustering coefficient.
     """
     @spec average_clustering_coefficient(t()) :: float()
@@ -3269,6 +3343,9 @@ defmodule Zog.ResourceGraph do
           :push_relabel ->
             nif_push_relabel(res, source_idx, sink_idx)
 
+          :dinic ->
+            nif_dinic(res, source_idx, sink_idx)
+
           _ ->
             nif_max_flow(res, source_idx, sink_idx)
         end
@@ -3305,6 +3382,59 @@ defmodule Zog.ResourceGraph do
     end
 
     @doc """
+    Computes the minimum s-t cut natively on a `ResourceGraph`.
+
+    Returns a map containing:
+    - `:cut_value` - Total capacity of the minimum cut (equal to max flow).
+    - `:source_side` - Nodes on the source side of the cut partition.
+    - `:sink_side` - Nodes on the sink side of the cut partition.
+    - `:cut_edges` - List of `{u, v, weight}` edges crossing the cut.
+    """
+    @spec s_t_min_cut(t(), SoA.label(), SoA.label(), atom() | keyword(), keyword()) :: %{
+            cut_value: float(),
+            source_side: list(SoA.label()),
+            sink_side: list(SoA.label()),
+            cut_edges: list({SoA.label(), SoA.label(), float()})
+          }
+    def s_t_min_cut(graph, source, sink, algorithm_or_opts \\ :dinic, opts \\ []) do
+      {algorithm, actual_opts} =
+        if is_list(algorithm_or_opts) do
+          {:dinic, algorithm_or_opts}
+        else
+          {algorithm_or_opts, opts}
+        end
+
+      raw = Keyword.get(actual_opts, :raw, false)
+      res = max_flow(graph, source, sink, algorithm, actual_opts)
+
+      source_set = MapSet.new(res.source_side)
+      sink_set = MapSet.new(res.sink_side)
+
+      cut_edges =
+        graph.builder.edges
+        |> Enum.reverse()
+        |> Enum.filter(fn {u_id, v_id, _w} ->
+          u_item = if raw, do: u_id, else: SoA.id_to_label(graph.builder, u_id)
+          v_item = if raw, do: v_id, else: SoA.id_to_label(graph.builder, v_id)
+          MapSet.member?(source_set, u_item) and MapSet.member?(sink_set, v_item)
+        end)
+        |> Enum.map(fn {u_id, v_id, w} ->
+          if raw do
+            {u_id, v_id, w}
+          else
+            {SoA.id_to_label(graph.builder, u_id), SoA.id_to_label(graph.builder, v_id), w}
+          end
+        end)
+
+      %{
+        cut_value: res.max_flow,
+        source_side: res.source_side,
+        sink_side: res.sink_side,
+        cut_edges: cut_edges
+      }
+    end
+
+    @doc """
     Computes the global minimum cut of the undirected network using the Stoer-Wagner algorithm.
     """
     @spec global_min_cut(t(), keyword()) :: %{
@@ -3335,6 +3465,95 @@ defmodule Zog.ResourceGraph do
         source_side: source_side,
         sink_side: sink_side
       }
+    end
+
+    @doc """
+    Builds a Gomory-Hu tree representing all-pairs min-cuts on an undirected `ResourceGraph`.
+    """
+    @spec gomory_hu_tree(t(), keyword()) :: t() | SoA.t()
+    def gomory_hu_tree(graph, opts \\ [])
+
+    def gomory_hu_tree(%{builder: %SoA{kind: :directed}}, _opts) do
+      raise ArgumentError, "gomory_hu_tree/2 requires an undirected graph"
+    end
+
+    def gomory_hu_tree(%{resource: res, builder: builder}, opts) do
+      as_resource = Keyword.get(opts, :as_resource, true)
+      node_count = SoA.node_count(builder)
+      all_labels = SoA.all_labels(builder)
+
+      tree_builder =
+        case node_count do
+          0 ->
+            SoA.undirected()
+
+          1 ->
+            SoA.undirected() |> SoA.add_node(hd(all_labels))
+
+          _ ->
+            result = nif_gomory_hu_tree(res)
+
+            tree =
+              Enum.reduce(all_labels, SoA.undirected(), fn label, acc ->
+                SoA.add_node(acc, label)
+              end)
+
+            Enum.zip([result.from, result.to, result.weights])
+            |> Enum.reduce(tree, fn {u_id, v_id, w}, acc ->
+              u_label = SoA.id_to_label(builder, u_id)
+              v_label = SoA.id_to_label(builder, v_id)
+              SoA.add_edge(acc, u_label, v_label, w)
+            end)
+        end
+
+      if as_resource do
+        new(tree_builder, opts)
+      else
+        tree_builder
+      end
+    end
+
+    @doc """
+    Queries the min-cut value and partitions between two nodes using a Gomory-Hu tree.
+    """
+    @spec min_cut_query(t() | SoA.t(), SoA.label(), SoA.label(), keyword()) ::
+            {float(), list(SoA.label()), list(SoA.label())}
+    def min_cut_query(tree, source, sink, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
+
+      tree_builder =
+        case tree do
+          %{builder: %SoA{} = b} -> b
+          %SoA{} = b -> b
+        end
+
+      actual_source =
+        if raw, do: SoA.id_to_label(tree_builder, source), else: source
+
+      actual_sink =
+        if raw, do: SoA.id_to_label(tree_builder, sink), else: sink
+
+      {val, s_side, t_side} = Zog.Flow.min_cut_query(tree_builder, actual_source, actual_sink)
+
+      if raw do
+        {val, Enum.map(s_side, &SoA.label_to_id(tree_builder, &1)),
+         Enum.map(t_side, &SoA.label_to_id(tree_builder, &1))}
+      else
+        {val, s_side, t_side}
+      end
+    end
+
+    @doc """
+    Solves the minimum cost flow problem on a `ResourceGraph`.
+    """
+    @spec min_cost_flow(
+            t(),
+            (any() -> integer()) | map(),
+            (any() -> integer()) | map() | integer(),
+            (any() -> integer()) | map() | integer()
+          ) :: {:ok, Zog.Flow.min_cost_flow_result()} | {:error, Zog.Flow.min_cost_flow_error()}
+    def min_cost_flow(%{builder: builder}, get_demand, get_capacity, get_cost) do
+      Zog.Flow.min_cost_flow(builder, get_demand, get_capacity, get_cost)
     end
 
     # ============================================================================
@@ -3533,6 +3752,7 @@ defmodule Zog.ResourceGraph do
           :johnsons,
           :density,
           :triangle_count,
+          :transitivity,
           :average_clustering_coefficient,
           :local_clustering_coefficient,
           :assortativity,
@@ -3562,7 +3782,23 @@ defmodule Zog.ResourceGraph do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 
+    def s_t_min_cut(_graph, _source, _sink, _algorithm_or_opts \\ :dinic, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
     def global_min_cut(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def gomory_hu_tree(_graph, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def min_cut_query(_tree, _source, _sink, _opts \\ []) do
+      raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
+    end
+
+    def min_cost_flow(_graph, _get_demand, _get_capacity, _get_cost) do
       raise "zigler is not installed. Add {:zigler, \"~> 0.16.0\", runtime: false} to your deps and run mix deps.get."
     end
 

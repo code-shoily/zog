@@ -73,6 +73,69 @@ defmodule Zog.MetricsTest do
     end
   end
 
+  describe "transitivity/1" do
+    test "triangle has transitivity 1.0" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+        |> Zog.add_edge("C", "A", 1.0)
+
+      assert_in_delta Metrics.transitivity(builder), 1.0, 0.0001
+    end
+
+    test "chain has transitivity 0.0" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+
+      assert Metrics.transitivity(builder) == 0.0
+    end
+
+    test "diamond graph (two triangles sharing an edge) has transitivity 0.75" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+        |> Zog.add_edge("C", "A", 1.0)
+        |> Zog.add_edge("B", "D", 1.0)
+        |> Zog.add_edge("D", "C", 1.0)
+
+      # 2 triangles, 8 connected triples (A: 1, B: 3, C: 3, D: 1). 3 * 2 / 8 = 0.75.
+      assert_in_delta Metrics.transitivity(builder), 0.75, 0.0001
+    end
+
+    test "complete graph K4 has transitivity 1.0" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("A", "C", 1.0)
+        |> Zog.add_edge("A", "D", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+        |> Zog.add_edge("B", "D", 1.0)
+        |> Zog.add_edge("C", "D", 1.0)
+
+      assert_in_delta Metrics.transitivity(builder), 1.0, 0.0001
+    end
+
+    test "empty and single node graphs return 0.0" do
+      assert Metrics.transitivity(Zog.undirected()) == 0.0
+      assert Metrics.transitivity(Zog.undirected() |> Zog.add_node("A")) == 0.0
+    end
+
+    test "star graph has transitivity 0.0" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge("center", "leaf1", 1.0)
+        |> Zog.add_edge("center", "leaf2", 1.0)
+        |> Zog.add_edge("center", "leaf3", 1.0)
+        |> Zog.add_edge("center", "leaf4", 1.0)
+
+      assert Metrics.transitivity(builder) == 0.0
+    end
+  end
+
   describe "average_clustering_coefficient/1" do
     test "complete graph has clustering coefficient 1.0" do
       builder =

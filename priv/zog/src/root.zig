@@ -18,6 +18,7 @@ pub const utils = @import("utils.zig");
 pub const flow = struct {
     pub const max_flow = @import("flow/max_flow.zig");
     pub const min_cut = @import("flow/min_cut.zig");
+    pub const min_cost_flow = @import("flow/min_cost_flow.zig");
 };
 
 pub const community = struct {
@@ -46,6 +47,7 @@ test {
     _ = @import("utils.zig");
     _ = @import("flow/max_flow.zig");
     _ = @import("flow/min_cut.zig");
+    _ = @import("flow/min_cost_flow.zig");
     _ = @import("property.zig");
     _ = @import("community/metrics.zig");
     _ = @import("community/louvain.zig");

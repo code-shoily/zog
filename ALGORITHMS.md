@@ -32,9 +32,12 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | Algorithm | YogEx Module | Purpose | Zog Status | Notes / Details |
 | :--- | :--- | :--- | :--- | :--- |
 | **Edmonds-Karp** | `Yog.Flow.MaxFlow` | Maximum flow (BFS augmenting paths) | ✅ **Implemented** | Native Zig via `Zog.Flow.max_flow/4` (default). |
-| **Dinic's** | `Yog.Flow.MaxFlow` | Maximum flow (blocking flow) | ❌ **Missing** | *Deliberately Omitted* — Zog implements **Push-Relabel** instead, which is generally faster. |
+| **Dinic's** | `Yog.Flow.MaxFlow` | Maximum flow (blocking flow) | ✅ **Implemented** | Native Zig via `Zog.Flow.max_flow/4` with `[algorithm: :dinic]`. |
 | **Push-Relabel** | *N/A (Zog exclusive)* | High-performance max flow (preflow-push) | ✅ **Implemented** | Native Zig via `Zog.Flow.max_flow/4` with `[algorithm: :push_relabel]`. |
-| **Successive Shortest Path** | `Yog.Flow.SuccessiveShortestPath` | Min-cost max-flow | ❌ **Missing** | *WIP/Roadmap* — planned for future network flow releases. |
+| **$s-t$ Min-Cut** | `Yog.Flow.MinCut` | Min-cut partition separating $s$ and $t$ | ✅ **Implemented** | Native Zig via `Zog.Flow.s_t_min_cut/4` and `Zog.ResourceGraph.s_t_min_cut/4`. |
+| **Gomory-Hu Tree** | `Yog.Flow.MinCut` | All-pairs min-cut cut tree via Gusfield's | ✅ **Implemented** | Native Zig via `Zog.Flow.gomory_hu_tree/1` and `Zog.ResourceGraph.gomory_hu_tree/1`. |
+| **Min-Cut Query** | `Yog.Flow.MinCut` | Bottleneck edge on Gomory-Hu tree | ✅ **Implemented** | `Zog.Flow.min_cut_query/3` and `Zog.ResourceGraph.min_cut_query/3`. |
+| **Successive Shortest Path** | `Yog.Flow.SuccessiveShortestPath` | Min-cost max-flow with node demands | ✅ **Implemented** | Native Zig via `Zog.Flow.min_cost_flow/4` and `Zog.ResourceGraph.min_cost_flow/4`. |
 | **Stoer-Wagner** | `Yog.Flow.MinCut` | Global minimum cut | ✅ **Implemented** | Native Zig via `Zog.Flow.global_min_cut/1`. |
 
 ---
@@ -101,7 +104,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Louvain** | `Yog.Community.Louvain` | Modularity optimization | ✅ **Implemented** | Native Zig via `Zog.Community.louvain/2`. |
 | **Leiden** | `Yog.Community.Leiden` | Quality-guaranteed communities | ✅ **Implemented** | Native Zig via `Zog.Community.leiden/2` and `Zog.Community.leiden_hierarchical/2`. |
 | **Label Propagation** | `Yog.Community.LabelPropagation` | Very large graphs, speed | ✅ **Implemented** | Native Zig via `Zog.Community.label_propagation/2`. |
-| **Walktrap** | `Yog.Community.Walktrap` | Random-walk communities | ❌ **Missing** | *Deferred* — low priority. |
+| **Walktrap** | `Yog.Community.Walktrap` | Random-walk communities | ✅ **Implemented** | Native Zig via `Zog.Community.walktrap/2`, `Zog.Community.walktrap_hierarchical/2`, and `Zog.ResourceGraph.walktrap/2`. |
 | **Infomap** | `Yog.Community.Infomap` | Information-theoretic | ❌ **Missing** | *Deferred* — low priority. |
 | **Girvan-Newman** | `Yog.Community.GirvanNewman` | Hierarchical edge betweenness | ❌ **Missing** | *Deferred* — high complexity O(E²V); unfeasible for larger graphs. |
 | **Clique Percolation** | `Yog.Community.CliquePercolation` | Overlapping communities | ❌ **Missing** | *Deferred* — low priority. |
@@ -114,7 +117,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 
 | Algorithm | YogEx Module | Purpose | Zog Status | Notes / Details |
 | :--- | :--- | :--- | :--- | :--- |
-| **Transitivity** | `Yog.Community.Metrics` | Global clustering coefficient | ❌ **Missing** | *Deferred* — average clustering coefficient is usually sufficient. |
+| **Transitivity** | `Yog.Community.Metrics` | Global clustering coefficient | ✅ **Implemented** | Native Zig via `Zog.Metrics.transitivity/1` and `Zog.ResourceGraph.transitivity/1`. |
 | **Local Clustering Coefficient**| `Yog.Community` | Per-node clustering coefficient | ✅ **Implemented** | Native Zig via `Zog.Metrics.local_clustering_coefficient/1`. |
 | **Average Clustering Coefficient**| `Yog.Community` | Global average clustering | ✅ **Implemented** | Native Zig via `Zog.Metrics.average_clustering_coefficient/1`. |
 | **Triangle Count** | `Yog.Community` | Global or per-node triangles | ✅ **Implemented** | Native Zig via `Zog.Metrics.triangle_count/1`. |
@@ -169,18 +172,18 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Eulerian Path** | `Yog.Property.Eulerian` | Eulerian path existence | ✅ **Implemented** | Native Zig via `Zog.Property.has_eulerian_path?/1` and `eulerian_path/2`. |
 | **Bron-Kerbosch** | `Yog.Property.Clique` | All maximal cliques | ✅ **Implemented** | Native Zig via `Zog.Property.all_maximal_cliques/1`. |
 | **Max Clique** | `Yog.Property.Clique` | Largest clique | ✅ **Implemented** | `Zog.Property.max_clique/1` (filtered from Bron-Kerbosch). |
-| **Complete Graph** | `Yog.Property.Structure` | Kₙ detection | ❌ **Missing** | *Deferred* — low priority. |
-| **Tree Check** | `Yog.Property.Structure` | Tree verification | ❌ **Missing** | *Deferred* — low priority. |
-| **Forest Check** | `Yog.Property.Structure` | Disjoint trees | ❌ **Missing** | *Deferred* — low priority. |
-| **Branching Check** | `Yog.Property.Structure` | Directed forest | ❌ **Missing** | *Deferred* — low priority. |
+| **Complete Graph** | `Yog.Property.Structure` | Kₙ detection | ✅ **Implemented** | Native Zig via `Zog.Property.complete?/1` and `Zog.ResourceGraph.complete?/1`. |
+| **Tree Check** | `Yog.Property.Structure` | Tree verification | ✅ **Implemented** | Native Zig via `Zog.Property.tree?/1` and `Zog.ResourceGraph.tree?/1`. |
+| **Forest Check** | `Yog.Property.Structure` | Disjoint trees | ✅ **Implemented** | Native Zig via `Zog.Property.forest?/1` and `Zog.ResourceGraph.forest?/1`. |
+| **Branching Check** | `Yog.Property.Structure` | Directed forest | ✅ **Implemented** | Native Zig via `Zog.Property.branching?/1`, `Zog.Property.arborescence?/1`, `Zog.Property.arborescence_root/1`, and corresponding `Zog.ResourceGraph` wrappers. |
 | **Planarity Test** | `Yog.Property.Structure` | Exact LR-test planarity | ❌ **Missing** | *Won't Have* — highly complex; outside core project scope. |
 | **Planar Embedding** | `Yog.Property.Structure` | Combinatorial embedding | ❌ **Missing** | *Won't Have* — outside core project scope. |
 | **Kuratowski Witness** | `Yog.Property.Structure` | Non-planar subgraph | ❌ **Missing** | *Won't Have* — outside core project scope. |
 | **Chordality Test** | `Yog.Property.Structure` | Chordal graph verification | ❌ **Missing** | *Won't Have* — outside core project scope. |
 | **Graph Coloring** | `Yog.Property.Coloring` | Greedy and exact coloring | ✅ **Implemented** | Native Zig via `Zog.Property.coloring_dsatur/1` and `Zog.Property.coloring_exact/2`. |
 | **Tree Decomposition** | `Yog.Property.TreeDecomposition` | Validity check/construction | ❌ **Missing** | *Won't Have* — outside core project scope. |
-| **Isomorphism** | `Yog.Property` | Weisfeiler-Lehman equality | ✅ **Implemented** | Native Zig via `Zog.Property.isomorphic?/3`. |
-| **Graph Hash** | `Yog.Property` | Structural fingerprint | ✅ **Implemented** | Native Zig via `Zog.Property.hash/2` and `Zog.ResourceGraph.hash/2` (Weisfeiler-Lehman). |
+| **Isomorphism** | `Yog.Property` | VF2 isomorphism & WL hash | ✅ **Implemented** | Native Zig via `Zog.Property.isomorphic?/2` (VF2 exact), `Zog.Property.find_isomorphism/2`, and `Zog.ResourceGraph.isomorphic?/2`. |
+| **Graph Hash** | `Yog.Property` | Structural fingerprint | ✅ **Implemented** | Native Zig via `Zog.Property.graph_hash/2` and `Zog.ResourceGraph.graph_hash/2` (Weisfeiler-Leman). |
 
 ---
 
@@ -192,8 +195,8 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | :--- | :--- | :--- | :--- | :--- |
 | **Longest Path** | `Yog.DAG.Algorithm` | Critical path in weighted DAG | ❌ **Missing** | *Deferred* — low priority. |
 | **Shortest Path** | `Yog.DAG.Algorithm` | Shortest path in DAG | ❌ **Missing** | *Deliberately Omitted* — standard pathfinding handles this. |
-| **Transitive Closure** | `Yog.Transform` | Reachability matrix | ❌ **Missing** | *Deferred* — low priority. |
-| **Transitive Reduction** | `Yog.Transform` | Minimal equivalent DAG | ❌ **Missing** | *Deferred* — low priority. |
+| **Transitive Closure** | `Yog.Transform` | Reachability graph | ✅ **Implemented** | Native Zig via `Zog.Transform.transitive_closure/1` and `Zog.ResourceGraph.transitive_closure/2`. |
+| **Transitive Reduction** | `Yog.Transform` | Minimal equivalent DAG | ✅ **Implemented** | Native Zig via `Zog.Transform.transitive_reduction/1` and `Zog.ResourceGraph.transitive_reduction/2`. |
 | **LCA** | `Yog.Pathfinding.LCA` | Lowest common ancestors | ❌ **Missing** | *Deferred* — low priority. |
 | **Topological Generations** | `Yog.DAG` | Layer-by-layer ordering | ❌ **Missing** | *Deferred* — low priority. |
 | **Sources** | `Yog.DAG` | In-degree 0 nodes | ❌ **Missing** | *Deferred* — low priority. |
@@ -219,7 +222,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Power Graph** | `Yog.Operation` | k-th power | ❌ **Missing** | *Deferred* — low priority. |
 | **Line Graph** | `Yog.Operation` | Edge-to-vertex dual | ❌ **Missing** | *Deferred* — low priority. |
 | **Transpose** | `Yog.Operation` | Reverse all edges | ❌ **Missing** | *Deliberately Omitted* — easily done in Elixir/SoA. |
-| **Isomorphism** | `Yog.Operation` | Graph equality | ❌ **Missing** | *Deferred* — low priority. |
+| **Isomorphism** | `Yog.Operation` | Graph equality / isomorphism | ✅ **Implemented** | Native Zig via `Zog.Property.isomorphic?/2` (VF2) and `Zog.Property.graph_hash/2` (Weisfeiler-Leman). |
 | **Subgraph** | `Yog.Operation` | Induced subgraph | ✅ **Implemented** | Same as `Zog.Transform.subgraph/2`. |
 | **Subgraph Check** | `Yog.Operation` | Subgraph relationship | ❌ **Missing** | *Deferred* — low priority. |
 | **Graph Composition** | `Yog.Operation` | Relational graph composition | ❌ **Missing** | *Won't Have* — outside project scope. |
@@ -358,4 +361,5 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Pajek** | `Yog.IO` | `.net` format | ✅ **Implemented** | Supported via `Zog.IO.dump/3` (writing only). |
 | **TGF** | `Yog.IO` | Trivial Graph Format | ✅ **Implemented** | Supported via `Zog.IO.load/2` and `Zog.IO.dump/3`. |
 | **Adjlist** | `Yog.IO` | Adjacency list format | ✅ **Implemented** | Supported via `Zog.IO.load/2` and `Zog.IO.dump/3`. |
-| *Lesser-used (GDF, GEXF, GraphML, Graph6, Sparse6, JSON, LEDA, Matrix Market, Libgraph)* | `Yog.IO` | Various serialization formats | ❌ **Missing** | *Deferred* — only the most common standard formats are implemented in Zog. |
+| **Libgraph** | `Yog.IO.Libgraph` | Bridge to/from Libgraph | ✅ **Implemented** | Supported via `Zog.from_libgraph/1` and `Zog.to_libgraph/1`. |
+| *Lesser-used (GDF, GEXF, GraphML, Graph6, Sparse6, JSON, LEDA, Matrix Market)* | `Yog.IO` | Various serialization formats | ❌ **Missing** | *Deferred* — only the most common standard formats are implemented in Zog. |

@@ -52,6 +52,10 @@ defmodule Zog.HashGraphParityTest do
     assert ResourceGraph.density(g_soa) == ResourceGraph.density(g_hash)
     assert ResourceGraph.triangle_count(g_soa) == ResourceGraph.triangle_count(g_hash)
 
+    assert_in_delta ResourceGraph.transitivity(g_soa),
+                    ResourceGraph.transitivity(g_hash),
+                    0.00001
+
     assert_in_delta ResourceGraph.average_clustering_coefficient(g_soa),
                     ResourceGraph.average_clustering_coefficient(g_hash),
                     0.00001
@@ -112,6 +116,20 @@ defmodule Zog.HashGraphParityTest do
     flow_pr_hash = ResourceGraph.max_flow(g_hash, "s", "t", :push_relabel)
     assert flow_pr_soa.max_flow == flow_pr_hash.max_flow
 
+    # Dinic Max Flow
+    flow_dinic_soa = ResourceGraph.max_flow(g_soa, "s", "t", :dinic)
+    flow_dinic_hash = ResourceGraph.max_flow(g_hash, "s", "t", :dinic)
+    assert flow_dinic_soa.max_flow == flow_dinic_hash.max_flow
+    assert Enum.sort(flow_dinic_soa.source_side) == Enum.sort(flow_dinic_hash.source_side)
+    assert Enum.sort(flow_dinic_soa.sink_side) == Enum.sort(flow_dinic_hash.sink_side)
+
+    # s-t Min Cut
+    cut_soa = ResourceGraph.s_t_min_cut(g_soa, "s", "t")
+    cut_hash = ResourceGraph.s_t_min_cut(g_hash, "s", "t")
+    assert cut_soa.cut_value == cut_hash.cut_value
+    assert Enum.sort(cut_soa.source_side) == Enum.sort(cut_hash.source_side)
+    assert Enum.sort(cut_soa.sink_side) == Enum.sort(cut_hash.sink_side)
+
     # Global Min Cut
     # Global min cut Stoer-Wagner requires undirected graph
     undir_builder =
@@ -133,6 +151,17 @@ defmodule Zog.HashGraphParityTest do
               Enum.sort(cut_soa.sink_side) == Enum.sort(cut_hash.sink_side)) or
              (Enum.sort(cut_soa.source_side) == Enum.sort(cut_hash.sink_side) and
                 Enum.sort(cut_soa.sink_side) == Enum.sort(cut_hash.source_side))
+
+    # Gomory-Hu Tree
+    tree_soa = ResourceGraph.gomory_hu_tree(g_u_soa)
+    tree_hash = ResourceGraph.gomory_hu_tree(g_u_hash)
+
+    {query_soa, _, _} = ResourceGraph.min_cut_query(tree_soa, "A", "E")
+    {query_hash, _, _} = ResourceGraph.min_cut_query(tree_hash, "A", "E")
+    assert query_soa == query_hash
+
+    ResourceGraph.destroy(tree_soa)
+    ResourceGraph.destroy(tree_hash)
 
     ResourceGraph.destroy(g_soa)
     ResourceGraph.destroy(g_hash)

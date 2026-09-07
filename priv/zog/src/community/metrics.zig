@@ -273,7 +273,12 @@ fn buildCSR(
     };
 }
 
-pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
+pub const TriangleStats = struct {
+    triangles: usize,
+    triples: usize,
+};
+
+pub fn countTrianglesAndTriples(allocator: std.mem.Allocator, graph: anytype) !TriangleStats {
     const NodeId = utils.NodeId(@TypeOf(graph));
     const node_id_is_unsigned = switch (@typeInfo(NodeId)) {
         .int => |info| info.signedness == .unsigned,
@@ -282,7 +287,7 @@ pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
 
     var nodes = try utils.collectNodes(allocator, graph);
     defer nodes.deinit(allocator);
-    if (nodes.items.len == 0) return 0;
+    if (nodes.items.len == 0) return .{ .triangles = 0, .triples = 0 };
 
     if (node_id_is_unsigned) {
         // Fast path: NodeId is an unsigned integer.
@@ -300,6 +305,14 @@ pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
         defer allocator.free(offsets);
         const neighbors = csr.neighbors;
         defer allocator.free(neighbors);
+
+        var total_triples: usize = 0;
+        for (nodes.items) |u| {
+            const du = degree_slice[@as(usize, u)];
+            if (du >= 2) {
+                total_triples += du * (du - 1) / 2;
+            }
+        }
 
         const in_neighbors = try allocator.alloc(bool, @as(usize, max_id) + 1);
         defer allocator.free(in_neighbors);
@@ -342,7 +355,7 @@ pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
             }
         }
 
-        return count;
+        return .{ .triangles = count, .triples = total_triples };
     }
 
     // Slow path: arbitrary NodeId type.  Sort by degree and use a HashMap
@@ -350,11 +363,15 @@ pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
     var degrees = std.AutoHashMap(NodeId, usize).init(allocator);
     defer degrees.deinit();
 
+    var total_triples: usize = 0;
     for (nodes.items) |node| {
         var deg: usize = 0;
         var sit = graph.successors(node);
         while (sit.next()) |_| deg += 1;
         try degrees.put(node, deg);
+        if (deg >= 2) {
+            total_triples += deg * (deg - 1) / 2;
+        }
     }
 
     var idx_map = std.AutoHashMap(NodeId, usize).init(allocator);
@@ -423,7 +440,22 @@ pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
         }
     }
 
-    return count;
+    return .{ .triangles = count, .triples = total_triples };
+}
+
+pub fn countTriangles(allocator: std.mem.Allocator, graph: anytype) !usize {
+    const stats = try countTrianglesAndTriples(allocator, graph);
+    return stats.triangles;
+}
+
+/// Calculates the graph transitivity (global clustering coefficient).
+///
+/// T = 3 × number of triangles / number of connected triples (2-stars).
+/// Returns 0.0 if the graph has no connected triples.
+pub fn transitivity(allocator: std.mem.Allocator, graph: anytype) !f64 {
+    const stats = try countTrianglesAndTriples(allocator, graph);
+    if (stats.triples == 0) return 0.0;
+    return (3.0 * @as(f64, @floatFromInt(stats.triangles))) / @as(f64, @floatFromInt(stats.triples));
 }
 
 /// Triangle count using a pre-allocated workspace.
@@ -796,6 +828,39 @@ test "countTriangles: triangle" {
     _ = try g.addEdge(0, 2, {});
 
     try std.testing.expectEqual(@as(usize, 1), try countTriangles(allocator, g));
+
+    const t = try transitivity(allocator, g);
+    try std.testing.expectApproxEqAbs(@as(f64, 1.0), t, 0.0001);
+}
+
+test "transitivity: diamond graph" {
+    const allocator = std.testing.allocator;
+    const AG = @import("../models/array_graph.zig").ArrayGraph;
+
+    var g = AG(void, void).init(allocator);
+    defer g.deinit();
+
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+    _ = try g.addNode({});
+    // 0-1, 1-2, 2-0 (triangle 1)
+    _ = try g.addEdge(0, 1, {});
+    _ = try g.addEdge(1, 0, {});
+    _ = try g.addEdge(1, 2, {});
+    _ = try g.addEdge(2, 1, {});
+    _ = try g.addEdge(2, 0, {});
+    _ = try g.addEdge(0, 2, {});
+    // 1-3, 3-2 (triangle 2 sharing edge 1-2)
+    _ = try g.addEdge(1, 3, {});
+    _ = try g.addEdge(3, 1, {});
+    _ = try g.addEdge(3, 2, {});
+    _ = try g.addEdge(2, 3, {});
+
+    // 2 triangles, total triples = 1 + 3 + 3 + 1 = 8.
+    // Transitivity = 3 * 2 / 8 = 0.75.
+    const t = try transitivity(allocator, g);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.75), t, 0.0001);
 }
 
 test "clusteringCoefficient: complete graph" {

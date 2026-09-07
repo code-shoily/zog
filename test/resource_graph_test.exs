@@ -287,6 +287,20 @@ defmodule Zog.ResourceGraphTest do
       ResourceGraph.destroy(graph)
     end
 
+    test "transitivity" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+        |> Zog.add_edge("C", "A", 1.0)
+        |> Zog.add_edge("B", "D", 1.0)
+        |> Zog.add_edge("D", "C", 1.0)
+
+      graph = ResourceGraph.new(builder)
+      assert_in_delta ResourceGraph.transitivity(graph), 0.75, 0.0001
+      ResourceGraph.destroy(graph)
+    end
+
     test "average_clustering_coefficient" do
       builder =
         Zog.undirected()
