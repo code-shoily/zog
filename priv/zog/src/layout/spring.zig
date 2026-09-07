@@ -233,6 +233,30 @@ const QuadTree = struct {
     }
 };
 
+const SimdVec = @Vector(4, f64);
+
+const BhWorkerCtx = struct {
+    qtree: *const QuadTree,
+    x: []const f64,
+    y: []const f64,
+    disp_x: []f64,
+    disp_y: []f64,
+    k2: f64,
+    theta: f64,
+    start: usize,
+    end: usize,
+    seed: u64,
+
+    fn run(self: BhWorkerCtx) void {
+        var local_prng = std.Random.DefaultPrng.init(self.seed);
+        for (self.start..self.end) |i| {
+            const f = self.qtree.computeForce(@intCast(i), self.x[i], self.y[i], self.k2, self.theta, &local_prng);
+            self.disp_x[i] += f[0];
+            self.disp_y[i] += f[1];
+        }
+    }
+};
+
 pub fn layoutSpring(
     allocator: Allocator,
     node_count: usize,
@@ -307,16 +331,120 @@ pub fn layoutSpring(
         // 1. Repulsive forces
         if (opts.barnes_hut) {
             try qtree.build(node_count, x, y, &prng);
-            for (0..node_count) |i| {
-                const f = qtree.computeForce(@intCast(i), x[i], y[i], k2, opts.theta, &prng);
-                disp_x[i] += f[0];
-                disp_y[i] += f[1];
+            const cpu_count = @max(1, std.Thread.getCpuCount() catch 1);
+            if (node_count >= 1024 and cpu_count > 1) {
+                const chunk_size = (node_count + cpu_count - 1) / cpu_count;
+                var threads = try allocator.alloc(std.Thread, cpu_count - 1);
+                defer allocator.free(threads);
+
+                var spawn_count: usize = 0;
+                errdefer {
+                    for (threads[0..spawn_count]) |t| t.join();
+                }
+
+                var start: usize = 0;
+                while (spawn_count < cpu_count - 1 and start + chunk_size < node_count) {
+                    const end = start + chunk_size;
+                    threads[spawn_count] = try std.Thread.spawn(.{}, BhWorkerCtx.run, .{BhWorkerCtx{
+                        .qtree = &qtree,
+                        .x = x,
+                        .y = y,
+                        .disp_x = disp_x,
+                        .disp_y = disp_y,
+                        .k2 = k2,
+                        .theta = opts.theta,
+                        .start = start,
+                        .end = end,
+                        .seed = seed_val +% @as(u64, @intCast(iter * 1000 + spawn_count)),
+                    }});
+                    spawn_count += 1;
+                    start = end;
+                }
+
+                var local_prng = std.Random.DefaultPrng.init(seed_val +% @as(u64, @intCast(iter * 1000 + 999)));
+                for (start..node_count) |i| {
+                    const f = qtree.computeForce(@intCast(i), x[i], y[i], k2, opts.theta, &local_prng);
+                    disp_x[i] += f[0];
+                    disp_y[i] += f[1];
+                }
+
+                for (threads[0..spawn_count]) |t| {
+                    t.join();
+                }
+            } else {
+                for (0..node_count) |i| {
+                    const f = qtree.computeForce(@intCast(i), x[i], y[i], k2, opts.theta, &prng);
+                    disp_x[i] += f[0];
+                    disp_y[i] += f[1];
+                }
             }
         } else {
             for (0..node_count) |u| {
                 const ux = x[u];
                 const uy = y[u];
-                for ((u + 1)..node_count) |v| {
+                var v = u + 1;
+
+                const ux_vec: SimdVec = @splat(ux);
+                const uy_vec: SimdVec = @splat(uy);
+                const k2_vec: SimdVec = @splat(k2);
+                var acc_fx: f64 = 0.0;
+                var acc_fy: f64 = 0.0;
+
+                while (v + 4 <= node_count) : (v += 4) {
+                    const vx_vec: SimdVec = x[v..][0..4].*;
+                    const vy_vec: SimdVec = y[v..][0..4].*;
+                    const dx = ux_vec - vx_vec;
+                    const dy = uy_vec - vy_vec;
+                    const dist_sq = dx * dx + dy * dy;
+
+                    if (@reduce(.Min, dist_sq) > 1.0e-9) {
+                        const dist = @sqrt(dist_sq);
+                        const fr = k2_vec / dist;
+                        const fx = (dx / dist) * fr;
+                        const fy = (dy / dist) * fr;
+
+                        disp_x[v] -= fx[0];
+                        disp_y[v] -= fy[0];
+                        disp_x[v + 1] -= fx[1];
+                        disp_y[v + 1] -= fy[1];
+                        disp_x[v + 2] -= fx[2];
+                        disp_y[v + 2] -= fy[2];
+                        disp_x[v + 3] -= fx[3];
+                        disp_y[v + 3] -= fy[3];
+
+                        acc_fx += @reduce(.Add, fx);
+                        acc_fy += @reduce(.Add, fy);
+                    } else {
+                        for (0..4) |offset| {
+                            const cur_v = v + offset;
+                            var s_dx = ux - x[cur_v];
+                            var s_dy = uy - y[cur_v];
+                            const s_dist_sq = s_dx * s_dx + s_dy * s_dy;
+                            var s_dist: f64 = undefined;
+                            if (s_dist_sq == 0.0) {
+                                const jx = (rand.float(f64) - 0.5) * 0.01;
+                                const jy = (rand.float(f64) - 0.5) * 0.01;
+                                s_dx = jx;
+                                s_dy = jy;
+                                s_dist = @sqrt(jx * jx + jy * jy);
+                            } else {
+                                s_dist = @sqrt(s_dist_sq);
+                            }
+                            const s_fr = k2 / s_dist;
+                            const s_fx = (s_dx / s_dist) * s_fr;
+                            const s_fy = (s_dy / s_dist) * s_fr;
+                            disp_x[cur_v] -= s_fx;
+                            disp_y[cur_v] -= s_fy;
+                            acc_fx += s_fx;
+                            acc_fy += s_fy;
+                        }
+                    }
+                }
+
+                disp_x[u] += acc_fx;
+                disp_y[u] += acc_fy;
+
+                while (v < node_count) : (v += 1) {
                     var dx = ux - x[v];
                     var dy = uy - y[v];
                     const dist_sq = dx * dx + dy * dy;

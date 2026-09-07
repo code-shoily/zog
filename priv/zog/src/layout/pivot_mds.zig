@@ -231,17 +231,55 @@ pub fn layoutPivotMds(
     const m_matrix = try allocator.alloc(f64, k * k);
     defer allocator.free(m_matrix);
 
-    for (0..k) |r| {
-        const r_off = r * node_count;
-        for (r..k) |c| {
-            const c_off = c * node_count;
-            var dot: f64 = 0.0;
-            for (0..node_count) |v| {
-                dot += b_matrix[r_off + v] * b_matrix[c_off + v];
-            }
-            m_matrix[r * k + c] = dot;
-            m_matrix[c * k + r] = dot;
+    const cpu_count = @max(1, std.Thread.getCpuCount() catch 1);
+    if (k >= 8 and node_count >= 1024 and cpu_count > 1) {
+        const chunk_size = (k + cpu_count - 1) / cpu_count;
+        var threads = try allocator.alloc(std.Thread, cpu_count - 1);
+        defer allocator.free(threads);
+
+        var spawn_count: usize = 0;
+        errdefer {
+            for (threads[0..spawn_count]) |t| t.join();
         }
+
+        var start_r: usize = 0;
+        while (spawn_count < cpu_count - 1 and start_r + chunk_size < k) {
+            const end_r = start_r + chunk_size;
+            threads[spawn_count] = try std.Thread.spawn(.{}, CovWorkerCtx.run, .{CovWorkerCtx{
+                .k = k,
+                .node_count = node_count,
+                .b_matrix = b_matrix,
+                .m_matrix = m_matrix,
+                .start_r = start_r,
+                .end_r = end_r,
+            }});
+            spawn_count += 1;
+            start_r = end_r;
+        }
+
+        const main_worker = CovWorkerCtx{
+            .k = k,
+            .node_count = node_count,
+            .b_matrix = b_matrix,
+            .m_matrix = m_matrix,
+            .start_r = start_r,
+            .end_r = k,
+        };
+        main_worker.run();
+
+        for (threads[0..spawn_count]) |t| {
+            t.join();
+        }
+    } else {
+        const single_worker = CovWorkerCtx{
+            .k = k,
+            .node_count = node_count,
+            .b_matrix = b_matrix,
+            .m_matrix = m_matrix,
+            .start_r = 0,
+            .end_r = k,
+        };
+        single_worker.run();
     }
 
     // Power Iteration for top 2 eigenvectors of M
@@ -343,14 +381,51 @@ pub fn layoutPivotMds(
     return .{ .x = x, .y = y };
 }
 
+const SimdVec = @Vector(4, f64);
+
+fn dotProductSimd(a: []const f64, b: []const f64) f64 {
+    const len = a.len;
+    var sum_vec: SimdVec = @splat(0.0);
+    var i: usize = 0;
+
+    while (i + 4 <= len) : (i += 4) {
+        const va: SimdVec = a[i..][0..4].*;
+        const vb: SimdVec = b[i..][0..4].*;
+        sum_vec += va * vb;
+    }
+
+    var total: f64 = @reduce(.Add, sum_vec);
+    while (i < len) : (i += 1) {
+        total += a[i] * b[i];
+    }
+    return total;
+}
+
+const CovWorkerCtx = struct {
+    k: usize,
+    node_count: usize,
+    b_matrix: []const f64,
+    m_matrix: []f64,
+    start_r: usize,
+    end_r: usize,
+
+    fn run(self: CovWorkerCtx) void {
+        for (self.start_r..self.end_r) |r| {
+            const r_slice = self.b_matrix[r * self.node_count .. (r + 1) * self.node_count];
+            for (r..self.k) |c| {
+                const c_slice = self.b_matrix[c * self.node_count .. (c + 1) * self.node_count];
+                const dot = dotProductSimd(r_slice, c_slice);
+                self.m_matrix[r * self.k + c] = dot;
+                self.m_matrix[c * self.k + r] = dot;
+            }
+        }
+    }
+};
+
 fn matVec(k: usize, m: []const f64, vec_in: []const f64, vec_out: []f64) void {
     for (0..k) |r| {
-        const r_off = r * k;
-        var sum: f64 = 0.0;
-        for (0..k) |c| {
-            sum += m[r_off + c] * vec_in[c];
-        }
-        vec_out[r] = sum;
+        const row = m[r * k .. (r + 1) * k];
+        vec_out[r] = dotProductSimd(row, vec_in);
     }
 }
 
@@ -367,12 +442,8 @@ fn normalize(vec: []f64) void {
 fn rayleigh(k: usize, m: []const f64, u: []const f64) f64 {
     var num: f64 = 0.0;
     for (0..k) |r| {
-        const r_off = r * k;
-        var row_dot: f64 = 0.0;
-        for (0..k) |c| {
-            row_dot += m[r_off + c] * u[c];
-        }
-        num += u[r] * row_dot;
+        const row = m[r * k .. (r + 1) * k];
+        num += u[r] * dotProductSimd(row, u);
     }
     return num;
 }
