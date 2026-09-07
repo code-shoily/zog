@@ -84,6 +84,7 @@ defmodule Zog.ResourceGraph do
         nif_analyze_connectivity: [concurrency: :dirty_cpu],
         nif_strongly_connected_components: [concurrency: :dirty_cpu],
         nif_weakly_connected_components: [concurrency: :dirty_cpu],
+        nif_bow_tie_decomposition: [concurrency: :dirty_cpu],
         nif_kruskal: [concurrency: :dirty_cpu],
         nif_bellman_ford: [concurrency: :dirty_cpu],
         nif_astar: [concurrency: :dirty_cpu],
@@ -1041,6 +1042,25 @@ defmodule Zog.ResourceGraph do
             .soa => |g| try zog.connectivity.weaklyConnectedComponents(allocator, g),
             .hash_graph => |g| try zog.connectivity.weaklyConnectedComponents(allocator, g),
         };
+    }
+
+    pub fn nif_bow_tie_decomposition(res: GraphRes) !beam.term {
+        const allocator = beam.allocator;
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.connectivity.bowTieDecomposition(allocator, g),
+            .hash_graph => |g| try zog.connectivity.bowTieDecomposition(allocator, g),
+        };
+        defer allocator.free(result.tags);
+
+        return beam.make(.{
+            .scc_count = result.scc_count,
+            .in_count = result.in_count,
+            .out_count = result.out_count,
+            .tubes_count = result.tubes_count,
+            .tendrils_count = result.tendrils_count,
+            .disconnected_count = result.disconnected_count,
+            .tags = result.tags,
+        }, .{});
     }
 
     pub fn nif_is_bipartite(res: GraphRes) !beam.term {
@@ -3350,6 +3370,31 @@ defmodule Zog.ResourceGraph do
     end
 
     @doc """
+    Computes the Bow-Tie decomposition of a directed `ResourceGraph` (Broder et al., 2000).
+
+    Returns a map containing:
+      * `:scc_count` - Nodes in the giant Strongly Connected Component (Core)
+      * `:in_count` - Nodes that can reach SCC but cannot be reached from it
+      * `:out_count` - Nodes reachable from SCC but cannot reach back
+      * `:tubes_count` - Nodes on directed paths from IN to OUT bypassing SCC
+      * `:tendrils_count` - Tendril nodes hanging off IN or feeding into OUT
+      * `:disconnected_count` - Isolated nodes / other components
+      * `:tags` - Binary of tags per node (`0`: disconnected, `1`: scc, `2`: in, `3`: out, `4`: tubes, `5`: tendrils)
+    """
+    @spec bow_tie_decomposition(t()) :: %{
+            scc_count: non_neg_integer(),
+            in_count: non_neg_integer(),
+            out_count: non_neg_integer(),
+            tubes_count: non_neg_integer(),
+            tendrils_count: non_neg_integer(),
+            disconnected_count: non_neg_integer(),
+            tags: binary()
+          }
+    def bow_tie_decomposition(%{resource: res}) do
+      nif_bow_tie_decomposition(res)
+    end
+
+    @doc """
     Checks whether a `ResourceGraph` is bipartite (2-colourable) natively.
 
     Returns `true` when the graph is bipartite, `false` otherwise.
@@ -4145,6 +4190,7 @@ defmodule Zog.ResourceGraph do
           :core_numbers,
           :strongly_connected_components,
           :weakly_connected_components,
+          :bow_tie_decomposition,
           :analyze,
           :topological_sort,
           :acyclic?,

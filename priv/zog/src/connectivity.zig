@@ -1102,3 +1102,289 @@ test "hungarian: simple weighted bipartite graph" {
         .not_bipartite => return error.TestUnexpectedResult,
     }
 }
+
+pub const BowTieTag = enum(u8) {
+    disconnected = 0,
+    scc = 1,
+    in = 2,
+    out = 3,
+    tubes = 4,
+    tendrils = 5,
+};
+
+pub const BowTieResult = struct {
+    scc_count: usize,
+    in_count: usize,
+    out_count: usize,
+    tubes_count: usize,
+    tendrils_count: usize,
+    disconnected_count: usize,
+    tags: []u8,
+};
+
+/// Computes the Bow-Tie decomposition of a directed graph (Broder et al., 2000).
+/// Decomposes the graph into:
+/// - SCC: Giant strongly connected core
+/// - IN: Nodes that can reach SCC but cannot be reached from it
+/// - OUT: Nodes reachable from SCC but cannot reach back
+/// - TUBES: Paths from IN to OUT bypassing SCC
+/// - TENDRILS: Nodes reachable from IN (not reaching OUT/SCC) or reaching OUT (not from IN/SCC)
+/// - DISCONNECTED: Completely disconnected components
+pub fn bowTieDecomposition(allocator: std.mem.Allocator, graph: anytype) !BowTieResult {
+    const V = graph.nodeCapacity();
+    const tags = try allocator.alloc(u8, V);
+    errdefer allocator.free(tags);
+    @memset(tags, @intFromEnum(BowTieTag.disconnected));
+
+    if (V == 0) {
+        return .{
+            .scc_count = 0,
+            .in_count = 0,
+            .out_count = 0,
+            .tubes_count = 0,
+            .tendrils_count = 0,
+            .disconnected_count = 0,
+            .tags = tags,
+        };
+    }
+
+    // 1. Find strongly connected components
+    const sccs = try stronglyConnectedComponents(allocator, graph);
+    defer allocator.free(sccs);
+
+    // Identify largest SCC
+    var max_comp_id: usize = 0;
+    for (sccs) |c| {
+        if (c > max_comp_id) max_comp_id = c;
+    }
+
+    const comp_counts = try allocator.alloc(usize, max_comp_id + 1);
+    defer allocator.free(comp_counts);
+    @memset(comp_counts, 0);
+    for (sccs) |c| {
+        comp_counts[c] += 1;
+    }
+
+    var largest_scc_id: usize = 0;
+    var largest_scc_size: usize = 0;
+    for (comp_counts, 0..) |count, c| {
+        if (count > largest_scc_size) {
+            largest_scc_size = count;
+            largest_scc_id = c;
+        }
+    }
+
+    if (largest_scc_size == 0) {
+        return .{
+            .scc_count = 0,
+            .in_count = 0,
+            .out_count = 0,
+            .tubes_count = 0,
+            .tendrils_count = 0,
+            .disconnected_count = V,
+            .tags = tags,
+        };
+    }
+
+    // Tag SCC nodes
+    for (sccs, 0..) |c, u| {
+        if (c == largest_scc_id) {
+            tags[u] = @intFromEnum(BowTieTag.scc);
+        }
+    }
+
+    // Transpose graph for backward BFS
+    var transpose_graph = try graph.transpose(allocator);
+    defer transpose_graph.deinit();
+
+    var queue = try std.ArrayList(u32).initCapacity(allocator, V);
+    defer queue.deinit(allocator);
+
+    // 2. Forward BFS from SCC to find OUT
+    var head: usize = 0;
+    for (0..V) |u| {
+        if (tags[u] == @intFromEnum(BowTieTag.scc)) {
+            try queue.append(allocator, @intCast(u));
+        }
+    }
+
+    while (head < queue.items.len) {
+        const u = queue.items[head];
+        head += 1;
+
+        var succ_it = graph.successors(u);
+        while (succ_it.next()) |edge| {
+            const v = edge.to;
+            if (tags[v] == @intFromEnum(BowTieTag.disconnected)) {
+                tags[v] = @intFromEnum(BowTieTag.out);
+                try queue.append(allocator, v);
+            }
+        }
+    }
+
+    // 3. Backward BFS from SCC to find IN
+    queue.clearRetainingCapacity();
+    head = 0;
+    for (0..V) |u| {
+        if (tags[u] == @intFromEnum(BowTieTag.scc)) {
+            try queue.append(allocator, @intCast(u));
+        }
+    }
+
+    while (head < queue.items.len) {
+        const u = queue.items[head];
+        head += 1;
+
+        var succ_it = transpose_graph.successors(u);
+        while (succ_it.next()) |edge| {
+            const v = edge.to;
+            if (tags[v] == @intFromEnum(BowTieTag.disconnected)) {
+                tags[v] = @intFromEnum(BowTieTag.in);
+                try queue.append(allocator, v);
+            }
+        }
+    }
+
+    // 4. Reachable from IN (outside SCC, IN, OUT)
+    var reachable_from_in = try std.DynamicBitSet.initEmpty(allocator, V);
+    defer reachable_from_in.deinit();
+
+    queue.clearRetainingCapacity();
+    head = 0;
+    for (0..V) |u| {
+        if (tags[u] == @intFromEnum(BowTieTag.in)) {
+            try queue.append(allocator, @intCast(u));
+        }
+    }
+
+    while (head < queue.items.len) {
+        const u = queue.items[head];
+        head += 1;
+
+        var succ_it = graph.successors(u);
+        while (succ_it.next()) |edge| {
+            const v = edge.to;
+            if (tags[v] == @intFromEnum(BowTieTag.disconnected) and !reachable_from_in.isSet(v)) {
+                reachable_from_in.set(v);
+                try queue.append(allocator, v);
+            }
+        }
+    }
+
+    // 5. Can reach OUT (outside SCC, IN, OUT) via backward BFS on transpose_graph
+    var can_reach_out = try std.DynamicBitSet.initEmpty(allocator, V);
+    defer can_reach_out.deinit();
+
+    queue.clearRetainingCapacity();
+    head = 0;
+    for (0..V) |u| {
+        if (tags[u] == @intFromEnum(BowTieTag.out)) {
+            try queue.append(allocator, @intCast(u));
+        }
+    }
+
+    while (head < queue.items.len) {
+        const u = queue.items[head];
+        head += 1;
+
+        var succ_it = transpose_graph.successors(u);
+        while (succ_it.next()) |edge| {
+            const v = edge.to;
+            if (tags[v] == @intFromEnum(BowTieTag.disconnected) and !can_reach_out.isSet(v)) {
+                can_reach_out.set(v);
+                try queue.append(allocator, v);
+            }
+        }
+    }
+
+    // 6. Final Classification
+    var scc_count: usize = 0;
+    var in_count: usize = 0;
+    var out_count: usize = 0;
+    var tubes_count: usize = 0;
+    var tendrils_count: usize = 0;
+    var disconnected_count: usize = 0;
+
+    for (0..V) |u| {
+        const tag = tags[u];
+        if (tag == @intFromEnum(BowTieTag.scc)) {
+            scc_count += 1;
+        } else if (tag == @intFromEnum(BowTieTag.in)) {
+            in_count += 1;
+        } else if (tag == @intFromEnum(BowTieTag.out)) {
+            out_count += 1;
+        } else {
+            const from_in = reachable_from_in.isSet(u);
+            const to_out = can_reach_out.isSet(u);
+            if (from_in and to_out) {
+                tags[u] = @intFromEnum(BowTieTag.tubes);
+                tubes_count += 1;
+            } else if (from_in or to_out) {
+                tags[u] = @intFromEnum(BowTieTag.tendrils);
+                tendrils_count += 1;
+            } else {
+                disconnected_count += 1;
+            }
+        }
+    }
+
+    return .{
+        .scc_count = scc_count,
+        .in_count = in_count,
+        .out_count = out_count,
+        .tubes_count = tubes_count,
+        .tendrils_count = tendrils_count,
+        .disconnected_count = disconnected_count,
+        .tags = tags,
+    };
+}
+
+test "bowTieDecomposition: standard textbook model" {
+    const allocator = std.testing.allocator;
+    const AG = @import("models/array_graph.zig").ArrayGraph;
+
+    var g = AG(void, f64).init(allocator);
+    defer g.deinit();
+
+    // 0, 1, 2 = SCC cycle
+    const n0 = try g.addNode({});
+    const n1 = try g.addNode({});
+    const n2 = try g.addNode({});
+    _ = try g.addEdge(n0, n1, 1.0);
+    _ = try g.addEdge(n1, n2, 1.0);
+    _ = try g.addEdge(n2, n0, 1.0);
+
+    // 3 = IN (3 -> 0)
+    const n3 = try g.addNode({});
+    _ = try g.addEdge(n3, n0, 1.0);
+
+    // 4 = OUT (2 -> 4)
+    const n4 = try g.addNode({});
+    _ = try g.addEdge(n2, n4, 1.0);
+
+    // 5 = TUBES (3 -> 5 -> 4)
+    const n5 = try g.addNode({});
+    _ = try g.addEdge(n3, n5, 1.0);
+    _ = try g.addEdge(n5, n4, 1.0);
+
+    // 6 = TENDRIL from IN (3 -> 6)
+    const n6 = try g.addNode({});
+    _ = try g.addEdge(n3, n6, 1.0);
+
+    // 7 = TENDRIL into OUT (7 -> 4)
+    const n7 = try g.addNode({});
+    _ = try g.addEdge(n7, n4, 1.0);
+
+    // 8 = DISCONNECTED
+    _ = try g.addNode({});
+
+    const res = try bowTieDecomposition(allocator, g);
+    defer allocator.free(res.tags);
+
+    try std.testing.expectEqual(@as(usize, 3), res.scc_count);
+    try std.testing.expectEqual(@as(usize, 1), res.in_count);
+    try std.testing.expectEqual(@as(usize, 1), res.out_count);
+    try std.testing.expectEqual(@as(usize, 1), res.tubes_count);
+    try std.testing.expectEqual(@as(usize, 2), res.tendrils_count);
+    try std.testing.expectEqual(@as(usize, 1), res.disconnected_count);
+}

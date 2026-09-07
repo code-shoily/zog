@@ -374,4 +374,41 @@ defmodule Zog.ConnectivityTest do
       ResourceGraph.destroy(res_graph)
     end
   end
+
+  describe "bow_tie_decomposition/1 (ResourceGraph)" do
+    test "standard textbook bow-tie graph" do
+      builder =
+        Zog.directed()
+        # 0, 1, 2 = SCC cycle
+        |> Zog.add_edge("0", "1", 1.0)
+        |> Zog.add_edge("1", "2", 1.0)
+        |> Zog.add_edge("2", "0", 1.0)
+        # 3 = IN (3 -> 0)
+        |> Zog.add_edge("3", "0", 1.0)
+        # 4 = OUT (2 -> 4)
+        |> Zog.add_edge("2", "4", 1.0)
+        # 5 = TUBES (3 -> 5 -> 4)
+        |> Zog.add_edge("3", "5", 1.0)
+        |> Zog.add_edge("5", "4", 1.0)
+        # 6 = TENDRIL from IN (3 -> 6)
+        |> Zog.add_edge("3", "6", 1.0)
+        # 7 = TENDRIL into OUT (7 -> 4)
+        |> Zog.add_edge("7", "4", 1.0)
+        # 8 = DISCONNECTED
+        |> Zog.add_node("8")
+
+      res_graph = ResourceGraph.new(builder)
+      res = ResourceGraph.bow_tie_decomposition(res_graph)
+
+      assert res.scc_count == 3
+      assert res.in_count == 1
+      assert res.out_count == 1
+      assert res.tubes_count == 1
+      assert res.tendrils_count == 2
+      assert res.disconnected_count == 1
+      assert byte_size(res.tags) == 9
+
+      ResourceGraph.destroy(res_graph)
+    end
+  end
 end
