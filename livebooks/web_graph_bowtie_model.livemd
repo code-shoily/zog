@@ -70,12 +70,33 @@ unless File.exists?(txt_path) do
   IO.puts("Decompression complete!")
 end
 
+remapped_path = "web-Stanford.zero_based.txt"
+
+unless File.exists?(remapped_path) do
+  IO.puts("Remapping one-based SNAP page IDs to dense zero-based native IDs...")
+
+  txt_path
+  |> File.stream!([], :line)
+  |> Stream.reject(fn line -> String.starts_with?(String.trim_leading(line), "#") end)
+  |> Stream.map(fn line ->
+    case String.split(line) do
+      [from, to | _] -> "#{String.to_integer(from) - 1} #{String.to_integer(to) - 1}\n"
+      _ -> ""
+    end
+  end)
+  |> Stream.into(File.stream!(remapped_path))
+  |> Stream.run()
+
+  IO.puts("Remapping complete!")
+end
+
 Kino.Markdown.new("""
-> **Dataset Ready**: `#{txt_path}` (~32 MB uncompressed directed edge list).
+> **Dataset Ready**: `#{txt_path}` (~32 MB uncompressed directed edge list).  
+> **Native Ingestion File**: `#{remapped_path}` with dense zero-based IDs.
 """)
 ```
 
-Now we ingest the directed edge list into Zog's native `ArrayGraph` (SoA layout):
+Now we ingest the remapped directed edge list into Zog's native `ArrayGraph` (SoA layout):
 
 ```elixir
 alias Zog.IO, as: ZogIO
@@ -85,7 +106,7 @@ beam_mem_before = :erlang.memory(:total)
 
 {time_load_micro, graph} =
   :timer.tc(fn ->
-    ZogIO.load(txt_path, directed: true, integer_labels: true)
+    ZogIO.load(remapped_path, directed: true, integer_labels: true)
   end)
 
 beam_mem_after = :erlang.memory(:total)
@@ -126,30 +147,34 @@ largest_wcc = wcc_freq |> Map.values() |> Enum.max()
 scc_ms = time_scc_micro / 1000
 wcc_ms = time_wcc_micro / 1000
 
+exact_status = fn actual, expected ->
+  if actual == expected, do: "✓ Exact Match", else: "⚠ Expected #{expected}"
+end
+
 verification_table = [
   %{
     "Metric" => "Nodes (Pages)",
     "SNAP Published" => "281,903",
-    "Zog Computed" => "281,903 (IDs 1..281,903)",
-    "Status" => "✓ Exact Match"
+    "Zog Computed" => "#{node_count}",
+    "Status" => exact_status.(node_count, 281_903)
   },
   %{
     "Metric" => "Edges (Hyperlinks)",
     "SNAP Published" => "2,312,497",
     "Zog Computed" => "#{edge_count}",
-    "Status" => "✓ Exact Match"
+    "Status" => exact_status.(edge_count, 2_312_497)
   },
   %{
     "Metric" => "Nodes in Largest WCC",
     "SNAP Published" => "255,265 (90.6%)",
-    "Zog Computed" => "#{largest_wcc} (#{Float.round(largest_wcc / (node_count - 1) * 100, 1)}%)",
-    "Status" => "✓ Exact Match"
+    "Zog Computed" => "#{largest_wcc} (#{Float.round(largest_wcc / node_count * 100, 1)}%)",
+    "Status" => exact_status.(largest_wcc, 255_265)
   },
   %{
     "Metric" => "Nodes in Largest SCC (Core)",
     "SNAP Published" => "150,532 (53.4%)",
-    "Zog Computed" => "#{largest_scc} (#{Float.round(largest_scc / (node_count - 1) * 100, 1)}%)",
-    "Status" => "✓ Exact Match"
+    "Zog Computed" => "#{largest_scc} (#{Float.round(largest_scc / node_count * 100, 1)}%)",
+    "Status" => exact_status.(largest_scc, 150_532)
   }
 ]
 
@@ -180,7 +205,7 @@ This performs graph transposition and multi-source forward/backward BFS passes i
   end)
 
 bt_ms = time_bt_micro / 1000
-total_pages = node_count - 1
+total_pages = node_count
 
 pct = fn count ->
   "#{Float.round(count / total_pages * 100, 2)}%"
@@ -214,8 +239,8 @@ bowtie_rows = [
   %{
     "Component" => "DISCONNECTED",
     "Role in Web" => "Isolated departmental pages & disconnected islands",
-    "Page Count" => bowtie.disconnected_count - 1,
-    "% of Web Graph" => pct.(bowtie.disconnected_count - 1)
+    "Page Count" => bowtie.disconnected_count,
+    "% of Web Graph" => pct.(bowtie.disconnected_count)
   },
   %{
     "Component" => "TUBES",
@@ -248,7 +273,8 @@ Kino.Layout.grid([page_input], columns: 1)
 ```
 
 ```elixir
-page_id = Kino.Input.read(page_input)
+page_value = Kino.Input.read(page_input)
+whole_number? = fn value -> is_integer(value) or (is_float(value) and value == trunc(value)) end
 
 tag_name = fn
   0 -> {"DISCONNECTED", "Isolated or disconnected from main web components"}
@@ -260,21 +286,29 @@ tag_name = fn
   _ -> {"UNKNOWN", "Invalid page"}
 end
 
-if page_id >= 0 and page_id < byte_size(bowtie.tags) do
-  <<tag::8>> = binary_part(bowtie.tags, page_id, 1)
-  {component_label, explanation} = tag_name.(tag)
+cond do
+  not whole_number?.(page_value) ->
+    Kino.Markdown.new("⚠️ Please enter a whole-number page ID.")
 
-  degrees = ResourceGraph.node_degrees(graph)
-  out_deg = Enum.at(degrees, page_id, 0)
+  page_value < 1 or page_value > node_count ->
+    Kino.Markdown.new("⚠️ Please enter a valid page ID between `1` and `#{node_count}`.")
 
-  Kino.Markdown.new("""
-  ### 📄 Page `#{page_id}` Diagnostics
-  - **Bow-Tie Classification**: `#{component_label}`
-  - **Out-Degree (Hyperlinks Out)**: `#{out_deg}`
-  - **Structural Context**: #{explanation}
-  """)
-else
-  Kino.Markdown.new("⚠️ Please enter a valid page ID between `1` and `#{node_count - 1}`.")
+  true ->
+    page_id = trunc(page_value)
+    native_id = page_id - 1
+    <<tag::8>> = binary_part(bowtie.tags, native_id, 1)
+    {component_label, explanation} = tag_name.(tag)
+
+    degrees = ResourceGraph.node_degrees(graph)
+    out_deg = Enum.at(degrees, native_id, 0)
+
+    Kino.Markdown.new("""
+    ### 📄 Page `#{page_id}` Diagnostics
+    - **Native Node ID**: `#{native_id}`
+    - **Bow-Tie Classification**: `#{component_label}`
+    - **Out-Degree (Hyperlinks Out)**: `#{out_deg}`
+    - **Structural Context**: #{explanation}
+    """)
 end
 ```
 
@@ -299,13 +333,14 @@ top_pages =
   |> Enum.sort_by(&elem(&1, 0), :desc)
   |> Enum.take(10)
   |> Enum.with_index(1)
-  |> Enum.map(fn {{score, id}, rank} ->
-    <<tag::8>> = binary_part(bowtie.tags, id, 1)
+  |> Enum.map(fn {{score, native_id}, rank} ->
+    <<tag::8>> = binary_part(bowtie.tags, native_id, 1)
     {comp, _} = tag_name.(tag)
 
     %{
       "Rank" => rank,
-      "Page ID" => id,
+      "Page ID" => native_id + 1,
+      "Native Node ID" => native_id,
       "PageRank Score" => Float.round(score, 6),
       "Bow-Tie Component" => comp
     }

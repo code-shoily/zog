@@ -100,6 +100,23 @@ defmodule Zog.ResourceGraphTest do
       ResourceGraph.destroy(graph)
     end
 
+    test "accepts max_iter as backwards-compatible alias" do
+      builder =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 1.0)
+        |> Zog.add_edge("C", "A", 1.0)
+
+      graph = ResourceGraph.new(builder)
+
+      try do
+        assert ResourceGraph.pagerank(graph, max_iter: 1) ==
+                 ResourceGraph.pagerank(graph, max_iterations: 1)
+      after
+        ResourceGraph.destroy(graph)
+      end
+    end
+
     if Code.ensure_loaded?(Yog) do
       test "same results as pure Elixir" do
         builder =

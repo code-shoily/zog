@@ -5,6 +5,11 @@ defmodule Zog.Layout.MultiLevel do
   Multi-level graph drawing (Walshaw 2003, Hu 2005) combines global macro-structure layout
   with fast local force-directed refinement.
 
+  Direct file-loaded `Zog.ResourceGraph`s keep their topology in native memory and attach
+  only a lightweight Elixir-side builder. When that builder has no retained edge list,
+  `layout/2` falls back to native Barnes-Hut spring layout rather than coarsening from
+  an empty topology.
+
   ## Algorithm Pipeline
 
   1. **Coarsening**: Partitions the graph into clusters/communities using native Louvain
@@ -84,6 +89,9 @@ defmodule Zog.Layout.MultiLevel do
       node_count < min_coarsen_nodes ->
         direct_spring_layout(graph, opts)
 
+      native_resource_with_lightweight_builder?(graph, builder) ->
+        direct_spring_layout(graph, opts)
+
       true ->
         do_multi_level(
           graph,
@@ -116,6 +124,12 @@ defmodule Zog.Layout.MultiLevel do
         raise ArgumentError, "Unsupported graph type for MultiLevel layout: #{inspect(graph)}"
     end
   end
+
+  defp native_resource_with_lightweight_builder?(%{resource: _}, %SoA{edges: [], edge_count: 0}) do
+    true
+  end
+
+  defp native_resource_with_lightweight_builder?(_graph, _builder), do: false
 
   defp format_single_node(builder, cx, cy, raw, binary) do
     cond do

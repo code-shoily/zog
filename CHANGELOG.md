@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `Zog.Flow.max_flow/4`, `Zog.Flow.s_t_min_cut/4`, `Zog.ResourceGraph.max_flow/4`, and `Zog.ResourceGraph.s_t_min_cut/4` now accept the documented `algorithm: :dinic | :push_relabel | :edmonds_karp` option style in addition to the positional algorithm atom.
+- `pagerank/2` and `label_propagation/2` accept `max_iter:` as a backwards-compatible alias for `max_iterations:`.
+- Documented that direct file-loaded `ResourceGraph`s keep topology in native memory and use a lightweight Elixir-side builder for label mapping.
+- Updated Livebook verification tables to compute pass/fail statuses instead of rendering unconditional “Exact Match” labels.
+- Remapped the Stanford web graph Livebook to dense zero-based native IDs while preserving one-based page IDs in the UI.
+- Expanded the main `Zog` and `Zog.Layout` module documentation and added layout modules to ExDoc grouping.
+
+### Fixed
+
+- `Zog.ResourceGraph.s_t_min_cut/4` now returns cut edges for directly loaded native graphs instead of relying on the lightweight Elixir-side builder edge list.
+- `Zog.Layout.MultiLevel.layout/2` now falls back to native spring layout for direct file-loaded resources whose lightweight builders do not retain edges.
+
 ## [0.5.0] - 2026-09-07
 
 ### Added

@@ -67,7 +67,7 @@ defmodule Zog.MixProject do
     [
       name: "zog",
       files:
-        ~w(lib priv/zog/src priv/zog/build.zig priv/zog/build.zig.zon .formatter.exs mix.exs README.md LICENSE CHANGELOG.md ALGORITHMS.md ROADMAP.md),
+        ~w(lib priv/zog/src priv/zog/build.zig priv/zog/build.zig.zon .formatter.exs mix.exs README.md LICENSE CHANGELOG.md ALGORITHMS.md ROADMAP.md LIVEBOOKS.md),
       licenses: ["Apache-2.0"],
       links: %{
         "GitHub" => @source_url,
@@ -86,13 +86,26 @@ defmodule Zog.MixProject do
         "README.md",
         "CHANGELOG.md",
         "ALGORITHMS.md",
-        "ROADMAP.md"
+        "ROADMAP.md",
+        "LIVEBOOKS.md"
       ],
       groups_for_modules: [
         "Core & Entrypoints": [
           Zog,
           Zog.SoA,
           Zog.Transform
+        ],
+        Layouts: [
+          Zog.Layout,
+          Zog.Layout.Circular,
+          Zog.Layout.Grid,
+          Zog.Layout.MultiLevel,
+          Zog.Layout.Multipartite,
+          Zog.Layout.PivotMDS,
+          Zog.Layout.Random,
+          Zog.Layout.Shell,
+          Zog.Layout.Spring,
+          Zog.Layout.Tutte
         ],
         "Native Resource": [
           Zog.ResourceGraph

@@ -225,6 +225,40 @@ defmodule Zog.FlowTest do
     assert MapSet.new(res_res.sink_side) == MapSet.new(zog_res.sink_side)
   end
 
+  test "max_flow/4 accepts documented algorithm option", %{builder: builder} do
+    flow_res = Flow.max_flow(builder, "s", "t", algorithm: :dinic)
+    assert flow_res.max_flow == 23.0
+
+    res_graph = ResourceGraph.new(builder)
+
+    try do
+      resource_res = ResourceGraph.max_flow(res_graph, "s", "t", algorithm: :dinic)
+      assert resource_res.max_flow == 23.0
+      assert Enum.sum(Enum.map(resource_res.cut_edges, fn {_u, _v, w} -> w end)) == 23.0
+    after
+      ResourceGraph.destroy(res_graph)
+    end
+  end
+
+  test "s_t_min_cut/4 returns cut edges for directly loaded ResourceGraphs" do
+    temp_edge_list =
+      Path.join(System.tmp_dir!(), "flow_cut_edges_#{System.unique_integer([:positive])}.txt")
+
+    File.write!(temp_edge_list, "s a 3\na t 3\ns b 2\nb t 2\n")
+
+    graph = ResourceGraph.read_edgelist(temp_edge_list)
+
+    try do
+      cut = ResourceGraph.s_t_min_cut(graph, "s", "t", algorithm: :dinic)
+
+      assert cut.cut_value == 5.0
+      assert MapSet.new(cut.cut_edges) == MapSet.new([{"s", "a", 3.0}, {"s", "b", 2.0}])
+    after
+      ResourceGraph.destroy(graph)
+      File.rm!(temp_edge_list)
+    end
+  end
+
   test "s_t_min_cut/4 on classic CLRS network", %{builder: builder} do
     # Zog.Flow.s_t_min_cut
     cut_res = Flow.s_t_min_cut(builder, "s", "t", :dinic)

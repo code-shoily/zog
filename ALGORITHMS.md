@@ -76,6 +76,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Tarjan's Bridges** | `Yog.Connectivity.Analysis` | Bridge edges | ✅ **Implemented** | Native Zig via `Zog.Connectivity.analyze/1`. |
 | **Tarjan's Articulation** | `Yog.Connectivity.Analysis` | Articulation points | ✅ **Implemented** | Native Zig via `Zog.Connectivity.analyze/1`. |
 | **K-Core** | `Yog.Connectivity.KCore` | Core decomposition | ✅ **Implemented** | Native Zig via `Zog.Connectivity.core_numbers/1` and `Zog.Connectivity.detect/2`. |
+| **Bow-Tie Decomposition** | *N/A (Zog native)* | Web-scale macro-decomposition into SCC / IN / OUT / tubes / tendrils / disconnected regions | ✅ **Implemented** | Native Zig via `Zog.ResourceGraph.bow_tie_decomposition/1`. |
 | **Reachability Exact** | `Yog.Connectivity.Reachability` | Ancestor/descendant counting | ❌ **Missing** | *Deferred* — low priority. |
 | **Reachability HLL** | `Yog.Connectivity.Reachability` | HyperLogLog reachability estimation | ❌ **Missing** | *Won't Have* — unneeded, HLL estimation is less critical given native memory limits. |
 
@@ -183,7 +184,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Graph Coloring** | `Yog.Property.Coloring` | Greedy and exact coloring | ✅ **Implemented** | Native Zig via `Zog.Property.coloring_dsatur/1` and `Zog.Property.coloring_exact/2`. |
 | **Tree Decomposition** | `Yog.Property.TreeDecomposition` | Validity check/construction | ❌ **Missing** | *Won't Have* — outside core project scope. |
 | **Isomorphism** | `Yog.Property` | VF2 isomorphism & WL hash | ✅ **Implemented** | Native Zig via `Zog.Property.isomorphic?/2` (VF2 exact), `Zog.Property.find_isomorphism/2`, and `Zog.ResourceGraph.isomorphic?/2`. |
-| **Graph Hash** | `Yog.Property` | Structural fingerprint | ✅ **Implemented** | Native Zig via `Zog.Property.graph_hash/2` and `Zog.ResourceGraph.graph_hash/2` (Weisfeiler-Leman). |
+| **Graph Hash** | `Yog.Property` | Structural fingerprint | ✅ **Implemented** | Native Zig via `Zog.Property.hash/2` and `Zog.ResourceGraph.hash/2` (Weisfeiler-Leman). |
 
 ---
 
@@ -222,7 +223,7 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Power Graph** | `Yog.Operation` | k-th power | ❌ **Missing** | *Deferred* — low priority. |
 | **Line Graph** | `Yog.Operation` | Edge-to-vertex dual | ❌ **Missing** | *Deferred* — low priority. |
 | **Transpose** | `Yog.Operation` | Reverse all edges | ❌ **Missing** | *Deliberately Omitted* — easily done in Elixir/SoA. |
-| **Isomorphism** | `Yog.Operation` | Graph equality / isomorphism | ✅ **Implemented** | Native Zig via `Zog.Property.isomorphic?/2` (VF2) and `Zog.Property.graph_hash/2` (Weisfeiler-Leman). |
+| **Isomorphism** | `Yog.Operation` | Graph equality / isomorphism | ✅ **Implemented** | Native Zig via `Zog.Property.isomorphic?/2` (VF2) and `Zog.Property.hash/2` (Weisfeiler-Leman). |
 | **Subgraph** | `Yog.Operation` | Induced subgraph | ✅ **Implemented** | Same as `Zog.Transform.subgraph/2`. |
 | **Subgraph Check** | `Yog.Operation` | Subgraph relationship | ❌ **Missing** | *Deferred* — low priority. |
 | **Graph Composition** | `Yog.Operation` | Relational graph composition | ❌ **Missing** | *Won't Have* — outside project scope. |
@@ -238,18 +239,18 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 
 ## 14. Multigraph
 
-*Note: Zog currently only supports simple directed or undirected graphs. Multigraphs are planned for the v0.5.0 release.*
+*Note: Zog currently supports simple directed or undirected graphs in the native core. Multigraph support is deferred/out of scope for now; workflows that require parallel-edge identity should remain in Yog/YogEx or collapse to simple graphs before native analytical calls.*
 
 | Algorithm | YogEx Module | Purpose | Zog Status | Notes / Details |
 | :--- | :--- | :--- | :--- | :--- |
-| **Eulerian Circuit** | `Yog.Multi.Eulerian` | Hierholzer with edge IDs | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
-| **Eulerian Path** | `Yog.Multi.Eulerian` | Open Eulerian walk | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
-| **BFS** | `Yog.Multi.Traversal` | Edge-ID aware BFS | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
-| **DFS** | `Yog.Multi.Traversal` | Edge-ID aware DFS | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
-| **Fold Walk** | `Yog.Multi.Traversal` | Stateful traversal | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
-| **Cycle Check** | `Yog.Multi` | Multigraph cycle detection | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
-| **Topological Sort** | `Yog.Multi` | Multigraph topological ordering | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
-| **To Simple Graph** | `Yog.Multi` | Collapse parallel edges | ❌ **Missing** | *WIP/Roadmap* — planned for v0.5.0. |
+| **Eulerian Circuit** | `Yog.Multi.Eulerian` | Hierholzer with edge IDs | ❌ **Missing** | *Deferred / out of scope* for the native core. |
+| **Eulerian Path** | `Yog.Multi.Eulerian` | Open Eulerian walk | ❌ **Missing** | *Deferred / out of scope* for the native core. |
+| **BFS** | `Yog.Multi.Traversal` | Edge-ID aware BFS | ❌ **Missing** | *Deferred / out of scope* for the native core. |
+| **DFS** | `Yog.Multi.Traversal` | Edge-ID aware DFS | ❌ **Missing** | *Deferred / out of scope* for the native core. |
+| **Fold Walk** | `Yog.Multi.Traversal` | Stateful traversal | ❌ **Missing** | *Deferred / out of scope* for the native core. |
+| **Cycle Check** | `Yog.Multi` | Multigraph cycle detection | ❌ **Missing** | *Deferred / out of scope* for the native core. |
+| **Topological Sort** | `Yog.Multi` | Multigraph topological ordering | ❌ **Missing** | *Deferred / out of scope* for the native core. |
+| **To Simple Graph** | `Yog.Multi` | Collapse parallel edges | ❌ **Missing** | Use Yog/YogEx-side simplification before loading into Zog. |
 
 ---
 
@@ -363,3 +364,20 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Adjlist** | `Yog.IO` | Adjacency list format | ✅ **Implemented** | Supported via `Zog.IO.load/2` and `Zog.IO.dump/3`. |
 | **Libgraph** | `Yog.IO.Libgraph` | Bridge to/from Libgraph | ✅ **Implemented** | Supported via `Zog.from_libgraph/1` and `Zog.to_libgraph/1`. |
 | *Lesser-used (GDF, GEXF, GraphML, Graph6, Sparse6, JSON, LEDA, Matrix Market)* | `Yog.IO` | Various serialization formats | ❌ **Missing** | *Deferred* — only the most common standard formats are implemented in Zog. |
+
+---
+
+## 25. Graph Layouts & 2D Embedding
+
+| Algorithm | Module / Function | Purpose | Zog Status | Notes / Details |
+| :--- | :--- | :--- | :--- | :--- |
+| **Circular** | `Zog.Layout.circular/2` | Uniform circular node positioning | ✅ **Implemented** | Available on `Zog.Layout` and `Zog.ResourceGraph.layout_circular/2`. |
+| **Shell** | `Zog.Layout.shell/3` | Concentric circular layers (e.g. k-core shells) | ✅ **Implemented** | Available on `Zog.Layout` and `Zog.ResourceGraph.layout_shell/3`. |
+| **Multipartite** | `Zog.Layout.multipartite/3` | Parallel layered coordinate alignments | ✅ **Implemented** | Available on `Zog.Layout` and `Zog.ResourceGraph.layout_multipartite/3`. |
+| **Random & Grid** | `Zog.Layout.random/2`, `grid/2` | Uniform random and deterministic 2D lattice placement | ✅ **Implemented** | Available on `Zog.Layout` and corresponding `Zog.ResourceGraph` wrappers. |
+| **Tutte Embedding** | `Zog.Layout.tutte/3` | Planar barycentric embedding via Gauss-Seidel relaxation | ✅ **Implemented** | Available on `Zog.Layout` and `Zog.ResourceGraph.layout_tutte/3`. |
+| **Spring (Force-Directed)** | `Zog.Layout.spring/2` | Fruchterman-Reingold physical model with optional Barnes-Hut | ✅ **Implemented** | Native Zig via `Zog.Layout.spring/2` and `Zog.ResourceGraph.layout_spring/2` (`barnes_hut: true` for $O(V \log V)$ quadtree). |
+| **Pivot-MDS** | `Zog.Layout.pivot_mds/2` | High-dimensional classical MDS projection from $k$ pivots | ✅ **Implemented** | Native Zig via `Zog.Layout.pivot_mds/2` and `Zog.ResourceGraph.layout_pivot_mds/2`. Sub-second for 100k+ nodes. |
+| **Multi-Level Coarsening** | `Zog.Layout.multi_level/2` | Louvain macro-coarsening, spiral prolongation, spring refinement | ✅ **Implemented** | Native Zig via `Zog.Layout.multi_level/2` and `Zog.ResourceGraph.layout_multi_level/2`. |
+| **Binary Coordinate Buffers** | `binary: true` / `format: :binary` | Packed `<<x::float-32, y::float-32>>` byte buffers | ✅ **Implemented** | Supported across native layout algorithms for WebGL / Canvas / GPU shaders. |
+

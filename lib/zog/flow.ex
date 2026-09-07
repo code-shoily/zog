@@ -272,15 +272,24 @@ defmodule Zog.Flow do
 
     @doc """
     Computes the maximum flow and minimum cut from source to sink in the network using the native Zog backend.
+
+    The algorithm can be passed as the fourth positional argument or as
+    `algorithm: :edmonds_karp | :dinic | :push_relabel` in the options.
+
+    ## Examples
+
+        Zog.Flow.max_flow(graph, "s", "t", :dinic)
+        Zog.Flow.max_flow(graph, "s", "t", algorithm: :push_relabel)
     """
-    @spec max_flow(SoA.t(), SoA.label(), SoA.label(), atom()) ::
+    @spec max_flow(SoA.t(), SoA.label(), SoA.label(), atom() | keyword()) ::
             %{
               max_flow: float(),
               residual_graph: SoA.t(),
               source_side: list(SoA.label()),
               sink_side: list(SoA.label())
             }
-    def max_flow(%SoA{} = builder, source, sink, algorithm \\ :edmonds_karp) do
+    def max_flow(%SoA{} = builder, source, sink, algorithm_or_opts \\ :edmonds_karp) do
+      algorithm = flow_algorithm(algorithm_or_opts, :edmonds_karp)
       node_count = SoA.node_count(builder)
       {from, to, weights} = SoA.to_edge_arrays(builder)
 
@@ -320,19 +329,28 @@ defmodule Zog.Flow do
     @doc """
     Computes the minimum s-t cut separating `source` and `sink` using a max-flow algorithm.
 
+    The algorithm can be passed as the fourth positional argument or as
+    `algorithm: :dinic | :edmonds_karp | :push_relabel` in the options.
+
+    ## Examples
+
+        Zog.Flow.s_t_min_cut(graph, "s", "t", :dinic)
+        Zog.Flow.s_t_min_cut(graph, "s", "t", algorithm: :push_relabel)
+
     Returns a map containing:
     - `:cut_value` - Total capacity of the minimum cut (equal to max flow).
     - `:source_side` - Nodes on the source side of the cut partition.
     - `:sink_side` - Nodes on the sink side of the cut partition.
     - `:cut_edges` - List of `{u, v, weight}` edges crossing the cut from source side to sink side.
     """
-    @spec s_t_min_cut(SoA.t(), SoA.label(), SoA.label(), atom()) :: %{
+    @spec s_t_min_cut(SoA.t(), SoA.label(), SoA.label(), atom() | keyword()) :: %{
             cut_value: float(),
             source_side: list(SoA.label()),
             sink_side: list(SoA.label()),
             cut_edges: list({SoA.label(), SoA.label(), float()})
           }
-    def s_t_min_cut(%SoA{} = builder, source, sink, algorithm \\ :dinic) do
+    def s_t_min_cut(%SoA{} = builder, source, sink, algorithm_or_opts \\ :dinic) do
+      algorithm = flow_algorithm(algorithm_or_opts, :dinic)
       res = max_flow(builder, source, sink, algorithm)
       source_set = MapSet.new(res.source_side)
       sink_set = MapSet.new(res.sink_side)
@@ -356,6 +374,12 @@ defmodule Zog.Flow do
         cut_edges: cut_edges
       }
     end
+
+    defp flow_algorithm(opts, default_algorithm) when is_list(opts) do
+      Keyword.get(opts, :algorithm, default_algorithm)
+    end
+
+    defp flow_algorithm(algorithm, _default_algorithm), do: algorithm
 
     @doc """
     Computes the global minimum cut of an undirected weighted network using the Stoer-Wagner algorithm.

@@ -163,14 +163,14 @@ defmodule Zog.Generator do
   end
 
   defp generate_ba(u, n, m, deg_map, deg_size, builder) when u < n do
-    targets = choose_distinct_targets(m, deg_map, deg_size, MapSet.new())
+    targets = choose_distinct_targets(m, deg_map, deg_size, [])
 
     builder =
       Enum.reduce(targets, builder, fn v, acc ->
         SoA.add_edge(acc, u, v, 1.0)
       end)
 
-    new_deg_list = [u | MapSet.to_list(targets)] ++ List.duplicate(u, m - 1)
+    new_deg_list = [u | targets] ++ List.duplicate(u, m - 1)
 
     {deg_map, deg_size} =
       Enum.reduce(new_deg_list, {deg_map, deg_size}, fn node, {map, size} ->
@@ -183,14 +183,14 @@ defmodule Zog.Generator do
   defp generate_ba(_u, _n, _m, _deg_map, _deg_size, builder), do: builder
 
   defp choose_distinct_targets(m, deg_map, deg_size, chosen) do
-    if MapSet.size(chosen) < m do
+    if length(chosen) < m do
       r = :rand.uniform(deg_size) - 1
       node = Map.get(deg_map, r)
 
-      if MapSet.member?(chosen, node) do
+      if node in chosen do
         choose_distinct_targets(m, deg_map, deg_size, chosen)
       else
-        choose_distinct_targets(m, deg_map, deg_size, MapSet.put(chosen, node))
+        choose_distinct_targets(m, deg_map, deg_size, [node | chosen])
       end
     else
       chosen

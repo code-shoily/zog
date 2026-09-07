@@ -136,8 +136,11 @@ defmodule Yog.Generators do
   def weight_list_gen(num_nodes, range \\ -100..100) do
     # Generate 0 to 30 edges
     StreamData.list_of(
-      {StreamData.integer(0..(num_nodes - 1)), StreamData.integer(0..(num_nodes - 1)),
-       StreamData.integer(range)},
+      StreamData.tuple({
+        StreamData.integer(0..(num_nodes - 1)),
+        StreamData.integer(0..(num_nodes - 1)),
+        StreamData.integer(range)
+      }),
       max_length: 30
     )
   end

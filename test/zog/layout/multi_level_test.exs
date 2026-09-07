@@ -140,5 +140,24 @@ defmodule Zog.Layout.MultiLevelTest do
 
       ResourceGraph.destroy(res)
     end
+
+    test "directly loaded ResourceGraph falls back to native spring layout" do
+      temp_edge_list =
+        Path.join(System.tmp_dir!(), "layout_edges_#{System.unique_integer([:positive])}.txt")
+
+      File.write!(temp_edge_list, "0 1\n1 2\n2 3\n3 0\n")
+      graph = ResourceGraph.read_edgelist(temp_edge_list, directed: false, integer_labels: true)
+
+      try do
+        positions = ResourceGraph.layout_multi_level(graph, seed: 42, min_coarsen_nodes: 2)
+
+        assert map_size(positions) == 4
+        assert Map.keys(positions) |> Enum.sort() == [0, 1, 2, 3]
+        assert Enum.all?(positions, fn {_node, {x, y}} -> is_float(x) and is_float(y) end)
+      after
+        ResourceGraph.destroy(graph)
+        File.rm!(temp_edge_list)
+      end
+    end
   end
 end

@@ -2,17 +2,27 @@ defmodule Zog.Layout do
   @moduledoc """
   Graph layout algorithms and coordinate positioning for Zog.
 
-  Provides geometric analytical layouts:
+  Provides geometric, force-directed, and large-graph layouts:
     * `circular/2` - Uniform circular node positioning.
     * `shell/3` - Concentric circular layers (shells).
     * `multipartite/3` - Parallel layer alignments (bipartite, multipartite, hierarchical flows).
     * `random/2` - Bounded uniform random positioning (useful for testing or initial states).
     * `grid/2` - Deterministic 2D lattice positioning using row or column assignments.
+    * `tutte/3` - Planar barycentric embedding with fixed boundary nodes.
+    * `spring/2` - Native force-directed layout with optional Barnes-Hut acceleration.
+    * `pivot_mds/2` - Native Pivot-MDS / high-dimensional embedding for large graphs.
+    * `multi_level/2` - Community coarsening, macro layout, prolongation, and spring refinement.
 
-  Layout functions return either a map of node labels to `{x, y}` float coordinate tuples:
+  Layout functions return either a map of node labels to `{x, y}` float coordinate tuples,
   `%{node_label => {x, y}}`, or a flat list of `{x, y}` tuples when `raw: true` is passed.
+  Native large-graph layouts can also return packed `float-32` coordinate binaries with
+  `binary: true` or `format: :binary`.
 
-  Compatible with `Zog.SoA`, `Zog.ResourceGraph`, `Yog.Graph`, `Yog.DAG`, `libgraph`, or plain node lists.
+  Node-only layouts (`circular`, `shell`, `multipartite`, `random`, and `grid`) can work
+  with `Zog.SoA`, `Zog.ResourceGraph`, `Yog.Graph`, `Yog.DAG`, `libgraph`, or plain node
+  lists. Edge-aware layouts (`tutte`, `spring`, `pivot_mds`, and `multi_level`) require a
+  graph structure. For direct file-loaded `Zog.ResourceGraph`s, `multi_level/2` falls back
+  to native spring layout when the attached Elixir builder does not retain edges.
   """
 
   alias Zog.Layout.Circular

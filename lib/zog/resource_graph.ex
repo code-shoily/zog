@@ -6,6 +6,12 @@ defmodule Zog.ResourceGraph do
   `ArrayGraph` or `GraphMap` alive as a NIF resource between calls. Build once,
   run many algorithms, destroy when done.
 
+  Direct file readers such as `read_edgelist/2` keep topology in native memory and
+  attach a lightweight Elixir-side `Zog.SoA` builder for label mapping. That builder
+  intentionally does not retain the full edge list, which keeps BEAM memory low for
+  large graphs. If your workflow needs to inspect, transform, or dump the complete
+  Elixir-side edge list later, build a full `Zog.SoA` and pass it to `new/2`.
+
   ## Backends
 
   Zog supports two native graph backends, selectable via the `:backend` option:
@@ -1262,7 +1268,62 @@ defmodule Zog.ResourceGraph do
         residual_cap: []f64,
         source_side: []u32,
         sink_side: []u32,
+        cut_from: []u32,
+        cut_to: []u32,
+        cut_weight: []f64,
     };
+
+    const CutEdgesNifResult = struct {
+        from: []u32,
+        to: []u32,
+        weight: []f64,
+    };
+
+    fn extractOriginalCutEdges(
+        allocator: std.mem.Allocator,
+        graph: anytype,
+        source_side: []u32,
+    ) !CutEdgesNifResult {
+        var source_set = std.AutoHashMap(u32, void).init(allocator);
+        defer source_set.deinit();
+
+        try source_set.ensureTotalCapacity(@intCast(source_side.len));
+        for (source_side) |node| {
+            try source_set.put(node, {});
+        }
+
+        var cut_count: usize = 0;
+        var count_it = graph.allEdges();
+        while (count_it.next()) |edge| {
+            if (source_set.contains(edge.from) and !source_set.contains(edge.to)) {
+                cut_count += 1;
+            }
+        }
+
+        var cut_from = try allocator.alloc(u32, cut_count);
+        errdefer allocator.free(cut_from);
+        var cut_to = try allocator.alloc(u32, cut_count);
+        errdefer allocator.free(cut_to);
+        var cut_weight = try allocator.alloc(f64, cut_count);
+        errdefer allocator.free(cut_weight);
+
+        var idx: usize = 0;
+        var edge_it = graph.allEdges();
+        while (edge_it.next()) |edge| {
+            if (source_set.contains(edge.from) and !source_set.contains(edge.to)) {
+                cut_from[idx] = edge.from;
+                cut_to[idx] = edge.to;
+                cut_weight[idx] = edge.data;
+                idx += 1;
+            }
+        }
+
+        return .{
+            .from = cut_from,
+            .to = cut_to,
+            .weight = cut_weight,
+        };
+    }
 
     fn toFlowNifResult(
         allocator: std.mem.Allocator,
@@ -1270,6 +1331,7 @@ defmodule Zog.ResourceGraph do
         residual: anytype,
         source_side: []u32,
         sink_side: []u32,
+        graph: anytype,
     ) !FlowNifResult {
         const res_count = residual.count();
         var res_from = try allocator.alloc(u32, res_count);
@@ -1296,6 +1358,13 @@ defmodule Zog.ResourceGraph do
         errdefer allocator.free(sk);
         @memcpy(sk, sink_side);
 
+        const cut_edges = try extractOriginalCutEdges(allocator, graph, source_side);
+        errdefer {
+            allocator.free(cut_edges.from);
+            allocator.free(cut_edges.to);
+            allocator.free(cut_edges.weight);
+        }
+
         return .{
             .max_flow = max_flow,
             .residual_from = res_from,
@@ -1303,6 +1372,9 @@ defmodule Zog.ResourceGraph do
             .residual_cap = res_cap,
             .source_side = ss,
             .sink_side = sk,
+            .cut_from = cut_edges.from,
+            .cut_to = cut_edges.to,
+            .cut_weight = cut_edges.weight,
         };
     }
 
@@ -1318,13 +1390,19 @@ defmodule Zog.ResourceGraph do
         var cut = try zog.flow.max_flow.minCut(allocator, mutable_result, f64, 0.0, zog.utils.compareF64);
         defer cut.deinit(allocator);
 
-        const flow_res = try toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side);
+        const flow_res = try switch (res.unpack()) {
+            .soa => |g| toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side, g),
+            .hash_graph => |g| toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side, g),
+        };
         defer {
             allocator.free(flow_res.residual_from);
             allocator.free(flow_res.residual_to);
             allocator.free(flow_res.residual_cap);
             allocator.free(flow_res.source_side);
             allocator.free(flow_res.sink_side);
+            allocator.free(flow_res.cut_from);
+            allocator.free(flow_res.cut_to);
+            allocator.free(flow_res.cut_weight);
         }
 
         return beam.make(.{
@@ -1334,6 +1412,9 @@ defmodule Zog.ResourceGraph do
             .residual_cap = flow_res.residual_cap,
             .source_side = flow_res.source_side,
             .sink_side = flow_res.sink_side,
+            .cut_from = flow_res.cut_from,
+            .cut_to = flow_res.cut_to,
+            .cut_weight = flow_res.cut_weight,
         }, .{});
     }
 
@@ -1349,13 +1430,19 @@ defmodule Zog.ResourceGraph do
         var cut = try zog.flow.max_flow.minCut(allocator, mutable_result, f64, 0.0, zog.utils.compareF64);
         defer cut.deinit(allocator);
 
-        const flow_res = try toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side);
+        const flow_res = try switch (res.unpack()) {
+            .soa => |g| toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side, g),
+            .hash_graph => |g| toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side, g),
+        };
         defer {
             allocator.free(flow_res.residual_from);
             allocator.free(flow_res.residual_to);
             allocator.free(flow_res.residual_cap);
             allocator.free(flow_res.source_side);
             allocator.free(flow_res.sink_side);
+            allocator.free(flow_res.cut_from);
+            allocator.free(flow_res.cut_to);
+            allocator.free(flow_res.cut_weight);
         }
 
         return beam.make(.{
@@ -1365,6 +1452,9 @@ defmodule Zog.ResourceGraph do
             .residual_cap = flow_res.residual_cap,
             .source_side = flow_res.source_side,
             .sink_side = flow_res.sink_side,
+            .cut_from = flow_res.cut_from,
+            .cut_to = flow_res.cut_to,
+            .cut_weight = flow_res.cut_weight,
         }, .{});
     }
 
@@ -1380,13 +1470,19 @@ defmodule Zog.ResourceGraph do
         var cut = try zog.flow.max_flow.minCut(allocator, mutable_result, f64, 0.0, zog.utils.compareF64);
         defer cut.deinit(allocator);
 
-        const flow_res = try toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side);
+        const flow_res = try switch (res.unpack()) {
+            .soa => |g| toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side, g),
+            .hash_graph => |g| toFlowNifResult(allocator, mutable_result.max_flow, mutable_result.residual, cut.source_side, cut.sink_side, g),
+        };
         defer {
             allocator.free(flow_res.residual_from);
             allocator.free(flow_res.residual_to);
             allocator.free(flow_res.residual_cap);
             allocator.free(flow_res.source_side);
             allocator.free(flow_res.sink_side);
+            allocator.free(flow_res.cut_from);
+            allocator.free(flow_res.cut_to);
+            allocator.free(flow_res.cut_weight);
         }
 
         return beam.make(.{
@@ -1396,6 +1492,9 @@ defmodule Zog.ResourceGraph do
             .residual_cap = flow_res.residual_cap,
             .source_side = flow_res.source_side,
             .sink_side = flow_res.sink_side,
+            .cut_from = flow_res.cut_from,
+            .cut_to = flow_res.cut_to,
+            .cut_weight = flow_res.cut_weight,
         }, .{});
     }
 
@@ -1806,13 +1905,13 @@ defmodule Zog.ResourceGraph do
     pub fn nif_subgraph(res: GraphRes, kept_nodes: []u32) !GraphRes {
         const allocator = beam.allocator;
         const V = nodeCount(res);
-        
+
         const sentinel = std.math.maxInt(u32);
-        
+
         var old_to_new = try allocator.alloc(u32, V);
         defer allocator.free(old_to_new);
         @memset(old_to_new, sentinel);
-        
+
         var new_index: u32 = 0;
         for (kept_nodes) |u| {
             if (u < V and old_to_new[u] == sentinel) {
@@ -1820,14 +1919,14 @@ defmodule Zog.ResourceGraph do
                 new_index += 1;
             }
         }
-        
+
         const new_V = new_index;
-        
+
         switch (res.unpack()) {
             .soa => |g| {
                 var sub_g = ArrayGraph(void, f64).init(allocator);
                 errdefer sub_g.deinit();
-                
+
                 try sub_g.nodes.ensureTotalCapacity(allocator, new_V);
                 for (0..new_V) |_| {
                     _ = try sub_g.addNode({});
@@ -1839,7 +1938,7 @@ defmodule Zog.ResourceGraph do
                 const edge_is_deleted = g.edges.items(.is_deleted);
                 const node_is_deleted = g.nodes.items(.is_deleted);
                 const edge_data = g.edges.items(.data);
-                
+
                 for (kept_nodes) |u| {
                     if (u >= V) continue;
                     const new_u = old_to_new[u];
@@ -1855,18 +1954,18 @@ defmodule Zog.ResourceGraph do
                         edge_idx = next_edge_slice[idx];
                     }
                 }
-                
+
                 return GraphRes.create(.{ .soa = sub_g }, .{ .released = false });
             },
             .hash_graph => |g| {
                 var sub_g = zog.models.GraphMap(u32, void, f64, .directed, .dual).init(allocator);
                 errdefer sub_g.deinit();
-                
+
                 try sub_g.nodes.ensureTotalCapacity(@intCast(new_V));
                 for (0..new_V) |i| {
                     try sub_g.addNode(@intCast(i), {});
                 }
-                
+
                 for (kept_nodes) |u| {
                     if (u >= V) continue;
                     const new_u = old_to_new[u];
@@ -1880,7 +1979,7 @@ defmodule Zog.ResourceGraph do
                         }
                     }
                 }
-                
+
                 return GraphRes.create(.{ .hash_graph = sub_g }, .{ .released = false });
             }
         }
@@ -2510,13 +2609,19 @@ defmodule Zog.ResourceGraph do
 
       * `:damping` - PageRank damping factor (defaults to `0.85`).
       * `:max_iterations` - Maximum iteration steps (defaults to `100`).
+      * `:max_iter` - Backwards-compatible alias for `:max_iterations`.
       * `:tolerance` - Convergence tolerance (defaults to `0.0001`).
       * `:raw` - If true, returns a list of scores directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
+
+    ## Examples
+
+        scores = Zog.ResourceGraph.pagerank(graph, max_iterations: 25)
+        raw_scores = Zog.ResourceGraph.pagerank(graph, raw: true, max_iterations: 25)
     """
     @spec pagerank(t(), keyword()) :: %{SoA.label() => float()} | [float()]
     def pagerank(%{resource: res, builder: builder}, opts \\ []) do
       damping = Keyword.get(opts, :damping, 0.85)
-      max_iterations = Keyword.get(opts, :max_iterations, 100)
+      max_iterations = Keyword.get(opts, :max_iterations, Keyword.get(opts, :max_iter, 100))
       tolerance = Keyword.get(opts, :tolerance, 0.0001)
       raw = Keyword.get(opts, :raw, false)
 
@@ -2739,13 +2844,14 @@ defmodule Zog.ResourceGraph do
     ## Options
 
       * `:max_iterations` - Maximum iteration steps (defaults to `100`).
+      * `:max_iter` - Backwards-compatible alias for `:max_iterations`.
       * `:seed` - Random seed (defaults to `0`).
       * `:raw` - If true, returns a list of community IDs directly corresponding to internal `u32` node IDs instead of mapping to Elixir labels.
     """
     @spec label_propagation(t(), keyword()) ::
             %{SoA.label() => non_neg_integer()} | [non_neg_integer()]
     def label_propagation(%{resource: res, builder: builder}, opts \\ []) do
-      max_iterations = Keyword.get(opts, :max_iterations, 100)
+      max_iterations = Keyword.get(opts, :max_iterations, Keyword.get(opts, :max_iter, 100))
       seed = Keyword.get(opts, :seed, 0)
       raw = Keyword.get(opts, :raw, false)
 
@@ -4029,20 +4135,25 @@ defmodule Zog.ResourceGraph do
 
     @doc """
     Computes the maximum flow and minimum cut natively on a `ResourceGraph`.
+
+    The algorithm can be passed as the fourth positional argument or as
+    `algorithm: :edmonds_karp | :dinic | :push_relabel` in the options.
+
+    ## Examples
+
+        Zog.ResourceGraph.max_flow(graph, "s", "t", :dinic)
+        Zog.ResourceGraph.max_flow(graph, "s", "t", algorithm: :push_relabel)
+        Zog.ResourceGraph.max_flow(graph, source_id, sink_id, algorithm: :dinic, raw: true)
     """
     @spec max_flow(t(), SoA.label(), SoA.label(), atom() | keyword(), keyword()) :: %{
             max_flow: float(),
             residual_graph: SoA.t(),
             source_side: list(SoA.label()),
-            sink_side: list(SoA.label())
+            sink_side: list(SoA.label()),
+            cut_edges: list({SoA.label(), SoA.label(), float()})
           }
     def max_flow(graph, source, sink, algorithm_or_opts \\ :edmonds_karp, opts \\ []) do
-      {algorithm, actual_opts} =
-        if is_list(algorithm_or_opts) do
-          {:edmonds_karp, algorithm_or_opts}
-        else
-          {algorithm_or_opts, opts}
-        end
+      {algorithm, actual_opts} = flow_algorithm_and_opts(algorithm_or_opts, opts, :edmonds_karp)
 
       %{resource: res, builder: builder} = graph
       raw = Keyword.get(actual_opts, :raw, false)
@@ -4080,6 +4191,8 @@ defmodule Zog.ResourceGraph do
           Enum.map(result.sink_side, &SoA.id_to_label(builder, &1))
         end
 
+      cut_edges = map_flow_cut_edges(builder, result, raw)
+
       residual_graph =
         SoA.build_residual(
           builder,
@@ -4093,12 +4206,22 @@ defmodule Zog.ResourceGraph do
         max_flow: result.max_flow,
         residual_graph: residual_graph,
         source_side: source_side,
-        sink_side: sink_side
+        sink_side: sink_side,
+        cut_edges: cut_edges
       }
     end
 
     @doc """
     Computes the minimum s-t cut natively on a `ResourceGraph`.
+
+    The algorithm can be passed as the fourth positional argument or as
+    `algorithm: :dinic | :edmonds_karp | :push_relabel` in the options.
+
+    ## Examples
+
+        Zog.ResourceGraph.s_t_min_cut(graph, "s", "t")
+        Zog.ResourceGraph.s_t_min_cut(graph, "s", "t", algorithm: :push_relabel)
+        Zog.ResourceGraph.s_t_min_cut(graph, source_id, sink_id, algorithm: :dinic, raw: true)
 
     Returns a map containing:
     - `:cut_value` - Total capacity of the minimum cut (equal to max flow).
@@ -4113,40 +4236,15 @@ defmodule Zog.ResourceGraph do
             cut_edges: list({SoA.label(), SoA.label(), float()})
           }
     def s_t_min_cut(graph, source, sink, algorithm_or_opts \\ :dinic, opts \\ []) do
-      {algorithm, actual_opts} =
-        if is_list(algorithm_or_opts) do
-          {:dinic, algorithm_or_opts}
-        else
-          {algorithm_or_opts, opts}
-        end
+      {algorithm, actual_opts} = flow_algorithm_and_opts(algorithm_or_opts, opts, :dinic)
 
-      raw = Keyword.get(actual_opts, :raw, false)
       res = max_flow(graph, source, sink, algorithm, actual_opts)
-
-      source_set = MapSet.new(res.source_side)
-      sink_set = MapSet.new(res.sink_side)
-
-      cut_edges =
-        graph.builder.edges
-        |> Enum.reverse()
-        |> Enum.filter(fn {u_id, v_id, _w} ->
-          u_item = if raw, do: u_id, else: SoA.id_to_label(graph.builder, u_id)
-          v_item = if raw, do: v_id, else: SoA.id_to_label(graph.builder, v_id)
-          MapSet.member?(source_set, u_item) and MapSet.member?(sink_set, v_item)
-        end)
-        |> Enum.map(fn {u_id, v_id, w} ->
-          if raw do
-            {u_id, v_id, w}
-          else
-            {SoA.id_to_label(graph.builder, u_id), SoA.id_to_label(graph.builder, v_id), w}
-          end
-        end)
 
       %{
         cut_value: res.max_flow,
         source_side: res.source_side,
         sink_side: res.sink_side,
-        cut_edges: cut_edges
+        cut_edges: res.cut_edges
       }
     end
 
@@ -4306,6 +4404,24 @@ defmodule Zog.ResourceGraph do
 
     defp maybe_scale_undirected(_, scores), do: scores
 
+    defp flow_algorithm_and_opts(algorithm_or_opts, _opts, default_algorithm)
+         when is_list(algorithm_or_opts) do
+      {Keyword.get(algorithm_or_opts, :algorithm, default_algorithm), algorithm_or_opts}
+    end
+
+    defp flow_algorithm_and_opts(algorithm, opts, _default_algorithm), do: {algorithm, opts}
+
+    defp map_flow_cut_edges(builder, result, raw) do
+      Enum.zip([result.cut_from, result.cut_to, result.cut_weight])
+      |> Enum.map(fn {from, to, weight} ->
+        if raw do
+          {from, to, weight}
+        else
+          {SoA.id_to_label(builder, from), SoA.id_to_label(builder, to), weight}
+        end
+      end)
+    end
+
     defp make_sorted_edge(u, v) when u < v, do: {u, v}
     defp make_sorted_edge(u, v), do: {v, u}
 
@@ -4363,6 +4479,9 @@ defmodule Zog.ResourceGraph do
 
       * `:radius` - number of hops to include (default 1)
 
+    > Note: Requires a `ResourceGraph` constructed from a full `Zog.SoA`
+    > via `Zog.ResourceGraph.new/1`, as directly loaded files keep only a
+    > lightweight builder without an Elixir-side edge list.
     """
     @spec ego_graph(t(), SoA.label(), keyword()) :: t()
     def ego_graph(%{resource: res, builder: builder} = _res_graph, center, opts \\ []) do
@@ -4389,6 +4508,9 @@ defmodule Zog.ResourceGraph do
     Returns a new directed `ResourceGraph` with an edge `(u, v)` for every node
     `v` reachable from `u` in the original graph, including self-loops.
 
+    Requires a `ResourceGraph` constructed from a full `Zog.SoA` via
+    `Zog.ResourceGraph.new/1`.
+
     Raises `ArgumentError` if the input graph is undirected.
     """
     @spec transitive_closure(t(), keyword()) :: t()
@@ -4403,6 +4525,9 @@ defmodule Zog.ResourceGraph do
     Returns a new directed `ResourceGraph` containing the minimal set of edges
     that preserves the same reachability as the original DAG.
 
+    Requires a `ResourceGraph` constructed from a full `Zog.SoA` via
+    `Zog.ResourceGraph.new/1`.
+
     Raises `ArgumentError` if the graph is undirected or contains cycles.
     """
     @spec transitive_reduction(t(), keyword()) :: t()
@@ -4413,6 +4538,9 @@ defmodule Zog.ResourceGraph do
 
     @doc """
     Contracts two nodes in a `ResourceGraph` into a single node.
+
+    Requires a `ResourceGraph` constructed from a full `Zog.SoA` via
+    `Zog.ResourceGraph.new/1`.
 
     See `Zog.Transform.contract/4` for options.
     """

@@ -1,6 +1,29 @@
 defmodule Zog do
   @moduledoc """
-  Documentation for `Zog`.
+  Convenience entrypoint for building, transforming, and laying out Zog graphs.
+
+  `Zog` delegates the most common builder functions to `Zog.SoA`, which stores
+  arbitrary Elixir labels while compiling graph topology into flat arrays suitable
+  for native Zig algorithms.
+
+  ## Common workflows
+
+      graph =
+        Zog.directed()
+        |> Zog.add_edge("A", "B", 1.0)
+        |> Zog.add_edge("B", "C", 2.0)
+
+      native = Zog.ResourceGraph.new(graph)
+      scores = Zog.ResourceGraph.pagerank(native)
+      Zog.ResourceGraph.destroy(native)
+
+  For large files, prefer `Zog.IO.load/2` or `Zog.ResourceGraph.read_edgelist/2`
+  to parse directly into native memory. Direct file-loaded resources keep only a
+  lightweight Elixir-side builder for label mapping; the graph topology remains in
+  native memory.
+
+  Use `raw: true` on node-level `Zog.ResourceGraph` algorithms when you want flat
+  internal-ID-indexed lists instead of label-keyed maps.
   """
 
   # Delegate to Zog.SoA

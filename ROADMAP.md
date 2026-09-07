@@ -60,7 +60,7 @@ Focuses on complete algorithmic parity with Yog for network flow algorithms and 
 
 - **Network Flow & Cuts Parity**
   - [x] Dinic's Algorithm (`max_flow/4` with `[algorithm: :dinic]`)
-  - [x] Dedicated $s-t$ Min-Cut partition (`s_t_min_cut/4`) returning `{cut_value, source_side, sink_side, cut_edges}`
+  - [x] Dedicated $s-t$ Min-Cut partition (`s_t_min_cut/4`) returning `%{cut_value, source_side, sink_side, cut_edges}`
   - [x] Gomory-Hu All-Pairs Min-Cut Tree (`gomory_hu_tree/1`) via Gusfield's algorithm & query (`min_cut_query/3`)
   - [x] Min-Cost Flow via Successive Shortest Path (`min_cost_flow/4`) with node demands and edge costs/capacities
 - **Community Detection Parity (100% Yog Parity)**

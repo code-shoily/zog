@@ -75,11 +75,14 @@ load_seconds = time_load_micro / 1_000_000
 node_count = ResourceGraph.node_count(graph)
 edge_count = ResourceGraph.edge_count(graph)
 undirected_edges = div(edge_count, 2)
+exact_status = fn actual, expected ->
+  if actual == expected, do: "✓ Exact Match", else: "⚠ Expected #{expected}"
+end
 
 Kino.Markdown.new("""
 ### ⚡ Graph Ingestion Summary
-- **Nodes (Intersections)**: `#{node_count}` *(Matches SNAP ground truth: 1,965,206)*
-- **Undirected Edges**: `#{undirected_edges}` *(Matches SNAP ground truth: 2,766,607)*
+- **Nodes (Intersections)**: `#{node_count}` *(#{exact_status.(node_count, 1_965_206)})*
+- **Undirected Edges**: `#{undirected_edges}` *(#{exact_status.(undirected_edges, 2_766_607)})*
 - **Directed Half-Edges**: `#{edge_count}`
 - **Native Load Time**: **#{Float.round(load_seconds, 2)} seconds**
 - **BEAM Heap Growth**: **#{Float.round(beam_mem_delta_mb, 2)} MB** *(virtually zero heap footprint!)*
@@ -138,37 +141,54 @@ Kino.Layout.grid([start_input, goal_input], columns: 2)
 ```
 
 ```elixir
-start_node = Kino.Input.read(start_input)
-goal_node = Kino.Input.read(goal_input)
+start_value = Kino.Input.read(start_input)
+goal_value = Kino.Input.read(goal_input)
+whole_number? = fn value -> is_integer(value) or (is_float(value) and value == trunc(value)) end
 
-{time_dijkstra_micro, result} = :timer.tc(fn ->
-  ResourceGraph.dijkstra(graph, start_node, goal_node, raw: true)
-end)
+cond do
+  not whole_number?.(start_value) or not whole_number?.(goal_value) ->
+    Kino.Markdown.new("⚠️ Please enter whole-number intersection IDs.")
 
-case result do
-  {:ok, {path, total_hops}} ->
-    route_rows =
-      path
-      |> Enum.with_index()
-      |> Enum.take(20)
-      |> Enum.map(fn {node_id, step} ->
-        %{"Step" => step, "Intersection ID" => node_id}
+  start_value < 0 or start_value >= node_count or goal_value < 0 or goal_value >= node_count ->
+    Kino.Markdown.new("⚠️ Please enter intersection IDs between `0` and `#{node_count - 1}`.")
+
+  true ->
+    start_node = trunc(start_value)
+    goal_node = trunc(goal_value)
+
+    {time_dijkstra_micro, result} =
+      :timer.tc(fn ->
+        ResourceGraph.dijkstra(graph, start_node, goal_node, raw: true)
       end)
 
-    Kino.Layout.grid([
-      Kino.Markdown.new("""
-      ### ✅ Route Found!
-      - **Query Time**: **#{Float.round(time_dijkstra_micro / 1_000, 2)} ms**
-      - **Total Hops (Road Segments)**: **#{total_hops}**
-      - **Total Route Nodes**: `#{length(path)}`
-      """),
-      Kino.DataTable.new(route_rows, name: "First 20 Intersections on Route")
-    ], columns: 1)
+    case result do
+      {:ok, {path, total_hops}} ->
+        route_rows =
+          path
+          |> Enum.with_index()
+          |> Enum.take(20)
+          |> Enum.map(fn {node_id, step} ->
+            %{"Step" => step, "Intersection ID" => node_id}
+          end)
 
-  {:error, :no_path} ->
-    Kino.Markdown.new("""
-    > ⚠️ **No Path**: Node `#{start_node}` and Node `#{goal_node}` belong to disconnected components!
-    """)
+        Kino.Layout.grid(
+          [
+            Kino.Markdown.new("""
+            ### ✅ Route Found!
+            - **Query Time**: **#{Float.round(time_dijkstra_micro / 1_000, 2)} ms**
+            - **Total Hops (Road Segments)**: **#{total_hops}**
+            - **Total Route Nodes**: `#{length(path)}`
+            """),
+            Kino.DataTable.new(route_rows, name: "First 20 Intersections on Route")
+          ],
+          columns: 1
+        )
+
+      {:error, :no_path} ->
+        Kino.Markdown.new("""
+        > ⚠️ **No Path**: Node `#{start_node}` and Node `#{goal_node}` belong to disconnected components!
+        """)
+    end
 end
 ```
 
@@ -179,7 +199,7 @@ We can run **PageRank** directly across all 2 million nodes in native memory to 
 
 ```elixir
 {time_pr_micro, pr_scores} = :timer.tc(fn ->
-  ResourceGraph.pagerank(graph, raw: true, max_iter: 25)
+  ResourceGraph.pagerank(graph, raw: true, max_iterations: 25)
 end)
 
 top_hubs =
@@ -211,7 +231,7 @@ Using **Label Propagation**, we can partition the entire state of California int
 
 ```elixir
 {time_lpa_micro, communities} = :timer.tc(fn ->
-  ResourceGraph.label_propagation(graph, raw: true, max_iter: 20)
+  ResourceGraph.label_propagation(graph, raw: true, max_iterations: 20)
 end)
 
 comm_sizes =
@@ -250,7 +270,7 @@ end)
 
 Kino.Markdown.new("""
 ### 📐 Triangle Count
-- **Triangles Found**: **#{triangles}** *(Matches SNAP ground truth: 120,676)*
+- **Triangles Found**: **#{triangles}** *(#{exact_status.(triangles, 120_676)})*
 - **Calculation Time**: **#{Float.round(time_tri_micro / 1_000_000, 3)}s**
 """)
 ```

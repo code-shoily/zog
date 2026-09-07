@@ -4,7 +4,8 @@
 Mix.install([
   # {:zog, "~> 0.5.0"},
   {:zog, path: Path.expand("~/repos/elixir/zog")},
-  {:kino, "~> 0.12"}
+  {:kino, "~> 0.12"},
+  {:jason, "~> 1.4"}
 ])
 ```
 
@@ -101,48 +102,58 @@ To verify accuracy, we calculate the primary graph metrics using native Zig SIMD
 wcc_freq = Enum.frequencies(wcc_list)
 largest_wcc = wcc_freq |> Map.values() |> Enum.max()
 
+exact_status = fn actual, expected ->
+  if actual == expected, do: "✓ Exact Match", else: "⚠ Expected #{expected}"
+end
+
+approx_status = fn actual, expected, tolerance ->
+  if abs(actual - expected) <= tolerance,
+    do: "✓ Within tolerance",
+    else: "⚠ Expected ~#{expected}"
+end
+
 verification_table = [
   %{
     "Metric" => "Nodes",
     "SNAP Published" => "4,039",
     "Zog Computed" => "#{node_count}",
-    "Status" => "✓ Exact Match"
+    "Status" => exact_status.(node_count, 4_039)
   },
   %{
     "Metric" => "Edges (Undirected)",
     "SNAP Published" => "88,234",
     "Zog Computed" => "#{undirected_edges}",
-    "Status" => "✓ Exact Match"
+    "Status" => exact_status.(undirected_edges, 88_234)
   },
   %{
     "Metric" => "Nodes in Largest WCC",
     "SNAP Published" => "4,039 (1.000)",
     "Zog Computed" => "#{largest_wcc} (#{Float.round(largest_wcc / node_count, 3)})",
-    "Status" => "✓ Exact Match"
+    "Status" => exact_status.(largest_wcc, 4_039)
   },
   %{
     "Metric" => "Edges in Largest WCC",
     "SNAP Published" => "88,234 (1.000)",
     "Zog Computed" => "#{undirected_edges} (1.000)",
-    "Status" => "✓ Exact Match"
+    "Status" => exact_status.(undirected_edges, 88_234)
   },
   %{
     "Metric" => "Number of Triangles",
     "SNAP Published" => "1,612,010",
     "Zog Computed" => "#{triangles}",
-    "Status" => "✓ Exact Match"
+    "Status" => exact_status.(triangles, 1_612_010)
   },
   %{
     "Metric" => "Average Clustering Coefficient",
     "SNAP Published" => "0.6055",
     "Zog Computed" => "#{Float.round(avg_clustering, 4)}",
-    "Status" => "✓ Exact Match"
+    "Status" => approx_status.(avg_clustering, 0.6055, 0.0001)
   },
   %{
     "Metric" => "Diameter (Longest Shortest Path)",
     "SNAP Published" => "8",
     "Zog Computed" => "#{trunc(diameter)}",
-    "Status" => "✓ Exact Match"
+    "Status" => exact_status.(trunc(diameter), 8)
   }
 ]
 
@@ -150,7 +161,7 @@ Kino.Layout.grid(
   [
     Kino.Markdown.new("""
     ### 🔬 Ground Truth Cross-Check
-    All calculated structural and topological metrics match SNAP published metrics.
+    Status values are computed from the current Zog outputs against SNAP published metrics.
     """),
     Kino.DataTable.new(verification_table, name: "SNAP Benchmark vs Zog Results")
   ],
@@ -223,23 +234,35 @@ Kino.Layout.grid([seed_input], columns: 1)
 ```
 
 ```elixir
-seed_id = Kino.Input.read(seed_input)
+seed_value = Kino.Input.read(seed_input)
+whole_number? = fn value -> is_integer(value) or (is_float(value) and value == trunc(value)) end
 
-{time_loc_micro, local_community_set} =
-  :timer.tc(fn ->
-    ResourceGraph.local_community(graph, [seed_id])
-  end)
+cond do
+  not whole_number?.(seed_value) ->
+    Kino.Markdown.new("⚠️ Please enter a whole-number user ID.")
 
-comm_members = MapSet.to_list(local_community_set)
-comm_size = length(comm_members)
+  seed_value < 0 or seed_value >= node_count ->
+    Kino.Markdown.new("⚠️ Please enter a valid user ID between `0` and `#{node_count - 1}`.")
 
-Kino.Markdown.new("""
-### 🎯 Local Circle Discovered
-- **Seed User**: `#{seed_id}`
-- **Discovered Community Size**: `#{comm_size}` users
-- **Search Latency**: **#{Float.round(time_loc_micro / 1000, 2)} ms**
-- **Sample Members**: `#{inspect(Enum.take(comm_members, 15))}...`
-""")
+  true ->
+    seed_id = trunc(seed_value)
+
+    {time_loc_micro, local_community_set} =
+      :timer.tc(fn ->
+        ResourceGraph.local_community(graph, [seed_id])
+      end)
+
+    comm_members = MapSet.to_list(local_community_set)
+    comm_size = length(comm_members)
+
+    Kino.Markdown.new("""
+    ### 🎯 Local Circle Discovered
+    - **Seed User**: `#{seed_id}`
+    - **Discovered Community Size**: `#{comm_size}` users
+    - **Search Latency**: **#{Float.round(time_loc_micro / 1000, 2)} ms**
+    - **Sample Members**: `#{inspect(Enum.take(comm_members, 15))}...`
+    """)
+end
 ```
 
 ## 6. Social Influence & Centrality Ranking
@@ -295,7 +318,7 @@ Kino.Layout.grid(
 
 Now that we have identified the community structures and bridge influencers, let's project the entire 4,039-user social graph into 2D space using **Multi-Level Coarsening** and **Pivot-MDS**.
 
-We can stream packed binary coordinates (`format: :binary`) directly into an interactive HTML5 Canvas with zero serialization overhead:
+We can pack coordinates into a compact binary buffer for an interactive HTML5 Canvas, avoiding bulky JSON payloads for node positions:
 
 ```elixir
 # Compute multi-level layout (Louvain macro-clustering + Barnes-Hut local force refinement)

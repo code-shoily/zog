@@ -23,6 +23,8 @@ Traditional NIFs suffer from serialization overhead when translating complex Eli
 3. **Execute Repeatedly**: Run multiple heavy algorithms (Centrality, Leiden, Pathfinding, Min-Cut) directly on the reference.
 4. **Collect Outputs**: Only the final scalar metrics or integer arrays are returned back to Elixir.
 
+When loading directly from disk, Zog keeps the graph topology in native memory and attaches a lightweight Elixir-side `Zog.SoA` builder for label mapping. The builder does not retain the full edge list, which keeps BEAM memory low. Algorithms exposed on `Zog.ResourceGraph` operate on the native resource; use `Zog.ResourceGraph.new/1` from a full `Zog.SoA` when you specifically need to round-trip or inspect the complete Elixir-side edge list.
+
 ### Native Memory Backends
 
 `ResourceGraph` supports two alternative backend engines:
@@ -49,7 +51,7 @@ To bypass this overhead, pass `raw: true` as an option. When enabled, `Zog` retu
 # Returns %{"node_A" => 0.15, "node_B" => 0.35, ...}
 scores = Zog.ResourceGraph.pagerank(native_graph)
 
-# Returns [0.15, 0.35, ...] directly (O(1) serialization overhead on the BEAM heap)
+# Returns [0.15, 0.35, ...] directly, avoiding label remapping and map construction
 raw_scores = Zog.ResourceGraph.pagerank(native_graph, raw: true)
 ```
 
@@ -66,7 +68,10 @@ large_graph = Zog.ResourceGraph.read_edgelist("slashdot_edges.txt", integer_labe
 scores = Zog.ResourceGraph.pagerank(large_graph)
 ```
 
-Combined with the `:raw` option, this allows Zog to load and process large-scale networks with zero memory allocation or serialization overhead for node labels.
+Combined with the `:raw` option, this allows Zog to load and process large-scale networks while avoiding Elixir label-map construction for node-level results.
+
+> [!WARNING]
+> `integer_labels: true` is best for dense, zero-based ID spaces. Sparse or one-based integer IDs create placeholder native nodes up to `max_id`, so `node_count/1` may return `max_id + 1` rather than the number of active labels. For sparse datasets, load without `integer_labels: true` or remap IDs to `0..n-1` before ingestion.
 
 ---
 
@@ -83,12 +88,12 @@ def deps do
 end
 ```
 
-If you plan to use `Zog` alongside `YogEx` for seamless bridging, include both:
+`Zog` includes YogEx compatibility support. If your application also calls `YogEx` APIs directly, include a matching YogEx dependency:
 
 ```elixir
 def deps do
   [
-    {:yog_ex, "~> 0.99.0"},
+    {:yog_ex, "~> 0.98"},
     {:zog, "~> 0.5.0"},
     {:zigler, "~> 0.16.0", runtime: false}
   ]
@@ -141,6 +146,14 @@ communities = Zog.ResourceGraph.leiden(large_graph)
 # Free native memory
 Zog.ResourceGraph.destroy(large_graph)
 ```
+
+---
+
+## Livebooks
+
+Interactive demos live in `livebooks/` and are summarized in [`LIVEBOOKS.md`](LIVEBOOKS.md). They cover large SNAP datasets, native file ingestion, community detection, Bow-Tie decomposition, route-style shortest paths, and the layout/visualization work planned for the `0.6.x` release line.
+
+The notebooks currently keep a local path dependency enabled for development and include a commented Hex dependency for community/published use. Switch the relevant `Mix.install/1` line for your environment.
 
 ---
 

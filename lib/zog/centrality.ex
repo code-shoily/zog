@@ -268,7 +268,7 @@ defmodule Zog.Centrality do
       {from, to, weights} = SoA.to_edge_arrays(builder)
 
       damping = Keyword.get(opts, :damping, 0.85)
-      max_iterations = Keyword.get(opts, :max_iterations, 100)
+      max_iterations = Keyword.get(opts, :max_iterations, Keyword.get(opts, :max_iter, 100))
       tolerance = Keyword.get(opts, :tolerance, 0.0001)
 
       scores = pagerank(node_count, from, to, weights, damping, max_iterations, tolerance)

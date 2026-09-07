@@ -110,51 +110,64 @@ We calculate topological invariants using native Zig kernels and cross-reference
 {time_anf_micro, {:ok, anf_metrics}} =
   :timer.tc(fn -> ResourceGraph.anf(graph) end)
 
+{time_diam_micro, diameter} =
+  :timer.tc(fn -> ResourceGraph.diameter(graph) end)
+
 wcc_freq = Enum.frequencies(wcc_list)
 largest_wcc = wcc_freq |> Map.values() |> Enum.max()
+
+exact_status = fn actual, expected ->
+  if actual == expected, do: "✓ Exact Match", else: "⚠ Expected #{expected}"
+end
+
+approx_status = fn actual, expected, tolerance ->
+  if abs(actual - expected) <= tolerance,
+    do: "✓ Within tolerance",
+    else: "⚠ Expected ~#{expected}"
+end
 
 verification_table = [
   %{
     "Metric" => "Nodes (Email Addresses)",
     "SNAP Published" => "36,692",
     "Zog Computed" => "#{node_count}",
-    "Status" => "✓ Exact Match"
+    "Status" => exact_status.(node_count, 36_692)
   },
   %{
     "Metric" => "Edges (Undirected)",
     "SNAP Published" => "183,831",
     "Zog Computed" => "#{undirected_edges}",
-    "Status" => "✓ Exact Match"
+    "Status" => exact_status.(undirected_edges, 183_831)
   },
   %{
     "Metric" => "Nodes in Largest WCC",
     "SNAP Published" => "33,696 (0.918)",
     "Zog Computed" => "#{largest_wcc} (#{Float.round(largest_wcc / node_count, 3)})",
-    "Status" => "✓ Exact Match"
+    "Status" => exact_status.(largest_wcc, 33_696)
   },
   %{
     "Metric" => "Number of Triangles",
     "SNAP Published" => "727,044",
     "Zog Computed" => "#{triangles}",
-    "Status" => "✓ Exact Match"
+    "Status" => exact_status.(triangles, 727_044)
   },
   %{
     "Metric" => "Average Clustering Coefficient",
     "SNAP Published" => "0.4970",
     "Zog Computed" => "#{Float.round(avg_clustering, 4)}",
-    "Status" => "✓ Exact Match"
+    "Status" => approx_status.(avg_clustering, 0.4970, 0.0001)
   },
   %{
     "Metric" => "90-percentile Effective Diameter",
     "SNAP Published" => "4.8",
     "Zog Computed" => "#{Float.round(anf_metrics.effective_diameter, 2)} (ANF)",
-    "Status" => "✓ Consistent"
+    "Status" => approx_status.(anf_metrics.effective_diameter, 4.8, 0.2)
   },
   %{
     "Metric" => "Diameter (Longest Shortest Path)",
     "SNAP Published" => "11 (largest WCC) / 13 (global)",
-    "Zog Computed" => "13.0",
-    "Status" => "✓ Exact Match"
+    "Zog Computed" => "#{Float.round(diameter, 1)}",
+    "Status" => approx_status.(diameter, 13.0, 0.1)
   }
 ]
 
@@ -166,6 +179,7 @@ Kino.Layout.grid(
     - **Triangle Counting Time**: `#{Float.round(time_tri_micro / 1000, 2)} ms`
     - **Clustering Coefficient Time**: `#{Float.round(time_clust_micro / 1000, 2)} ms`
     - **ANF Effective Diameter Time**: `#{Float.round(time_anf_micro / 1000, 2)} ms`
+    - **Diameter Time**: `#{Float.round(time_diam_micro / 1000, 2)} ms`
     """),
     Kino.DataTable.new(verification_table, name: "SNAP Benchmark vs Zog Results")
   ],
@@ -346,30 +360,38 @@ Kino.Layout.grid([employee_input], columns: 1)
 ```
 
 ```elixir
-employee_id = Kino.Input.read(employee_input)
+employee_value = Kino.Input.read(employee_input)
+whole_number? = fn value -> is_integer(value) or (is_float(value) and value == trunc(value)) end
 
-if employee_id >= 0 and employee_id < node_count do
-  {time_loc_micro, local_circle} =
-    :timer.tc(fn ->
-      ResourceGraph.local_community(graph, [employee_id])
-    end)
+cond do
+  not whole_number?.(employee_value) ->
+    Kino.Markdown.new("⚠️ Please enter a whole-number employee ID.")
 
-  circle_size = MapSet.size(local_circle)
-  emp_deg = Enum.at(degrees, employee_id, 0)
-  emp_core = Map.get(core_map, employee_id, 0)
-  emp_pr = Map.get(pageranks, employee_id, 0.0)
-  emp_dept = Map.get(leiden_res, employee_id, 0)
+  employee_value < 0 or employee_value >= node_count ->
+    Kino.Markdown.new("⚠️ Please enter a valid employee ID between `0` and `#{node_count - 1}`.")
 
-  Kino.Markdown.new("""
-  ### 🕵️ Employee `#{employee_id}` Dossier
-  - **Core Shell ($k$)**: `#{emp_core}` #{if emp_core == max_core, do: "👑 *(Executive Inner Core)*", else: ""}
-  - **Direct Email Contacts**: `#{emp_deg}`
-  - **PageRank Prestige**: `#{Float.round(emp_pr, 6)}`
-  - **Assigned Department (Leiden)**: `Cluster ##{emp_dept}`
-  - **Organic Local Circle Discovered**: **#{circle_size} employees** *(found in #{Float.round(time_loc_micro / 1000, 2)} ms)*
-  """)
-else
-  Kino.Markdown.new("⚠️ Please enter a valid employee ID between `0` and `#{node_count - 1}`.")
+  true ->
+    employee_id = trunc(employee_value)
+
+    {time_loc_micro, local_circle} =
+      :timer.tc(fn ->
+        ResourceGraph.local_community(graph, [employee_id])
+      end)
+
+    circle_size = MapSet.size(local_circle)
+    emp_deg = Enum.at(degrees, employee_id, 0)
+    emp_core = Map.get(core_map, employee_id, 0)
+    emp_pr = Map.get(pageranks, employee_id, 0.0)
+    emp_dept = Map.get(leiden_res, employee_id, 0)
+
+    Kino.Markdown.new("""
+    ### 🕵️ Employee `#{employee_id}` Dossier
+    - **Core Shell ($k$)**: `#{emp_core}` #{if emp_core == max_core, do: "👑 *(Executive Inner Core)*", else: ""}
+    - **Direct Email Contacts**: `#{emp_deg}`
+    - **PageRank Prestige**: `#{Float.round(emp_pr, 6)}`
+    - **Assigned Department (Leiden)**: `Cluster ##{emp_dept}`
+    - **Organic Local Circle Discovered**: **#{circle_size} employees** *(found in #{Float.round(time_loc_micro / 1000, 2)} ms)*
+    """)
 end
 ```
 

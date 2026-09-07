@@ -337,10 +337,6 @@ defmodule Zog.Transform do
     do_reachable_bfs(MapSet.new([src]), MapSet.new([src]), adjacency)
   end
 
-  defp do_reachable_bfs(_visited, frontier, _adjacency) when frontier == %MapSet{} do
-    MapSet.new()
-  end
-
   defp do_reachable_bfs(visited, frontier, adjacency) do
     new_frontier =
       frontier

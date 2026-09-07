@@ -8,9 +8,18 @@ defmodule Zog.IO do
   @doc """
   Loads a graph from a file directly into a `Zog.ResourceGraph` resource.
 
+  File loading keeps the graph topology in native memory and attaches a lightweight
+  Elixir-side `Zog.SoA` builder for label mapping. The builder does not retain the
+  full edge list, which keeps BEAM memory low for large graphs. Use
+  `Zog.ResourceGraph.new/1` from a full `Zog.SoA` if you need to inspect or dump the
+  complete Elixir-side edge list later.
+
   Supported options:
     - `:format` - The format of the file. One of `:edgelist` (default), `:csv`, `:adjlist`, `:tgf`.
     - `:directed` - Boolean flag indicating if the graph is directed. Defaults to `true`.
+    - `:backend` - Native backend, either `:soa` (default) or `:hash_graph`.
+    - `:integer_labels` - Parse labels as integers directly in Zig. Best for dense,
+      zero-based ID spaces; sparse IDs create placeholder native nodes up to `max_id`.
   """
   @spec load(Path.t(), keyword()) :: ResourceGraph.t()
   def load(path, opts \\ []) do

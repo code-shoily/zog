@@ -547,7 +547,7 @@ defmodule Zog.Community do
       node_count = SoA.node_count(builder)
       {from, to, weights} = SoA.to_edge_arrays(builder)
 
-      max_iterations = Keyword.get(opts, :max_iterations, 100)
+      max_iterations = Keyword.get(opts, :max_iterations, Keyword.get(opts, :max_iter, 100))
       seed = Keyword.get(opts, :seed, 0)
 
       assignments =
@@ -865,7 +865,7 @@ defmodule Zog.Community do
 
     Each node is assigned to the first community in its membership list.
     """
-    @spec clique_percolation(SoA.t() | Yog.Graph.t(), keyword()) :: Result.t()
+    @spec clique_percolation(SoA.t() | Yog.Graph.t(), keyword()) :: Yog.Community.Result.t()
     def clique_percolation(input, opts \\ [])
 
     def clique_percolation(input, opts) do
