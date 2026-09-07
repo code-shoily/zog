@@ -16,9 +16,10 @@ During the federal investigation by the **Federal Energy Regulatory Commission (
 The **Enron Email Network** (`email-Enron`) from the Stanford Network Analysis Project (SNAP) captures communication between **36,692 email addresses** across **183,831 communication links** (undirected edges where an email was exchanged).
 
 Network analysis on the Enron corpus is a cornerstone in forensic data science, organizational sociometry, and link analysis:
-- **Who were the key information brokers and power centers?**
-- **Can graph algorithms expose the tight-knit executive inner circle?**
-- **How did communication divide across departments and trading desks?**
+
+* **Who were the key information brokers and power centers?**
+* **Can graph algorithms expose the tight-knit executive inner circle?**
+* **How did communication divide across departments and trading desks?**
 
 Let's download and decompress `email-Enron.txt.gz`:
 
@@ -179,8 +180,9 @@ Kino.Layout.grid(
 In organizational sociology, peripheral employees (contractors, temporary staff, one-off senders) inflate the network size without being part of the executive core.
 
 **$k$-Core Decomposition** peels the network like an onion:
-- A $k$-core is a maximal subgraph where **every node has degree at least $k$ within the subgraph**.
-- By increasing $k$, peripheral nodes peel away until only the dense, impenetrable executive inner core remains.
+
+* A $k$-core is a maximal subgraph where **every node has degree at least $k$ within the subgraph**.
+* By increasing $k$, peripheral nodes peel away until only the dense, impenetrable executive inner core remains.
 
 ```elixir
 {time_core_micro, core_map} =
@@ -284,9 +286,9 @@ Kino.Layout.grid(
 
 Who held the real communicative power at Enron?
 
-- **PageRank**: Structural prestige and information flow.
-- **Eigenvector Centrality**: Connections to other highly-connected players (proximity to leadership).
-- **Direct Degree**: Raw number of unique email correspondents.
+* **PageRank**: Structural prestige and information flow.
+* **Eigenvector Centrality**: Connections to other highly-connected players (proximity to leadership).
+* **Direct Degree**: Raw number of unique email correspondents.
 
 ```elixir
 {time_pr_micro, pageranks} =
