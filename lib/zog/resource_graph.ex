@@ -63,6 +63,13 @@ defmodule Zog.ResourceGraph do
         modularity_f64: [concurrency: :dirty_cpu],
         nif_walktrap: [concurrency: :dirty_cpu],
         nif_walktrap_hierarchical: [concurrency: :dirty_cpu],
+        nif_fluid_communities: [concurrency: :dirty_cpu],
+        nif_local_community: [concurrency: :dirty_cpu],
+        nif_girvan_newman: [concurrency: :dirty_cpu],
+        nif_girvan_newman_hierarchical: [concurrency: :dirty_cpu],
+        nif_edge_betweenness: [concurrency: :dirty_cpu],
+        nif_clique_percolation: [concurrency: :dirty_cpu],
+        nif_infomap: [concurrency: :dirty_cpu],
         nif_floyd_warshall: [concurrency: :dirty_cpu],
         nif_johnsons: [concurrency: :dirty_cpu],
         nif_dijkstra: [concurrency: :dirty_cpu],
@@ -430,6 +437,139 @@ defmodule Zog.ResourceGraph do
         var mutable_result = result;
         defer mutable_result.deinit();
         return extractAssignments(mutable_result, nodeCapacity(res));
+    }
+
+    pub fn nif_fluid_communities(res: GraphRes, target_communities: usize, max_iterations: usize, seed: u64) ![]usize {
+        const allocator = beam.allocator;
+        const opts = zog.community.fluid_communities.FluidOptions{
+            .target_communities = target_communities,
+            .max_iterations = max_iterations,
+            .seed = seed,
+        };
+        const result = switch (res.unpack()) {
+            .soa => |g| try zog.community.fluid_communities.detect(allocator, g, opts),
+            .hash_graph => |g| try zog.community.fluid_communities.detect(allocator, g, opts),
+        };
+        var mutable_result = result;
+        defer mutable_result.deinit();
+        return extractAssignments(mutable_result, nodeCapacity(res));
+    }
+
+    pub fn nif_local_community(res: GraphRes, seeds: []u32, alpha: f64, max_iterations: usize) ![]u32 {
+        const allocator = beam.allocator;
+        const opts = zog.community.local_community.LocalCommunityOptions{
+            .alpha = alpha,
+            .max_iterations = max_iterations,
+        };
+        return switch (res.unpack()) {
+            .soa => |g| try zog.community.local_community.detect(allocator, g, seeds, opts),
+            .hash_graph => |g| try zog.community.local_community.detect(allocator, g, seeds, opts),
+        };
+    }
+
+    const EdgeBetweennessResult = struct {
+        u: []u32,
+        v: []u32,
+        score: []f64,
+    };
+
+    pub fn nif_edge_betweenness(res: GraphRes) !EdgeBetweennessResult {
+        const allocator = beam.allocator;
+        var eb = switch (res.unpack()) {
+            .soa => |g| try zog.community.girvan_newman.edgeBetweenness(allocator, g, zog.utils.identityF64),
+            .hash_graph => |g| try zog.community.girvan_newman.edgeBetweenness(allocator, g, zog.utils.identityF64),
+        };
+        defer eb.deinit();
+
+        const count = eb.count();
+        const u_slice = try allocator.alloc(u32, count);
+        errdefer allocator.free(u_slice);
+        const v_slice = try allocator.alloc(u32, count);
+        errdefer allocator.free(v_slice);
+        const score_slice = try allocator.alloc(f64, count);
+        errdefer allocator.free(score_slice);
+
+        var idx: usize = 0;
+        var it = eb.iterator();
+        while (it.next()) |entry| {
+            u_slice[idx] = entry.key_ptr.u;
+            v_slice[idx] = entry.key_ptr.v;
+            score_slice[idx] = entry.value_ptr.*;
+            idx += 1;
+        }
+
+        return .{
+            .u = u_slice,
+            .v = v_slice,
+            .score = score_slice,
+        };
+    }
+
+    pub fn nif_girvan_newman(res: GraphRes, has_target: bool, target_communities: usize) ![]usize {
+        const allocator = beam.allocator;
+        const opts = zog.community.girvan_newman.GirvanNewmanOptions{
+            .target_communities = if (has_target) target_communities else null,
+        };
+        return switch (res.unpack()) {
+            .soa => |g| try zog.community.girvan_newman.detect(allocator, g, opts, zog.utils.identityF64),
+            .hash_graph => |g| try zog.community.girvan_newman.detect(allocator, g, opts, zog.utils.identityF64),
+        };
+    }
+
+    pub fn nif_girvan_newman_hierarchical(res: GraphRes) ![][]usize {
+        const allocator = beam.allocator;
+        var levels = switch (res.unpack()) {
+            .soa => |g| try zog.community.girvan_newman.detectHierarchical(allocator, g, zog.utils.identityF64),
+            .hash_graph => |g| try zog.community.girvan_newman.detectHierarchical(allocator, g, zog.utils.identityF64),
+        };
+        defer {
+            for (levels.items) |l| allocator.free(l);
+            levels.deinit(allocator);
+        }
+
+        const node_count = nodeCapacity(res);
+        const outer = try allocator.alloc([]usize, levels.items.len);
+        errdefer allocator.free(outer);
+
+        for (levels.items, 0..) |level, i| {
+            const level_copy = try allocator.alloc(usize, node_count);
+            errdefer allocator.free(level_copy);
+            @memcpy(level_copy, level);
+            outer[i] = level_copy;
+        }
+
+        return outer;
+    }
+
+    pub fn nif_clique_percolation(res: GraphRes, k: usize) ![][]u32 {
+        const allocator = beam.allocator;
+        const opts = zog.community.clique_percolation.CliquePercolationOptions{
+            .k = k,
+        };
+        return switch (res.unpack()) {
+            .soa => |g| try zog.community.clique_percolation.detect(allocator, g, opts),
+            .hash_graph => |g| try zog.community.clique_percolation.detect(allocator, g, opts),
+        };
+    }
+
+    pub fn nif_infomap(
+        res: GraphRes,
+        teleport_prob: f64,
+        tolerance: f64,
+        max_pagerank_iters: usize,
+        seed: u64,
+    ) ![]usize {
+        const allocator = beam.allocator;
+        const opts = zog.community.infomap.InfomapOptions{
+            .teleport_prob = teleport_prob,
+            .tolerance = tolerance,
+            .max_pagerank_iters = max_pagerank_iters,
+            .seed = seed,
+        };
+        return switch (res.unpack()) {
+            .soa => |g| try zog.community.infomap.detect(allocator, g, opts),
+            .hash_graph => |g| try zog.community.infomap.detect(allocator, g, opts),
+        };
     }
 
     pub fn modularity_f64(res: GraphRes, assignments: []usize) !f64 {
@@ -2389,6 +2529,243 @@ defmodule Zog.ResourceGraph do
     end
 
     @doc """
+    Detects communities using the Fluid Communities algorithm on a resource-backed graph.
+
+    ## Options
+
+    - `:target_communities` - Number of communities to find (default: 2)
+    - `:max_iterations` - Maximum iterations (default: 100)
+    - `:seed` - Random seed (default: 42)
+    - `:raw` - If true, returns raw integer node IDs instead of mapped labels (default: false)
+    """
+    def fluid_communities(%{resource: res, builder: builder}, opts \\ []) do
+      alias Zog.Community.Result, as: CommunityResult
+
+      target = Keyword.get(opts, :target_communities, 2)
+      max_iterations = Keyword.get(opts, :max_iterations, 100)
+      seed = Keyword.get(opts, :seed, 42)
+      raw = Keyword.get(opts, :raw, false)
+
+      assignments = nif_fluid_communities(res, target, max_iterations, seed)
+
+      if raw do
+        mapped =
+          assignments
+          |> Enum.with_index()
+          |> Map.new(fn {comm, idx} -> {idx, comm} end)
+
+        CommunityResult.new(mapped)
+      else
+        mapped = map_assignments(builder, assignments)
+        CommunityResult.new(mapped)
+      end
+    end
+
+    @doc """
+    Detects a local community expanding from seed nodes on a resource-backed graph.
+
+    ## Options
+
+    - `:alpha` - Resolution parameter (default: 1.0)
+    - `:max_iterations` - Maximum iterations (default: 1000)
+    - `:raw` - If true, returns raw integer node IDs instead of mapped labels (default: false)
+    """
+    def local_community(%{resource: res, builder: builder}, seeds, opts \\ [])
+        when is_list(seeds) and is_list(opts) do
+      alpha = Keyword.get(opts, :alpha, 1.0)
+      max_iterations = Keyword.get(opts, :max_iterations, 1000)
+      raw = Keyword.get(opts, :raw, false)
+
+      seed_ids =
+        if is_integer(hd(seeds)) and builder.integer_labels do
+          seeds
+        else
+          Enum.map(seeds, fn s -> SoA.label_to_id(builder, s) end)
+        end
+
+      comm_ids = nif_local_community(res, seed_ids, alpha, max_iterations)
+
+      if raw do
+        MapSet.new(comm_ids)
+      else
+        comm_ids
+        |> Enum.map(fn id -> SoA.id_to_label(builder, id) end)
+        |> MapSet.new()
+      end
+    end
+
+    @doc """
+    Calculates edge betweenness centrality for all edges on a resource-backed graph.
+
+    Returns a map of `{u, v} => betweenness_score`.
+    """
+    def edge_betweenness(%{resource: res, builder: builder}, opts \\ []) do
+      raw = Keyword.get(opts, :raw, false)
+      %{u: u_ids, v: v_ids, score: scores} = nif_edge_betweenness(res)
+
+      Enum.zip([u_ids, v_ids, scores])
+      |> Enum.map(fn {u_id, v_id, score} ->
+        if raw do
+          edge_key = if u_id <= v_id, do: {u_id, v_id}, else: {v_id, u_id}
+          {edge_key, score}
+        else
+          u_label = SoA.id_to_label(builder, u_id)
+          v_label = SoA.id_to_label(builder, v_id)
+          edge_key = if u_label <= v_label, do: {u_label, v_label}, else: {v_label, u_label}
+          {edge_key, score}
+        end
+      end)
+      |> Map.new()
+    end
+
+    @doc """
+    Detects communities using Girvan-Newman on a resource-backed graph.
+
+    ## Options
+
+    - `:target_communities` - Target number of communities (default: nil = modularity-maximizing).
+    - `:raw` - If true, returns raw integer node IDs (default: false).
+    """
+    def girvan_newman(%{resource: res, builder: builder}, opts \\ []) do
+      alias Zog.Community.Result, as: CommunityResult
+
+      target = Keyword.get(opts, :target_communities)
+      raw = Keyword.get(opts, :raw, false)
+
+      {has_target, target_val} =
+        case target do
+          nil ->
+            {false, 0}
+
+          t when is_integer(t) and t >= 1 ->
+            {true, t}
+
+          other ->
+            raise ArgumentError,
+                  "expected target_communities to be nil or integer >= 1, got: #{inspect(other)}"
+        end
+
+      assignments = nif_girvan_newman(res, has_target, target_val)
+
+      if raw do
+        mapped =
+          assignments
+          |> Enum.with_index()
+          |> Map.new(fn {comm, idx} -> {idx, comm} end)
+
+        CommunityResult.new(mapped)
+      else
+        mapped = map_assignments(builder, assignments)
+        CommunityResult.new(mapped)
+      end
+    end
+
+    @doc """
+    Full hierarchical Girvan-Newman detection returning a Dendrogram on a resource-backed graph.
+    """
+    def girvan_newman_hierarchical(%{resource: res, builder: builder}, opts \\ []) do
+      alias Zog.Community.Dendrogram, as: CommunityDendrogram
+      alias Zog.Community.Result, as: CommunityResult
+
+      raw = Keyword.get(opts, :raw, false)
+      levels_arrays = nif_girvan_newman_hierarchical(res)
+
+      levels =
+        Enum.map(levels_arrays, fn assignments ->
+          if raw do
+            mapped =
+              assignments
+              |> Enum.with_index()
+              |> Map.new(fn {comm, idx} -> {idx, comm} end)
+
+            CommunityResult.new(mapped)
+          else
+            mapped = map_assignments(builder, assignments)
+            CommunityResult.new(mapped)
+          end
+        end)
+
+      CommunityDendrogram.new(levels, [])
+    end
+
+    @doc """
+    Detects overlapping communities using Clique Percolation Method (CPM) on a resource-backed graph.
+
+    ## Options
+
+    - `:k` - Clique size (default: 3)
+    - `:raw` - If true, returns raw integer node IDs (default: false)
+    """
+    def clique_percolation_overlapping(%{resource: res, builder: builder}, opts \\ []) do
+      alias Yog.Community.Overlapping, as: CommunityOverlapping
+
+      k = Keyword.get(opts, :k, 3)
+      raw = Keyword.get(opts, :raw, false)
+
+      comm_node_ids = nif_clique_percolation(res, k)
+
+      memberships =
+        comm_node_ids
+        |> Enum.with_index()
+        |> Enum.reduce(%{}, fn {node_ids, comm_id}, acc ->
+          Enum.reduce(node_ids, acc, fn node_id, inner_acc ->
+            label = if raw, do: node_id, else: SoA.id_to_label(builder, node_id)
+            Map.update(inner_acc, label, [comm_id], &[comm_id | &1])
+          end)
+        end)
+        |> Map.new(fn {node, comms} -> {node, Enum.reverse(comms)} end)
+
+      CommunityOverlapping.new(memberships)
+    end
+
+    @doc """
+    Detects communities using Clique Percolation Method (CPM) on a resource-backed graph,
+    converted to a standard non-overlapping partition.
+    """
+    def clique_percolation(%{resource: _res, builder: _builder} = graph, opts \\ []) do
+      alias Yog.Community.Overlapping, as: CommunityOverlapping
+
+      overlapping = clique_percolation_overlapping(graph, opts)
+      CommunityOverlapping.to_result(overlapping)
+    end
+
+    @doc """
+    Detects communities using Infomap on a resource-backed graph.
+
+    ## Options
+
+    - `:teleport_prob` - Teleportation probability for PageRank (default: 0.15)
+    - `:tolerance` - Minimum improvement in L(M) to accept a move (default: 0.000001)
+    - `:max_pagerank_iters` - Max iterations for PageRank and optimization (default: 200)
+    - `:seed` - Random seed for node shuffling (default: 42)
+    - `:raw` - If true, returns raw integer node IDs (default: false)
+    """
+    def infomap(%{resource: res, builder: builder}, opts \\ []) do
+      alias Zog.Community.Result, as: CommunityResult
+
+      teleport_prob = Keyword.get(opts, :teleport_prob, 0.15)
+      tolerance = Keyword.get(opts, :tolerance, 0.000001)
+      max_pagerank_iters = Keyword.get(opts, :max_pagerank_iters, 200)
+      seed = Keyword.get(opts, :seed, 42)
+      raw = Keyword.get(opts, :raw, false)
+
+      assignments =
+        nif_infomap(res, teleport_prob, tolerance, max_pagerank_iters, seed)
+
+      if raw do
+        mapped =
+          assignments
+          |> Enum.with_index()
+          |> Map.new(fn {comm, idx} -> {idx, comm} end)
+
+        CommunityResult.new(mapped)
+      else
+        mapped = map_assignments(builder, assignments)
+        CommunityResult.new(mapped)
+      end
+    end
+
+    @doc """
     Floyd-Warshall all-pairs shortest paths.
     """
     @spec floyd_warshall(t()) :: {:ok, [[float()]]} | {:error, :negative_cycle}
@@ -3748,6 +4125,14 @@ defmodule Zog.ResourceGraph do
           :modularity,
           :walktrap,
           :walktrap_hierarchical,
+          :fluid_communities,
+          :local_community,
+          :girvan_newman,
+          :girvan_newman_hierarchical,
+          :edge_betweenness,
+          :clique_percolation,
+          :clique_percolation_overlapping,
+          :infomap,
           :floyd_warshall,
           :johnsons,
           :density,

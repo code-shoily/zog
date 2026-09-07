@@ -667,4 +667,138 @@ defmodule Zog.ResourceGraphTest do
       end
     end
   end
+
+  describe "fluid_communities/2" do
+    test "detects communities on resource-backed graph" do
+      edges_a = for u <- 0..4, v <- 0..4, u < v, do: {u, v, 1.0}
+      edges_b = for u <- 10..14, v <- 10..14, u < v, do: {u, v, 1.0}
+      bridge = [{4, 10, 1.0}]
+
+      builder =
+        Enum.reduce(edges_a ++ edges_b ++ bridge, Zog.undirected(), fn {u, v, w}, g ->
+          Zog.add_edge(g, u, v, w)
+        end)
+
+      graph = ResourceGraph.new(builder)
+      comms = ResourceGraph.fluid_communities(graph, target_communities: 2, seed: 1)
+
+      assert comms.num_communities == 2
+      c0 = comms.assignments[0]
+      assert Enum.all?(0..4, fn n -> comms.assignments[n] == c0 end)
+      c10 = comms.assignments[10]
+      assert Enum.all?(10..14, fn n -> comms.assignments[n] == c10 end)
+      assert c0 != c10
+
+      ResourceGraph.destroy(graph)
+    end
+  end
+
+  describe "local_community/3" do
+    test "detects community from seed node on resource-backed graph" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge(0, 1, 1.0)
+        |> Zog.add_edge(1, 2, 1.0)
+        |> Zog.add_edge(2, 0, 1.0)
+        |> Zog.add_edge(2, 3, 1.0)
+
+      graph = ResourceGraph.new(builder)
+      comm = ResourceGraph.local_community(graph, [0])
+
+      assert is_struct(comm, MapSet)
+      assert MapSet.member?(comm, 0)
+      assert MapSet.member?(comm, 1)
+      assert MapSet.member?(comm, 2)
+
+      ResourceGraph.destroy(graph)
+    end
+  end
+
+  describe "girvan_newman/2 and edge_betweenness/2 on resource graph" do
+    test "detects community structure and edge betweenness" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge(0, 1, 1.0)
+        |> Zog.add_edge(1, 2, 1.0)
+        |> Zog.add_edge(2, 0, 1.0)
+        |> Zog.add_edge(3, 4, 1.0)
+        |> Zog.add_edge(4, 5, 1.0)
+        |> Zog.add_edge(5, 3, 1.0)
+        |> Zog.add_edge(2, 3, 1.0)
+
+      graph = ResourceGraph.new(builder)
+
+      eb = ResourceGraph.edge_betweenness(graph)
+      assert Map.get(eb, {2, 3}) == 9.0
+
+      comms = ResourceGraph.girvan_newman(graph)
+      assert comms.num_communities == 2
+      assert comms.assignments[0] == comms.assignments[1]
+      assert comms.assignments[1] == comms.assignments[2]
+      assert comms.assignments[3] == comms.assignments[4]
+      assert comms.assignments[4] == comms.assignments[5]
+      assert comms.assignments[0] != comms.assignments[3]
+
+      dendro = ResourceGraph.girvan_newman_hierarchical(graph)
+      assert length(dendro.levels) >= 2
+
+      ResourceGraph.destroy(graph)
+    end
+  end
+
+  describe "clique_percolation on resource graph" do
+    test "detects overlapping and non-overlapping communities" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge(0, 1, 1.0)
+        |> Zog.add_edge(0, 2, 1.0)
+        |> Zog.add_edge(0, 3, 1.0)
+        |> Zog.add_edge(1, 2, 1.0)
+        |> Zog.add_edge(1, 3, 1.0)
+        |> Zog.add_edge(2, 3, 1.0)
+        |> Zog.add_edge(3, 4, 1.0)
+        |> Zog.add_edge(3, 5, 1.0)
+        |> Zog.add_edge(3, 6, 1.0)
+        |> Zog.add_edge(4, 5, 1.0)
+        |> Zog.add_edge(4, 6, 1.0)
+        |> Zog.add_edge(5, 6, 1.0)
+
+      graph = ResourceGraph.new(builder)
+
+      overlapping = ResourceGraph.clique_percolation_overlapping(graph, k: 3)
+      assert overlapping.num_communities == 2
+      assert length(overlapping.memberships[3]) == 2
+
+      comms = ResourceGraph.clique_percolation(graph, k: 3)
+      assert comms.num_communities == 2
+
+      ResourceGraph.destroy(graph)
+    end
+  end
+
+  describe "infomap on resource graph" do
+    test "detects communities on resource graph" do
+      builder =
+        Zog.undirected()
+        |> Zog.add_edge(0, 1, 1.0)
+        |> Zog.add_edge(1, 2, 1.0)
+        |> Zog.add_edge(2, 0, 1.0)
+        |> Zog.add_edge(3, 4, 1.0)
+        |> Zog.add_edge(4, 5, 1.0)
+        |> Zog.add_edge(5, 3, 1.0)
+        |> Zog.add_edge(2, 3, 0.1)
+
+      graph = ResourceGraph.new(builder)
+
+      comms = ResourceGraph.infomap(graph)
+      assert comms.num_communities == 2
+      assert comms.assignments[0] == comms.assignments[1]
+      assert comms.assignments[1] == comms.assignments[2]
+      assert comms.assignments[3] == comms.assignments[4]
+      assert comms.assignments[4] == comms.assignments[5]
+      assert comms.assignments[0] != comms.assignments[3]
+
+      ResourceGraph.destroy(graph)
+    end
+  end
 end

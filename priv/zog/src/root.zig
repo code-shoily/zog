@@ -27,6 +27,11 @@ pub const community = struct {
     pub const leiden = @import("community/leiden.zig");
     pub const label_propagation = @import("community/label_propagation.zig");
     pub const walktrap = @import("community/walktrap.zig");
+    pub const fluid_communities = @import("community/fluid_communities.zig");
+    pub const local_community = @import("community/local_community.zig");
+    pub const girvan_newman = @import("community/girvan_newman.zig");
+    pub const clique_percolation = @import("community/clique_percolation.zig");
+    pub const infomap = @import("community/infomap.zig");
 };
 
 pub const traversal = @import("traversal.zig");
@@ -54,6 +59,11 @@ test {
     _ = @import("community/leiden.zig");
     _ = @import("community/label_propagation.zig");
     _ = @import("community/walktrap.zig");
+    _ = @import("community/fluid_communities.zig");
+    _ = @import("community/local_community.zig");
+    _ = @import("community/girvan_newman.zig");
+    _ = @import("community/clique_percolation.zig");
+    _ = @import("community/infomap.zig");
     _ = @import("traversal.zig");
     _ = @import("health_metrics.zig");
     _ = @import("matching.zig");

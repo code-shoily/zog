@@ -105,11 +105,11 @@ This document maps all algorithms implemented in **YogEx** and shows their imple
 | **Leiden** | `Yog.Community.Leiden` | Quality-guaranteed communities | ✅ **Implemented** | Native Zig via `Zog.Community.leiden/2` and `Zog.Community.leiden_hierarchical/2`. |
 | **Label Propagation** | `Yog.Community.LabelPropagation` | Very large graphs, speed | ✅ **Implemented** | Native Zig via `Zog.Community.label_propagation/2`. |
 | **Walktrap** | `Yog.Community.Walktrap` | Random-walk communities | ✅ **Implemented** | Native Zig via `Zog.Community.walktrap/2`, `Zog.Community.walktrap_hierarchical/2`, and `Zog.ResourceGraph.walktrap/2`. |
-| **Infomap** | `Yog.Community.Infomap` | Information-theoretic | ❌ **Missing** | *Deferred* — low priority. |
-| **Girvan-Newman** | `Yog.Community.GirvanNewman` | Hierarchical edge betweenness | ❌ **Missing** | *Deferred* — high complexity O(E²V); unfeasible for larger graphs. |
-| **Clique Percolation** | `Yog.Community.CliquePercolation` | Overlapping communities | ❌ **Missing** | *Deferred* — low priority. |
-| **Fluid Communities** | `Yog.Community.FluidCommunities` | Exact k partitions | ❌ **Missing** | *Deferred* — low priority. |
-| **Local Community** | `Yog.Community.LocalCommunity` | Seed expansion | ❌ **Missing** | *Deferred* — low priority. |
+| **Infomap** | `Yog.Community.Infomap` | Information-theoretic Map Equation | ✅ **Implemented** | Native Zig via `Zog.Community.infomap/2` and `Zog.ResourceGraph.infomap/2`. |
+| **Girvan-Newman** | `Yog.Community.GirvanNewman` | Hierarchical edge betweenness | ✅ **Implemented** | Native Zig via `Zog.Community.girvan_newman/2`, `girvan_newman_hierarchical/1`, and `edge_betweenness/1`. |
+| **Clique Percolation** | `Yog.Community.CliquePercolation` | Overlapping $k$-clique communities | ✅ **Implemented** | Native Zig via `Zog.Community.clique_percolation/2` and `clique_percolation_overlapping/2`. |
+| **Fluid Communities** | `Yog.Community.FluidCommunities` | Exact $k$ partitions via fluid dynamics | ✅ **Implemented** | Native Zig via `Zog.Community.fluid_communities/2` and `Zog.ResourceGraph.fluid_communities/2`. |
+| **Local Community** | `Yog.Community.LocalCommunity` | Seed expansion via fitness maximization | ✅ **Implemented** | Native Zig via `Zog.Community.local_community/3` and `Zog.ResourceGraph.local_community/3`. |
 
 ---
 

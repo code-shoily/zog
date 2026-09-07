@@ -55,14 +55,20 @@ Focuses on Directed Acyclic Graph (DAG) sorting/checks, structural health metric
 
 ---
 
-### 📅 v0.5.0: Flow Algorithms Parity, Community Metrics & Multigraph Support
-Focuses on complete algorithmic parity with Yog for network flow algorithms and cuts, global community transitivity, and multigraph support.
+### 📅 v0.5.0: Flow Algorithms Parity, Community Detection Parity & Multigraph Support
+Focuses on complete algorithmic parity with Yog for network flow algorithms and cuts, the complete community detection suite, global community transitivity, and multigraph support.
 
 - **Network Flow & Cuts Parity**
   - [x] Dinic's Algorithm (`max_flow/4` with `[algorithm: :dinic]`)
   - [x] Dedicated $s-t$ Min-Cut partition (`s_t_min_cut/4`) returning `{cut_value, source_side, sink_side, cut_edges}`
   - [x] Gomory-Hu All-Pairs Min-Cut Tree (`gomory_hu_tree/1`) via Gusfield's algorithm & query (`min_cut_query/3`)
   - [x] Min-Cost Flow via Successive Shortest Path (`min_cost_flow/4`) with node demands and edge costs/capacities
+- **Community Detection Parity (100% Yog Parity)**
+  - [x] Fluid Communities (`fluid_communities/2` - exact $k$ partitions)
+  - [x] Local Community Detection (`local_community/3` - seed expansion with Lancichinetti fitness)
+  - [x] Girvan-Newman & Edge Betweenness (`girvan_newman/2`, `girvan_newman_hierarchical/1`, `edge_betweenness/1`)
+  - [x] Clique Percolation Method (`clique_percolation/2`, `clique_percolation_overlapping/2`)
+  - [x] Infomap (`infomap/2` - Map Equation minimization with weighted PageRank teleportation)
 - **Community & Network Metrics**
   - [x] Global Transitivity / Clustering Coefficient (`transitivity/1`)
 - **Multigraph Core**
@@ -82,6 +88,5 @@ These features are not scheduled for immediate releases and will be implemented 
 - **Pathfinding**: Bidirectional Dijkstra, Bidirectional BFS, Widest Path, All-Pairs Unweighted.
 - **Spanning Tree**: Minimum Spanning Arborescence (Edmonds' Directed MST).
 - **Connectivity**: Reachability Exact.
-- **Community Detection**: Infomap, Clique Percolation, Fluid Communities, Local Community.
 - **Transformations & Operations**: Node/Edge filter predicates, Transpose / Reverse.
 - **Generators**: GNM random generator, Classic graph generators ($K_n$, $K_{n,m}$, star, cycle, wheel, hypercube), Stochastic Block Models (SBM, DCSBM, HSBM), Random Regular, Geometric/Waxman generators.

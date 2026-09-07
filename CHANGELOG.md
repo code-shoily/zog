@@ -26,10 +26,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added Global Transitivity metric:
   - Native Zig implementation in `priv/zog/src/community/metrics.zig`.
   - Added `Zog.Metrics.transitivity/1` and `Zog.ResourceGraph.transitivity/1`.
+- Added Fluid Communities algorithm:
+  - Native Zig implementation in `priv/zog/src/community/fluid_communities.zig` based on fluid dynamics.
+  - Added `Zog.Community.fluid_communities/2` and `Zog.ResourceGraph.fluid_communities/2`.
+- Added Local Community Detection:
+  - Native Zig implementation in `priv/zog/src/community/local_community.zig` optimizing Lancichinetti fitness.
+  - Added `Zog.Community.local_community/3` and `Zog.ResourceGraph.local_community/3`.
+- Added Girvan-Newman Hierarchical Community Detection and Edge Betweenness:
+  - Native Zig implementation in `priv/zog/src/community/girvan_newman.zig` using Brandes edge betweenness accumulation and modularity tracking.
+  - Added `Zog.Community.girvan_newman/2` and `Zog.ResourceGraph.girvan_newman/2`.
+  - Added `Zog.Community.girvan_newman_hierarchical/1` and `Zog.ResourceGraph.girvan_newman_hierarchical/1` returning a `Dendrogram`.
+  - Added `Zog.Community.edge_betweenness/1` and `Zog.ResourceGraph.edge_betweenness/1`.
+- Added Clique Percolation Method (CPM) for Overlapping Community Detection:
+  - Native Zig implementation in `priv/zog/src/community/clique_percolation.zig` with Bron-Kerbosch maximal cliques, $k$-clique deduplication, and Disjoint Set Union (DSU).
+  - Added `Zog.Community.clique_percolation/2` and `Zog.ResourceGraph.clique_percolation/2`.
+  - Added `Zog.Community.clique_percolation_overlapping/2` and `Zog.ResourceGraph.clique_percolation_overlapping/2` returning `Yog.Community.Overlapping`.
+- Added Infomap Information-Theoretic Community Detection:
+  - Native Zig implementation in `priv/zog/src/community/infomap.zig` with custom weighted PageRank teleportation and Map Equation minimization.
+  - Added `Zog.Community.infomap/2` and `Zog.ResourceGraph.infomap/2`.
 
 ### Changed
 
-- Updated `ALGORITHMS.md` and `ROADMAP.md` reflecting complete parity for flow and cut algorithms.
+- Updated `ALGORITHMS.md` and `ROADMAP.md` reflecting complete parity for flow/cut algorithms and 100% parity for community detection algorithms.
 - Fixed residual capacity accumulation across anti-parallel and parallel edges in `priv/zog/src/flow/max_flow.zig`.
 
 ## [0.4.0] - 2026-09-05
